@@ -14,6 +14,7 @@
 - [完整设计说明](docs/superpowers/specs/2026-10-18-swu-happyrun-design.md)
 - [当前协作状态](docs/status.md)
 - [Dot 接手说明](docs/handoffs/dot-server.md)
+- [GitHub 开发任务](https://github.com/Maximora-byte/swu-happyrun/issues)
 
 ## 分工
 
@@ -24,6 +25,8 @@
 | 服务 API、数据库、租约、调度、容器配置 | Matrix 群中的 ChatGPT Dot | `src/swu_happyrun/server/`、`tests/server/`、`deploy/` |
 
 以上源码目录是计划中的责任边界，尚未实现。双方使用独立分支和 PR，GitHub Issue 记录任务状态；Matrix 用于通知与澄清。消息发送成功、Dot 接单、代码提交、测试通过和设备验收分别记录。
+
+已创建 11 个开发/交接任务。本轮按用户选择只准备 Dot 交接包，尚未发送 Matrix 启动消息，云端开发未启动。
 
 ## 兼容性与数据
 
