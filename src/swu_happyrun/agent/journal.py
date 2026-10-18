@@ -82,8 +82,8 @@ class RunJournal:
         name = hashlib.sha256(device_id.encode()).hexdigest()
         lock_path = self.path.parent / f"device-{name}.lock"
         with lock_path.open("a+b") as handle:
-            handle.seek(0)
-            if not handle.read(1):
+            # Windows byte locks also prohibit reads; inspect metadata only.
+            if os.fstat(handle.fileno()).st_size == 0:
                 handle.write(b"0")
                 handle.flush()
             handle.seek(0)

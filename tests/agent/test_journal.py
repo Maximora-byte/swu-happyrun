@@ -50,3 +50,37 @@ def test_stop_ack_identity_survives_reopen(tmp_path):
     with RunJournal(path) as journal:
         assert journal.stop_ack_intent("job", 3, 7) == first
         assert journal.stop_ack_intent("job", 4, 9) != first
+
+
+def test_lock_initialization_never_reads_a_mandatory_locked_byte(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    original = Path.open
+
+    class MandatoryReadGuard:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.handle.close()
+
+        def __getattr__(self, name):
+            return getattr(self.handle, name)
+
+        def read(self, *args):
+            raise PermissionError("Windows denies reads of a locked byte")
+
+    def guarded_open(path, *args, **kwargs):
+        handle = original(path, *args, **kwargs)
+        return MandatoryReadGuard(handle) if path.suffix == ".lock" else handle
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+    with RunJournal(tmp_path / "runs.sqlite") as first:
+        with RunJournal(tmp_path / "runs.sqlite") as second:
+            with first.device_lock("device"):
+                with pytest.raises(UnsafeReplay):
+                    with second.device_lock("device"):
+                        pass
