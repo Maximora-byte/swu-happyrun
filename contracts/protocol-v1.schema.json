@@ -1,0 +1,750 @@
+{
+  "$defs": {
+    "AgentHello": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/$defs/DeviceCapability"
+          },
+          "title": "Devices",
+          "type": "array"
+        },
+        "protocol_version": {
+          "const": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "agent_id",
+        "devices"
+      ],
+      "title": "AgentHello",
+      "type": "object"
+    },
+    "DeviceCapability": {
+      "additionalProperties": false,
+      "properties": {
+        "app_version": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "App Version"
+        },
+        "backend": {
+          "enum": [
+            "fake",
+            "mumu",
+            "android"
+          ],
+          "title": "Backend",
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "enum": [
+              "location_read",
+              "location_write",
+              "sensor_probe",
+              "app_ui",
+              "record_read"
+            ],
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "device_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Device Id",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "device_id",
+        "backend",
+        "app_version",
+        "capabilities",
+        "observed_at"
+      ],
+      "title": "DeviceCapability",
+      "type": "object"
+    },
+    "EvidenceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "app_version": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "App Version"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "host_check",
+            "device_probe",
+            "app_record"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "profile_revision": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Profile Revision",
+          "type": "string"
+        },
+        "record_status": {
+          "anyOf": [
+            {
+              "enum": [
+                "valid",
+                "invalid",
+                "pending"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Record Status"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "sha256",
+        "captured_at",
+        "app_version",
+        "profile_revision",
+        "record_status"
+      ],
+      "title": "EvidenceRef",
+      "type": "object"
+    },
+    "GeoPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "latitude": {
+          "maximum": 90,
+          "minimum": -90,
+          "title": "Latitude",
+          "type": "number"
+        },
+        "longitude": {
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Longitude",
+          "type": "number"
+        }
+      },
+      "required": [
+        "latitude",
+        "longitude"
+      ],
+      "title": "GeoPoint",
+      "type": "object"
+    },
+    "JobEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Event Id",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceRef"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "expected_revision": {
+          "minimum": 0,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason Code"
+        },
+        "resume_phase": {
+          "anyOf": [
+            {
+              "enum": [
+                "leased",
+                "preflight",
+                "ready",
+                "running",
+                "finishing",
+                "verifying",
+                "cancelling"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Resume Phase"
+        },
+        "state": {
+          "$ref": "#/$defs/JobState"
+        }
+      },
+      "required": [
+        "event_id",
+        "expected_revision",
+        "state",
+        "reason_code",
+        "evidence",
+        "resume_phase"
+      ],
+      "title": "JobEvent",
+      "type": "object"
+    },
+    "JobSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "deadline": {
+          "format": "date-time",
+          "title": "Deadline",
+          "type": "string"
+        },
+        "device_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Device Id",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "simulation",
+            "device"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "not_before": {
+          "format": "date-time",
+          "title": "Not Before",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_revision": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Profile Revision",
+          "type": "string"
+        },
+        "protocol_version": {
+          "const": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "route_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Route Id",
+          "type": "string"
+        },
+        "route_revision": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Route Revision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "mode",
+        "profile_id",
+        "profile_revision",
+        "route_id",
+        "route_revision",
+        "device_id",
+        "not_before",
+        "deadline"
+      ],
+      "title": "JobSpec",
+      "type": "object"
+    },
+    "JobState": {
+      "enum": [
+        "queued",
+        "leased",
+        "preflight",
+        "ready",
+        "running",
+        "finishing",
+        "verifying",
+        "cancelling",
+        "needs_attention",
+        "completed",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ],
+      "title": "JobState",
+      "type": "string"
+    },
+    "JobView": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Agent Id"
+        },
+        "desired_state": {
+          "enum": [
+            "run",
+            "cancel"
+          ],
+          "title": "Desired State",
+          "type": "string"
+        },
+        "fence": {
+          "minimum": 0,
+          "title": "Fence",
+          "type": "integer"
+        },
+        "job_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason Code"
+        },
+        "recovery_action": {
+          "anyOf": [
+            {
+              "enum": [
+                "retry_preflight",
+                "verify_only",
+                "stop_only"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Recovery Action"
+        },
+        "resume_phase": {
+          "anyOf": [
+            {
+              "enum": [
+                "leased",
+                "preflight",
+                "ready",
+                "running",
+                "finishing",
+                "verifying",
+                "cancelling"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Resume Phase"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "spec": {
+          "$ref": "#/$defs/JobSpec"
+        },
+        "state": {
+          "$ref": "#/$defs/JobState"
+        }
+      },
+      "required": [
+        "job_id",
+        "spec",
+        "state",
+        "revision",
+        "desired_state",
+        "fence",
+        "agent_id",
+        "reason_code",
+        "resume_phase",
+        "recovery_action"
+      ],
+      "title": "JobView",
+      "type": "object"
+    },
+    "LeaseCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "fence": {
+          "minimum": 0,
+          "title": "Fence",
+          "type": "integer"
+        },
+        "lease_token": {
+          "minLength": 1,
+          "title": "Lease Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "lease_token",
+        "fence"
+      ],
+      "title": "LeaseCommand",
+      "type": "object"
+    },
+    "LeaseGrant": {
+      "additionalProperties": false,
+      "properties": {
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "fence": {
+          "minimum": 0,
+          "title": "Fence",
+          "type": "integer"
+        },
+        "job": {
+          "$ref": "#/$defs/JobView"
+        },
+        "lease_token": {
+          "minLength": 1,
+          "title": "Lease Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job",
+        "lease_token",
+        "fence",
+        "expires_at"
+      ],
+      "title": "LeaseGrant",
+      "type": "object"
+    },
+    "RouteProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "input_crs": {
+          "enum": [
+            "WGS84",
+            "GCJ02",
+            "BD09"
+          ],
+          "title": "Input Crs",
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "$ref": "#/$defs/GeoPoint"
+          },
+          "minItems": 2,
+          "title": "Points",
+          "type": "array"
+        },
+        "revision": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "route_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Route Id",
+          "type": "string"
+        },
+        "source_ref": {
+          "minLength": 1,
+          "title": "Source Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "route_id",
+        "revision",
+        "input_crs",
+        "points",
+        "source_ref"
+      ],
+      "title": "RouteProfile",
+      "type": "object"
+    },
+    "ScheduleSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "job_template": {
+          "$ref": "#/$defs/JobSpec"
+        },
+        "local_time": {
+          "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+          "title": "Local Time",
+          "type": "string"
+        },
+        "schedule_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Schedule Id",
+          "type": "string"
+        },
+        "timezone": {
+          "const": "Asia/Shanghai",
+          "title": "Timezone",
+          "type": "string"
+        },
+        "weekdays": {
+          "items": {
+            "maximum": 7,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "title": "Weekdays",
+          "type": "array"
+        }
+      },
+      "required": [
+        "schedule_id",
+        "job_template",
+        "timezone",
+        "local_time",
+        "weekdays",
+        "enabled"
+      ],
+      "title": "ScheduleSpec",
+      "type": "object"
+    },
+    "SchoolProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_region": {
+          "items": {
+            "$ref": "#/$defs/GeoPoint"
+          },
+          "minItems": 3,
+          "title": "Allowed Region",
+          "type": "array"
+        },
+        "app_package": {
+          "minLength": 1,
+          "title": "App Package",
+          "type": "string"
+        },
+        "app_version": {
+          "minLength": 1,
+          "title": "App Version",
+          "type": "string"
+        },
+        "campus": {
+          "minLength": 1,
+          "title": "Campus",
+          "type": "string"
+        },
+        "checkpoint_source": {
+          "enum": [
+            "manual_confirmed",
+            "adapter_verified"
+          ],
+          "title": "Checkpoint Source",
+          "type": "string"
+        },
+        "confirmed": {
+          "title": "Confirmed",
+          "type": "boolean"
+        },
+        "profile_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "revision": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "rules": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "propertyNames": {
+            "enum": [
+              "minimum_distance_m",
+              "maximum_duration_seconds",
+              "minimum_speed_mps",
+              "maximum_speed_mps"
+            ]
+          },
+          "title": "Rules",
+          "type": "object"
+        }
+      },
+      "required": [
+        "profile_id",
+        "revision",
+        "campus",
+        "app_package",
+        "app_version",
+        "confirmed",
+        "allowed_region",
+        "rules",
+        "checkpoint_source"
+      ],
+      "title": "SchoolProfile",
+      "type": "object"
+    },
+    "VerificationResult": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceRef"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason Code"
+        },
+        "status": {
+          "enum": [
+            "valid",
+            "invalid",
+            "pending",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "evidence",
+        "reason_code"
+      ],
+      "title": "VerificationResult",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/JobSpec"
+    },
+    {
+      "$ref": "#/$defs/JobView"
+    },
+    {
+      "$ref": "#/$defs/AgentHello"
+    },
+    {
+      "$ref": "#/$defs/DeviceCapability"
+    },
+    {
+      "$ref": "#/$defs/LeaseGrant"
+    },
+    {
+      "$ref": "#/$defs/LeaseCommand"
+    },
+    {
+      "$ref": "#/$defs/JobEvent"
+    },
+    {
+      "$ref": "#/$defs/EvidenceRef"
+    },
+    {
+      "$ref": "#/$defs/ScheduleSpec"
+    },
+    {
+      "$ref": "#/$defs/GeoPoint"
+    },
+    {
+      "$ref": "#/$defs/RouteProfile"
+    },
+    {
+      "$ref": "#/$defs/SchoolProfile"
+    },
+    {
+      "$ref": "#/$defs/VerificationResult"
+    }
+  ],
+  "title": "SWU HappyRun protocol v1"
+}

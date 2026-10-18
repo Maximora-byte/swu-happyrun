@@ -37,6 +37,15 @@
 
 `profile_id/route_id` 在代理本地私有配置库解析；服务器只保存引用。代理在 preflight 校验 ID、revision、实际应用版本与配置内容一致，缺少配置或版本不匹配进入 `needs_attention`，不得静默使用最新版。revision 使用规范化配置 JSON 的 SHA-256；具体规范化算法由 C0 固定并提供跨端测试向量。初版通过受控本地文件配置，尚不提供远程配置下载接口。
 
+### C0 实现约定
+
+- 所有 ID 是小写标准 UUID 字符串；配置 revision 是 64 位小写 SHA-256。网络输入时间严格接受以 `Z` 结尾的 RFC3339（最多 6 位小数）；Python aware datetime 会统一为 UTC，序列化输出 `Z`。
+- `core.canonical.profile_revision()` 对已校验模型的 `model_dump(mode='json')` 内容计算哈希：只删除顶层 `revision`，按键排序，紧凑分隔符，UTF-8、不转义 Unicode、禁止非有限数。数组顺序和数字表示（`1` / `1.0`）保留；这是 Python JSON v1 规范，不宣称兼容 RFC 8785。跨端测试向量在 `tests/contracts/test_canonical.py`。
+- 能力名称固定为 `location_read/location_write/sensor_probe/app_ui/record_read`；空列表表示未证实任何执行能力。主机安装发现不是设备执行能力。
+- `core.states.transition_allowed()` 仅检查结构边，不能代替 S1 中的租约、原代理身份、设备占用、开始意图、取消回执和证据绑定检查。例如 preflight → queued 仍须证明没有副作用且无取消意图；needs_attention → leased 仍须批准恢复动作。
+- nullable 字段也必须显式提供。`lease_token` 保留真实 wire 值但从模型 repr 排除；HTTP 层仍必须脱敏验证错误，不能把原始输入或错误堆栈直接回显。
+- `contracts/protocol-v1.schema.json` 从这 13 个共享模型生成；Schema 只表达静态约束，时间顺序、状态/证据关系等仍以模型验证为准。修改模型后运行导出命令，`--check` 用于拒绝漂移。
+
 ## HTTP 接口
 
 | 方法与路径 | 角色 | 输入/输出 |
