@@ -210,12 +210,19 @@ class JobEvent(ProtocolModel):
     @model_validator(mode="after")
     def evidence_gate(self) -> Self:
         statuses = {}
+        digest_statuses = {}
         for item in self.evidence:
             if item.kind == "app_record":
                 key = (item.record_namespace, item.record_id)
                 if key in statuses and statuses[key] != item.record_status:
                     raise ValueError("conflicting statuses for one record")
                 statuses[key] = item.record_status
+                if (
+                    item.sha256 in digest_statuses
+                    and digest_statuses[item.sha256] != item.record_status
+                ):
+                    raise ValueError("conflicting statuses for one canonical record digest")
+                digest_statuses[item.sha256] = item.record_status
         if self.state == JobState.SUCCEEDED and not any(
             e.kind == "app_record" and e.record_status == "valid" for e in self.evidence
         ):
