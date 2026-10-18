@@ -3,9 +3,10 @@
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from swu_happyrun.core.models import DeviceCapability
 from swu_happyrun.drivers.command import ProbeError, run_readonly
@@ -18,6 +19,8 @@ class MuMuInstance:
     android_version: str
     android_started: bool
     process_started: bool
+    probe_id: str = field(default_factory=lambda: str(uuid4()))
+    observed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class MuMuManager:
@@ -69,7 +72,8 @@ class MuMuManager:
             backend="mumu",
             app_version=None,
             capabilities=[],
-            observed_at=datetime.now(UTC),
+            observed_at=instance.observed_at,
+            probe_id=instance.probe_id,
         )
 
     def info(self, index: str) -> list[DeviceCapability]:

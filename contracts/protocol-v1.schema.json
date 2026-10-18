@@ -29,6 +29,21 @@
       "title": "AgentHello",
       "type": "object"
     },
+    "ClaimRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "device_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Device Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "device_id"
+      ],
+      "title": "ClaimRequest",
+      "type": "object"
+    },
     "DeviceCapability": {
       "additionalProperties": false,
       "properties": {
@@ -77,6 +92,11 @@
           "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{1,6})?Z$",
           "title": "Observed At",
           "type": "string"
+        },
+        "probe_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Probe Id",
+          "type": "string"
         }
       },
       "required": [
@@ -84,9 +104,49 @@
         "backend",
         "app_version",
         "capabilities",
-        "observed_at"
+        "observed_at",
+        "probe_id"
       ],
       "title": "DeviceCapability",
+      "type": "object"
+    },
+    "DeviceRegistration": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "device_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Device Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "device_id",
+        "agent_id"
+      ],
+      "title": "DeviceRegistration",
+      "type": "object"
+    },
+    "EventRequest": {
+      "additionalProperties": false,
+      "description": "Wire envelope; all event and lease semantics stay in the original models.",
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/JobEvent"
+        },
+        "lease": {
+          "$ref": "#/$defs/LeaseCommand"
+        }
+      },
+      "required": [
+        "lease",
+        "event"
+      ],
+      "title": "EventRequest",
       "type": "object"
     },
     "EvidenceRef": {
@@ -110,6 +170,18 @@
           "title": "Captured At",
           "type": "string"
         },
+        "job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Job Id"
+        },
         "kind": {
           "enum": [
             "host_check",
@@ -123,6 +195,30 @@
           "pattern": "^[0-9a-f]{64}$",
           "title": "Profile Revision",
           "type": "string"
+        },
+        "record_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Record Id"
+        },
+        "record_namespace": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_.-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Record Namespace"
         },
         "record_status": {
           "anyOf": [
@@ -140,6 +236,18 @@
           ],
           "title": "Record Status"
         },
+        "run_session_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Run Session Id"
+        },
         "sha256": {
           "pattern": "^[0-9a-f]{64}$",
           "title": "Sha256",
@@ -152,7 +260,11 @@
         "captured_at",
         "app_version",
         "profile_revision",
-        "record_status"
+        "record_status",
+        "job_id",
+        "run_session_id",
+        "record_namespace",
+        "record_id"
       ],
       "title": "EvidenceRef",
       "type": "object"
@@ -261,6 +373,19 @@
           "title": "Device Id",
           "type": "string"
         },
+        "expected_app_version": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Expected App Version"
+        },
         "mode": {
           "enum": [
             "simulation",
@@ -310,7 +435,8 @@
         "route_revision",
         "device_id",
         "not_before",
-        "deadline"
+        "deadline",
+        "expected_app_version"
       ],
       "title": "JobSpec",
       "type": "object"
@@ -420,6 +546,18 @@
           "title": "Revision",
           "type": "integer"
         },
+        "run_session_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Run Session Id"
+        },
         "spec": {
           "$ref": "#/$defs/JobSpec"
         },
@@ -437,7 +575,8 @@
         "agent_id",
         "reason_code",
         "resume_phase",
-        "recovery_action"
+        "recovery_action",
+        "run_session_id"
       ],
       "title": "JobView",
       "type": "object"
@@ -493,6 +632,31 @@
         "expires_at"
       ],
       "title": "LeaseGrant",
+      "type": "object"
+    },
+    "ResumeRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "retry_preflight",
+            "verify_only",
+            "stop_only"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "expected_revision": {
+          "minimum": 0,
+          "title": "Expected Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "action"
+      ],
+      "title": "ResumeRequest",
       "type": "object"
     },
     "RouteProfile": {
@@ -667,6 +831,31 @@
       "title": "SchoolProfile",
       "type": "object"
     },
+    "StopAckRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Event Id",
+          "type": "string"
+        },
+        "expected_revision": {
+          "minimum": 0,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "lease": {
+          "$ref": "#/$defs/LeaseCommand"
+        }
+      },
+      "required": [
+        "lease",
+        "event_id",
+        "expected_revision"
+      ],
+      "title": "StopAckRequest",
+      "type": "object"
+    },
     "VerificationResult": {
       "additionalProperties": false,
       "properties": {
@@ -749,6 +938,21 @@
     },
     {
       "$ref": "#/$defs/VerificationResult"
+    },
+    {
+      "$ref": "#/$defs/ClaimRequest"
+    },
+    {
+      "$ref": "#/$defs/ResumeRequest"
+    },
+    {
+      "$ref": "#/$defs/EventRequest"
+    },
+    {
+      "$ref": "#/$defs/StopAckRequest"
+    },
+    {
+      "$ref": "#/$defs/DeviceRegistration"
     }
   ],
   "title": "SWU HappyRun protocol v1"

@@ -24,6 +24,8 @@ UUIDString = Annotated[
 ]
 Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 Text = Annotated[str, StringConstraints(min_length=1)]
+NonBlankText = Annotated[str, StringConstraints(min_length=1, pattern=r"\S")]
+RecordNamespace = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_.-]{0,63}$")]
 Counter = Annotated[int, Field(ge=0)]
 Phase = Literal["leased", "preflight", "ready", "running", "finishing", "verifying", "cancelling"]
 State = Annotated[JobState, Field(strict=False)]
@@ -81,11 +83,14 @@ class JobSpec(ProtocolModel):
     device_id: UUIDString
     not_before: UtcTime
     deadline: UtcTime
+    expected_app_version: NonBlankText | None
 
     @model_validator(mode="after")
     def ordered_window(self) -> Self:
         if self.deadline <= self.not_before:
             raise ValueError("deadline must follow not_before")
+        if (self.mode == "device") != (self.expected_app_version is not None):
+            raise ValueError("device requires expected_app_version; simulation requires null")
         return self
 
 
@@ -100,9 +105,14 @@ class JobView(ProtocolModel):
     reason_code: Text | None
     resume_phase: Phase | None
     recovery_action: RecoveryAction | None
+    run_session_id: UUIDString | None
 
     @model_validator(mode="after")
     def consistent_state(self) -> Self:
+        if (self.fence > 0) != (self.run_session_id is not None):
+            raise ValueError("issued fence and run_session_id must be present together")
+        if self.agent_id is not None and self.run_session_id is None:
+            raise ValueError("assigned agent requires run_session_id")
         if self.state == JobState.SUCCEEDED and self.spec.mode != "device":
             raise ValueError("simulation cannot succeed")
         if self.state == JobState.COMPLETED and self.spec.mode != "simulation":
@@ -129,6 +139,7 @@ class DeviceCapability(ProtocolModel):
     app_version: Text | None
     capabilities: list[Capability]
     observed_at: UtcTime
+    probe_id: UUIDString
 
 
 class AgentHello(ProtocolModel):
@@ -168,14 +179,23 @@ class EvidenceRef(ProtocolModel):
     app_version: Text | None
     profile_revision: Digest
     record_status: Literal["valid", "invalid", "pending"] | None
+    job_id: UUIDString | None
+    run_session_id: UUIDString | None
+    record_namespace: RecordNamespace | None
+    record_id: Digest | None
 
     @model_validator(mode="after")
     def record_fields(self) -> Self:
+        bindings = (self.job_id, self.run_session_id, self.record_namespace, self.record_id)
         if self.kind == "app_record":
             if self.app_version is None or self.record_status is None:
                 raise ValueError("app_record requires app_version and record_status")
+            if any(value is None for value in bindings):
+                raise ValueError("app_record requires job, session and stable record identity")
         elif self.record_status is not None:
             raise ValueError("only app_record can carry record_status")
+        elif any(value is not None for value in bindings):
+            raise ValueError("only app_record can carry record bindings")
         return self
 
 
@@ -189,6 +209,13 @@ class JobEvent(ProtocolModel):
 
     @model_validator(mode="after")
     def evidence_gate(self) -> Self:
+        statuses = {}
+        for item in self.evidence:
+            if item.kind == "app_record":
+                key = (item.record_namespace, item.record_id)
+                if key in statuses and statuses[key] != item.record_status:
+                    raise ValueError("conflicting statuses for one record")
+                statuses[key] = item.record_status
         if self.state == JobState.SUCCEEDED and not any(
             e.kind == "app_record" and e.record_status == "valid" for e in self.evidence
         ):
@@ -198,6 +225,33 @@ class JobEvent(ProtocolModel):
         if self.state == JobState.NEEDS_ATTENTION and self.resume_phase is None:
             raise ValueError("needs_attention requires resume_phase")
         return self
+
+
+class ClaimRequest(ProtocolModel):
+    device_id: UUIDString
+
+
+class ResumeRequest(ProtocolModel):
+    expected_revision: Counter
+    action: RecoveryAction
+
+
+class EventRequest(ProtocolModel):
+    """Wire envelope; all event and lease semantics stay in the original models."""
+
+    lease: LeaseCommand
+    event: JobEvent
+
+
+class StopAckRequest(ProtocolModel):
+    lease: LeaseCommand
+    event_id: UUIDString
+    expected_revision: Counter
+
+
+class DeviceRegistration(ProtocolModel):
+    device_id: UUIDString
+    agent_id: UUIDString
 
 
 class ScheduleSpec(ProtocolModel):

@@ -33,6 +33,7 @@ def view_data(spec_data, **changes):
         reason_code=None,
         resume_phase=None,
         recovery_action=None,
+        run_session_id=None,
     )
     return data | changes
 
@@ -148,6 +149,7 @@ def test_device_capabilities_are_explicit(spec_data):
         app_version=None,
         capabilities=[],
         observed_at=datetime.now(UTC),
+        probe_id=spec_data["profile_id"],
     )
     hello = AgentHello(protocol_version=1, agent_id=spec_data["profile_id"], devices=[device])
     assert hello.devices[0].capabilities == []
@@ -160,6 +162,10 @@ def evidence(spec_data, **changes):
         **(
             dict(
                 kind="app_record",
+                job_id=spec_data["profile_id"],
+                run_session_id=spec_data["route_id"],
+                record_namespace="fixture.adapter",
+                record_id="e" * 64,
                 sha256="d" * 64,
                 captured_at=datetime.now(UTC),
                 app_version="1",
@@ -223,7 +229,7 @@ def test_lease_tokens_hidden_from_repr_and_fence_matches(spec_data):
     assert lease.model_dump()["lease_token"] == "fixture-secret"
     with pytest.raises(ValidationError):
         LeaseGrant(
-            job=JobView(**view_data(spec_data, fence=1)),
+            job=JobView(**view_data(spec_data, fence=1, run_session_id=spec_data["route_id"])),
             lease_token="fixture-secret",
             fence=2,
             expires_at=datetime.now(UTC),
