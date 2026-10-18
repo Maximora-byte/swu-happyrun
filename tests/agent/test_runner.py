@@ -94,6 +94,9 @@ class Client:
             expires_at=self.clock.utcnow() + timedelta(seconds=self.expiry),
         )
 
+    def get_job(self, job_id):
+        return self.job
+
     def renew(self, job_id, lease):
         if self.lose:
             raise ControlError("lost")
@@ -343,3 +346,140 @@ def test_runner_binds_session_and_effect_guard_before_driver_use(rig):
     driver.prepare = prepare
     runner.run_once()
     assert len(seen) == 2
+
+
+@pytest.mark.parametrize("failing_action", ["start", "tick"])
+def test_retry_preflight_failure_reports_current_running_phase_immediately(rig, failing_action):
+    runner, client, driver, journal, clock = rig
+    client.job = client.job.model_copy(
+        update={
+            "recovery_action": "retry_preflight",
+            "resume_phase": "leased",
+        }
+    )
+    original = client.events
+
+    def server_events(job_id, lease, event):
+        previous_phase = client.job.resume_phase
+        if event.state == "needs_attention" and event.resume_phase != client.job.state.value:
+            raise ControlError("HTTP 409: current resume phase required")
+        result = original(job_id, lease, event)
+        if event.state != "needs_attention":
+            # Recovery history survives ordinary state updates on the actual server.
+            client.job = result.model_copy(update={"resume_phase": previous_phase})
+        return client.job
+
+    def fail(*args):
+        driver.calls.append(failing_action)
+        raise TimeoutError("uncertain device action")
+
+    client.events = server_events
+    setattr(driver, failing_action, fail)
+    result = runner.run_once()
+    assert result.state == "needs_attention"
+    assert result.resume_phase == "running"
+    assert driver.calls[-1] == "stop"
+    assert clock.monotonic() < 30  # No expiry required to reconcile the failure.
+
+
+@pytest.mark.parametrize("action", ["verify_only", "stop_only"])
+def test_read_or_stop_recovery_attention_preserves_historical_phase(rig, action):
+    runner, client, driver, journal, clock = rig
+    client.job = client.job.model_copy(
+        update={
+            "recovery_action": action,
+            "resume_phase": "running",
+        }
+    )
+    original = client.events
+
+    def server_events(job_id, lease, event):
+        previous_phase = client.job.resume_phase
+        result = original(job_id, lease, event)
+        if event.state != "needs_attention":
+            client.job = result.model_copy(update={"resume_phase": previous_phase})
+        return client.job
+
+    client.events = server_events
+    if action == "stop_only":
+
+        def fail_stop():
+            raise TimeoutError("stop unconfirmed")
+
+        driver.stop = fail_stop
+    result = runner.run_once()
+    assert result.state == "needs_attention"
+    assert result.resume_phase == "running"
+    assert "start" not in driver.calls
+    assert "tick" not in driver.calls
+
+
+def test_cancelled_job_reports_stop_failure_without_waiting_for_expiry(rig):
+    runner, client, driver, journal, clock = rig
+    client.job = client.job.model_copy(
+        update={"desired_state": "cancel", "state": type(client.job.state).CANCELLING}
+    )
+
+    def stop():
+        raise TimeoutError("stop unconfirmed")
+
+    driver.stop = stop
+    result = runner.run_once()
+    assert result.state == "needs_attention"
+    assert result.reason_code == "stop_unconfirmed"
+    assert "stop_ack" not in client.states
+    assert "start" not in driver.calls
+
+
+def test_window_expiry_reports_attention_with_live_lease(rig):
+    runner, client, driver, journal, clock = rig
+    client.job.spec.deadline = clock.utcnow() + timedelta(seconds=10)
+
+    def tick(*args):
+        driver.calls.append("tick")
+        clock.seconds += 11
+
+    driver.tick = tick
+    result = runner.run_once()
+    assert result.state == "needs_attention"
+    assert result.resume_phase == "running"
+    assert driver.calls.count("tick") == 1
+    assert driver.calls[-1] == "stop"
+
+
+def test_cancel_race_stop_failure_reports_using_latest_server_revision(rig):
+    from swu_happyrun.core.states import JobState
+
+    runner, client, driver, journal, clock = rig
+    original_renew = client.renew
+    original_events = client.events
+
+    def renew(*args):
+        if client.job.state == "running":
+            client.job = client.job.model_copy(
+                update={
+                    "state": JobState.CANCELLING,
+                    "desired_state": "cancel",
+                    "revision": client.job.revision + 1,
+                }
+            )
+            client.cancel = True
+        return original_renew(*args)
+
+    def events(job_id, lease, event):
+        if event.expected_revision != client.job.revision:
+            raise ControlError("HTTP 409: stale revision")
+        return original_events(job_id, lease, event)
+
+    def stop():
+        raise TimeoutError("stop unconfirmed")
+
+    client.renew = renew
+    client.events = events
+    client.get_job = lambda job_id: client.job
+    driver.stop = stop
+    result = runner.run_once()
+    assert result.state == "needs_attention"
+    assert result.reason_code == "stop_unconfirmed"
+    assert result.resume_phase == "cancelling"
+    assert "stop_ack" not in client.states

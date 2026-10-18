@@ -53,10 +53,13 @@ class AgentRunner:
             expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
         self._lease_deadline = before + min(30, (expires_at - wall).total_seconds())
 
-    def _check(self):
-        now = self.clock.monotonic()
-        if now >= self._lease_deadline:
+    def _check_lease(self):
+        if self.clock.monotonic() >= self._lease_deadline:
             raise LeaseLost("lease expired")
+
+    def _check(self):
+        self._check_lease()
+        now = self.clock.monotonic()
         if self.job.desired_state == "cancel":
             raise Cancelled()
         if self.job.recovery_action not in {"verify_only", "stop_only"}:
@@ -86,7 +89,10 @@ class AgentRunner:
         self._check()
 
     def _event(self, state, *, reason=None, evidence=None, phase=None):
-        self._check()
+        # Reporting uncertainty is not permission to execute device actions.
+        # A live lease may report after cancellation or the original start window.
+        check = self._check_lease if state == "needs_attention" else self._check
+        check()
         event = JobEvent(
             event_id=str(uuid4()),
             expected_revision=self.job.revision,
@@ -96,6 +102,11 @@ class AgentRunner:
             resume_phase=phase,
         )
         updated = self.client.events(self.job.job_id, self.lease, event)
+        self._accept_view(updated)
+        check()
+        return updated
+
+    def _accept_view(self, updated):
         if (
             updated.job_id != self.job.job_id
             or updated.fence != self.lease.fence
@@ -104,8 +115,6 @@ class AgentRunner:
         ):
             raise ControlError("response identity changed")
         self.job = updated
-        self._check()
-        return updated
 
     def _stop(self):
         if not self._stopped:
@@ -119,7 +128,7 @@ class AgentRunner:
             return
         # Cancellation can increment server revision independently of this runner.
         if hasattr(self.client, "get_job"):
-            self.job = self.client.get_job(self.job.job_id)
+            self._accept_view(self.client.get_job(self.job.job_id))
         if self.job.state != "cancelling":
             event = JobEvent(
                 event_id=str(uuid4()),
@@ -143,16 +152,23 @@ class AgentRunner:
             self.job = self.client.stop_ack(self.job.job_id, self.lease, event_id, revision)
 
     def _attention(self, reason):
-        if self.job is None or self.job.state in {"completed", "succeeded", "failed", "cancelled"}:
+        settled = {"completed", "succeeded", "failed", "cancelled", "needs_attention"}
+        if self.job is None or self.job.state in settled:
             return
         try:
-            self._event(
-                "needs_attention",
-                reason=reason,
-                phase=self.job.resume_phase or self.job.state.value,
-            )
+            self._check_lease()
+            # A concurrent cancel increments the server revision, including when
+            # controlled stop failed before _cancel could fetch the new view.
+            self._accept_view(self.client.get_job(self.job.job_id))
+            self._check_lease()
+            if self.job.state in settled:
+                return
+            phase = self.job.state.value
+            if self.job.recovery_action in {"verify_only", "stop_only"}:
+                phase = self.job.resume_phase or phase
+            self._event("needs_attention", reason=reason, phase=phase)
         except Exception:
-            # Report cannot restore a lost lease; server expiry retains device reservation.
+            # Reporting never restores an expired/replaced lease or allows writes.
             pass
 
     def run_once(self):
