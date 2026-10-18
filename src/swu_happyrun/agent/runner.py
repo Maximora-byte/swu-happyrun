@@ -30,6 +30,7 @@ class AgentRunner:
         sleep=time.sleep,
         run_seconds: float = 1,
         tick_seconds: float = 1,
+        shutdown=None,
     ):
         if (
             not math.isfinite(run_seconds)
@@ -41,6 +42,7 @@ class AgentRunner:
         self.client, self.driver, self.journal, self.clock = client, driver, journal, clock
         self.device_id, self.sleep = device_id, sleep
         self.run_seconds, self.tick_seconds = run_seconds, tick_seconds
+        self.shutdown = shutdown
         self.job = None
         self.hello = None
         self._heartbeat_at = 0.0
@@ -58,6 +60,8 @@ class AgentRunner:
             raise LeaseLost("lease expired")
 
     def _check(self):
+        if self.shutdown is not None:
+            self.shutdown.check()
         self._check_lease()
         now = self.clock.monotonic()
         if self.job.desired_state == "cancel":
@@ -176,6 +180,8 @@ class AgentRunner:
         self.job = None
         self._stopped = False
         with self.journal.device_lock(self.device_id):
+            if self.shutdown is not None:
+                self.shutdown.check()
             before, wall = self.clock.monotonic(), self.clock.utcnow()
             grant = self.client.claim(self.device_id)
             if grant is None:
@@ -214,8 +220,13 @@ class AgentRunner:
                 while self.clock.monotonic() - started < self.run_seconds:
                     self._renew()
                     self._effect_guard()
-                    self.driver.tick(self.job.spec, self.clock.monotonic() - started)
+                    self.driver.tick(
+                        self.job.spec, min(self.run_seconds, self.clock.monotonic() - started)
+                    )
                     self._check()
+                    progress = getattr(self.driver, "route_progress", None)
+                    if progress is not None and progress.finished:
+                        break
                     self.sleep(
                         min(
                             self.tick_seconds,
@@ -223,6 +234,19 @@ class AgentRunner:
                         )
                     )
                 self._renew()
+                progress = getattr(self.driver, "route_progress", None)
+                if progress is not None and not progress.finished:
+                    # Include the endpoint after the final sleep, still under the
+                    # same lease/cancellation/shutdown guard as every other tick.
+                    self._effect_guard()
+                    self.driver.tick(
+                        self.job.spec, min(self.run_seconds, self.clock.monotonic() - started)
+                    )
+                    self._check()
+                    if not self.driver.route_progress.finished:
+                        self._stop()
+                        self._attention("simulation_incomplete")
+                        return self.job
                 self._event("finishing")
                 self._stop()
                 self._event("verifying")

@@ -483,3 +483,78 @@ def test_cancel_race_stop_failure_reports_using_latest_server_revision(rig):
     assert result.reason_code == "stop_unconfirmed"
     assert result.resume_phase == "cancelling"
     assert "stop_ack" not in client.states
+
+
+def test_route_budget_exhaustion_is_not_completion(rig):
+    from types import SimpleNamespace
+
+    runner, client, driver, _, _ = rig
+    driver.route_progress = SimpleNamespace(finished=False)
+    result = runner.run_once()
+    assert result.state == "needs_attention"
+    assert result.reason_code == "simulation_incomplete"
+    assert "completed" not in client.states
+
+
+def test_route_gets_final_guarded_tick_at_budget_boundary(rig):
+    from types import SimpleNamespace
+
+    runner, _, driver, _, _ = rig
+    driver.route_progress = SimpleNamespace(finished=False)
+    elapsed = []
+
+    def tick(job, seconds):
+        driver.guard()
+        elapsed.append(seconds)
+        driver.route_progress.finished = seconds >= runner.run_seconds
+
+    driver.tick = tick
+    assert runner.run_once().state == "completed"
+    assert elapsed[-1] == runner.run_seconds
+
+
+def test_shutdown_after_intent_prevents_start(rig):
+    import signal
+
+    from swu_happyrun.agent.lifecycle import Shutdown
+
+    runner, _, driver, journal, _ = rig
+    shutdown = Shutdown()
+    runner.shutdown = shutdown
+    original = journal.record_intent
+
+    def intent(*args):
+        original(*args)
+        shutdown.request(signal.SIGTERM)
+
+    journal.record_intent = intent
+    result = runner.run_once()
+    assert result.state == "needs_attention"
+    assert journal.has_intent(result.job_id, "start")
+    assert "start" not in driver.calls
+    assert "stop" in driver.calls
+
+
+def test_renew_latency_cannot_advance_route_past_budget(rig):
+    from types import SimpleNamespace
+
+    runner, client, driver, _, clock = rig
+    driver.route_progress = SimpleNamespace(finished=False)
+    elapsed = []
+    renew = client.renew
+
+    def delayed(job_id, lease):
+        if "start" in driver.calls:
+            clock.sleep(3)
+        return renew(job_id, lease)
+
+    def tick(job, seconds):
+        elapsed.append(seconds)
+        driver.route_progress.finished = seconds > runner.run_seconds
+
+    client.renew = delayed
+    driver.tick = tick
+    result = runner.run_once()
+    assert result.state == "needs_attention"
+    assert result.reason_code == "simulation_incomplete"
+    assert max(elapsed) <= runner.run_seconds

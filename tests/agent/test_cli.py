@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from swu_happyrun.cli import main
 
@@ -80,4 +81,70 @@ def test_module_entrypoint_emits_json():
 def test_devices_register_rejects_invalid_identity_before_network(capsys, monkeypatch):
     monkeypatch.setenv("HAPPYRUN_ADMIN_TOKEN", "test-token")
     assert main(["devices", "register", "--agent-id", "bad", "--device-id", "bad"]) == 2
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "configuration_error"
+
+
+def test_android_doctor_dispatches_explicit_read_only_probe(monkeypatch, capsys):
+    import sys
+    from types import ModuleType
+
+    from swu_happyrun.cli import main
+
+    module = ModuleType("swu_happyrun.drivers.android_diagnostics")
+    calls = []
+
+    def collect_report(**kwargs):
+        calls.append(kwargs)
+        return {"status": "partial", "backend": "android", "record_verified": False}
+
+    module.collect_report = collect_report
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    assert (
+        main(
+            [
+                "doctor",
+                "--backend",
+                "android",
+                "--adb",
+                "/fake/adb",
+                "--serial",
+                "test",
+                "--package",
+                "test.fake",
+                "--samples",
+            ]
+        )
+        == 2
+    )
+    assert calls == [
+        {"adb": Path("/fake/adb"), "serial": "test", "package": "test.fake", "samples": True}
+    ]
+    assert json.loads(capsys.readouterr().out)["backend"] == "android"
+
+
+def test_android_doctor_requires_explicit_adb(capsys):
+    from swu_happyrun.cli import main
+
+    assert main(["doctor", "--backend", "android"]) == 2
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "configuration_error"
+
+
+def test_route_speed_requires_driver_route_interface(monkeypatch, capsys):
+    from swu_happyrun.drivers.fake import FakeDriver
+
+    monkeypatch.delattr(FakeDriver, "route_progress", raising=False)
+    monkeypatch.setenv("HAPPYRUN_AGENT_TOKEN", "test-agent")
+    code = main(
+        [
+            "agent",
+            "--agent-id",
+            "00000000-0000-4000-8000-000000000001",
+            "--device-id",
+            "00000000-0000-4000-8000-000000000002",
+            "--route-speed-mps",
+            "2",
+            "--once",
+        ]
+    )
+    assert code == 2
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "configuration_error"
