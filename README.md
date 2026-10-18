@@ -2,6 +2,8 @@
 
 西南大学步道乐跑适配项目，规划 Windows/MuMu 执行代理、服务器调度和 vivo 无 Root 兼容性验证。
 
+最新分工（2026-10-18）：**Dot 主导全部主要开发，本地 Codex 负责实测与集成验收。** 当前实施入口为[今晚至次日的冲刺任务](docs/handoffs/2026-10-18-dot-lead-sprint.md)；下列原始计划的旧负责人列由该分工覆盖。
+
 **当前状态：设计与协作计划阶段。尚未提供可运行产品，尚未验证任何步道乐跑版本的完整兼容性。**
 
 ## 开发入口
@@ -20,8 +22,8 @@
 
 | 工作 | 负责人 | 主要目录 |
 | --- | --- | --- |
-| 共享契约、集成审核、最终验收 | 本地 Codex，Dot 交叉检查 | `contracts/`、`src/swu_happyrun/core/`、`tests/contracts/` |
-| Windows/MuMu、ADB、执行代理、设备实测 | 本地 Codex | `src/swu_happyrun/agent/`、`src/swu_happyrun/drivers/`、`tests/agent/` |
+| 共享契约、核心逻辑、CLI 与实现测试 | Dot 开发，本地 Codex 独立验收 | `contracts/`、`src/swu_happyrun/core/`、`tests/contracts/` |
+| Windows/MuMu、ADB 与执行代理 | Dot 开发，本地 Codex 设备实测 | `src/swu_happyrun/agent/`、`src/swu_happyrun/drivers/`、`tests/agent/` |
 | 服务 API、数据库、租约、调度、容器配置 | Matrix 群中的 ChatGPT Dot | `src/swu_happyrun/server/`、`tests/server/`、`deploy/` |
 
 以上源码目录是计划中的责任边界，尚未实现。双方使用独立分支和 PR，GitHub Issue 记录任务状态；Matrix 用于通知与澄清。消息发送成功、Dot 接单、代码提交、测试通过和设备验收分别记录。

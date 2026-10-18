@@ -2,6 +2,19 @@
 
 更新日期：2026-10-18（Asia/Shanghai）。此文件记录证据，不由收到消息或计划勾选自动推断完成。
 
+## 最新分工与证据
+
+- 用户最新要求：Dot 主导主要开发，本地 Codex 负责实测与集成审核；见[冲刺任务](handoffs/2026-10-18-dot-lead-sprint.md)。目标明早候选版、24 小时内一次 v1 验收，不承诺未经实测的完整兼容性。
+- 仓库已公开。当前 main 尚未合入业务代码；C0/L0 在 [PR #13](https://github.com/Maximora-byte/swu-happyrun/pull/13)，HEAD `3ff0a33a01c629432a2036f4e105bed52157bd9e`，109 tests 和四组 CI 已通过，但 Dot 报告的 verify_only 恢复路径问题仍是阻塞。
+- Dot 已在 [Issue #1](https://github.com/Maximora-byte/swu-happyrun/issues/1) 回报真实仓库/Python 能力，并提交 [PR #12](https://github.com/Maximora-byte/swu-happyrun/pull/12) 的 50 条待实现服务器测试设计；这不是 S0 产品实现。
+- Dot 现在负责接管 C0 修复与 [C1 #14](https://github.com/Maximora-byte/swu-happyrun/issues/14)，随后实现 S0-S2、L1-L3 和 CLI；本地不再负责主要产品编码。新角色覆盖原 Issue/计划中的旧负责人。
+- 本地 MuMu 6.8.4.0 / Android 15.0 实例查询通过，实例停止，ADB 无设备；定位/传感器、应用、vivo 与学校有效记录未验证。
+- 本轮冲刺消息的实际送达与接单回执以 Matrix / Issue 为证；不能由这份计划的存在推断 Dot 已开始夜间任务。
+
+## 初次建仓快照（历史记录）
+
+以下是本轮角色调整前的历史快照；状态和负责人以本页上方、最新 AGENTS.md 与冲刺任务为准。
+
 | 项目 | 当前状态 | 证据/下一步 |
 | --- | --- | --- |
 | 初版设计 | 已提交 | `687d0be` |

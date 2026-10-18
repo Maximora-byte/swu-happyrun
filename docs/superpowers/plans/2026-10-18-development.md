@@ -1,5 +1,7 @@
 # SWU HappyRun 双端开发总计划
 
+> 分工更新：用户已选择 **Dot 主导全部主要实现，本地 Codex 负责实测与集成验收**。以 [AGENTS.md](../../../AGENTS.md) 和[今晚冲刺](../../handoffs/2026-10-18-dot-lead-sprint.md)为准；下文技术步骤仍适用。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking. 用户已选择本地 Codex 与 Matrix 群 ChatGPT Dot 协作，保持这一执行方式。
 
 **Goal:** 交付可独立测试的服务器、Windows 执行代理，并用真实设备证据逐步建立西大步道乐跑兼容性。
@@ -30,18 +32,18 @@
 
 | 阶段 | 本地 Codex | 云端 Dot | 交接条件 |
 | --- | --- | --- | --- |
-| 启动评审 | 修订设计、契约、建仓库与 Issues | 核对仓库访问和契约，反馈服务端缺口 | 两端确认相同基线 SHA |
-| C0 / L0 | 共享模型与工具链；只读设备探测 | S0 的用例设计、API/存储结构评审 | C0 合并后固定模型与依赖锁 |
-| L1 / S0 | 驱动和模拟执行器 | 可运行 API、认证和 SQLite | 双方通过同一 contracts 测试 |
-| L2 / S1 / S2 | 代理日志、取消、恢复、CLI | 租约、幂等、调度、部署 | 模拟代理真实 HTTP 联调 |
-| L3 / I0 | 步道乐跑版本适配与设备证据 | 故障注入、结果校验、修复服务端问题 | 指定版本完整流程验收 |
-| R0 | vivo 无 Root 和纯接口证据采集 | 基于已取得的协议样本评估接口执行器 | 独立报告可行性，不阻塞已完成模块 |
+| 启动评审 | 更新分工、验证证据、协调实测 | 接管实现与修复、确认真实环境 | 两端确认相同基线 SHA |
+| C0 / C1 / L0 | 独立检查共享契约与本机探测结果 | 修复 C0 恢复路径，实施 C1 和探测维护 | 契约 PR 与修复测试先通过 |
+| L1 / S0 | 运行 Windows/MuMu 探针、反馈复现 | 驱动、fake、API、认证和 SQLite | 双方通过同一 contracts 测试 |
+| L2 / S1 / S2 | 真实 HTTP / Windows 安装与故障验收 | 代理日志、取消、恢复、CLI、租约、调度、部署 | 模拟联调代码与独立复测均有证据 |
+| L3 / I0 | 采集实际版本样本、设备与记录证据 | 版本适配、联调实现、修复实测问题 | 指定版本完整流程验收 |
+| R0 | vivo 无 Root 和本人会话脱敏样本采集 | 能力研究、接口可行性和对应实现 | 独立报告可行性，不阻塞已完成模块 |
 
 依赖图：`C0 -> {S0 -> S1 -> S2, L1 -> L2}`；`L0 -> L1`；`{S2,L2}->I0`；`{L0,L1,L2,真实学校/应用信息}->L3`。L0 和服务器准备工作可同步推进。
 
 详见 [服务器计划](2026-10-18-server.md) 与 [执行端计划](2026-10-18-agent.md)。每个任务对应一个小范围 PR；不把所有工作累计在一个长期分支。
 
-## Task C0：共享模型与可重复开发环境（本地 Codex）
+## Task C0：共享模型与可重复开发环境（Dot 实现，本地 Codex 验收）
 
 **Files:** 创建 `pyproject.toml`、`uv.lock`、`src/swu_happyrun/__init__.py`、`src/swu_happyrun/core/{models,states,clock}.py`、`contracts/protocol-v1.schema.json`、`tests/contracts/{test_models,test_states}.py`、`scripts/export_schema.py`、`.github/workflows/checks.yml`。
 
@@ -51,9 +53,9 @@
 - [ ] 执行 `python -m pytest tests/contracts -q`，确认因缺少模型失败。
 - [ ] 实现模型、状态表与时钟接口，导出 JSON Schema；固定配置 JSON 规范化与 revision 哈希算法，提供一致性测试向量。Pydantic 为核心依赖；定义 `[server]`（FastAPI/Uvicorn）、`[agent]`（HTTPX）、`[dev]`（pytest/ruff/build/HTTPX）可选依赖；提交 uv.lock，用 `uv sync --all-extras --frozen` 重建环境。CI 包含 3.11/3.13 和两个系统的共享模型检查。
 - [ ] 执行 `python -m pytest tests/contracts -q`、`python scripts/export_schema.py --check`，预期全部通过且导出文件无漂移；安装包后验证导入。
-- [ ] 提交 `feat: establish shared protocol models`，PR 由 Dot 核对接口，记录合并 SHA 后双方从该基线开发。
+- [ ] 提交 `feat: establish shared protocol models`，PR 由本地 Codex 复核契约和独立环境结果，记录合并 SHA 后双方从该基线开发；当前接管修复见最新冲刺任务。
 
-## Task I0：双端联调与发布候选（本地 Codex 主持，Dot 修复服务器）
+## Task I0：双端联调与发布候选（Dot 实现，本地 Codex 主持独立实测）
 
 **Files:** 创建 `tests/integration/test_control_loop.py`、`tests/integration/test_recovery.py`、`docs/acceptance.md`；更新 `README.md`、`docs/status.md`。
 
