@@ -300,8 +300,11 @@ documentation must define canonical artifact/record identity generation before
 real app_record is accepted; no generic placeholder adapter may return success.
 
 succeeded requires device mode, desired run, verifying state, matching valid
-app_record and stopped execution. Contradictory statuses for the same record in
-one event are rejected. No response/lease can change JobSpec or run_session_id.
+app_record and stopped execution. Contradictory statuses for the same record
+identity OR canonical sha256 in one event are rejected, including digest aliases
+with different record_id or namespace. This consistency check is per event;
+separate events for the same job may legitimately evolve pending to valid.
+No response/lease can change JobSpec or run_session_id.
 The local adapter must correlate the actual observed record to start/session
 observations; attaching server identifiers to an old record does not establish
 provenance. Server checks are structural/binding checks, not independent proof of
