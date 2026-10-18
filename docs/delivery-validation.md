@@ -37,7 +37,7 @@ uv run --no-sync python deploy/smoke_fake.py
 - Hosted CI：须单列最终提交对应的实际结果，不从本地检查推断。
 
 
-## I0 统一候选软件验证
+## 历史 I0 基线验证（PR #25 原 HEAD 19c15ba7）
 
 最终组合包含 L2 `e935632079c805952e7b143e5438c7d829b34f22`、S2 `561155a24582c0e5bfcb4fbba7a9f2d2c53eaea9`、C1 `a82e4d97a5a7e1de5112eabeecac6e97312089a7` 与交付基线 `cc81d124e4feab978ae60a694ae06391cb6cb728`。公共文件差异逐项核对；唯一产品整合是保留 S2 tzdata extra 与 L2 CLI entrypoint 的 pyproject 加法合并。集成提交自身 SHA 以 PR 正文/Actions github.sha 为准，不在文件内自引用。
 
@@ -49,6 +49,19 @@ uv run --no-sync python deploy/smoke_fake.py
 - 新增真实HTTP回归先在旧wheel失败，再在修复后验证：retry_preflight重新进入running后的异常立即报告正确phase；取消后stop失败立即报告needs_attention/stop_unconfirmed，不能停留旧状态等待expiry。
 
 完整50项原始设计映射见 [acceptance coverage](acceptance-coverage.md)。这些是软件和合成故障证据；无真实设备/登录/上传/学校有效记录结论。Docker不可用，容器构建与卷重启仍未执行。最终wheel/sdist SHA256和完整archive成员检查随集成PR报告和CI artifact提供；不存在凭据、数据库、日志、虚拟环境或原始截图入包。
+
+## 本轮路线完整性与生命周期集成验证
+
+准确基线为 PR #25 `19c15ba7cfad7fc1039b7b552677a3bd3e82cf6b`；叠加 Android PR #26 `5e841d1fa8e231caa33608cdd689f0b79b1f9d8d`、坐标 PR #27 `9db9c8f31567b3300699e79b3a340f7bbaf3c22c`、代理 PR #28 `9c358125a9724fafd3468a64f069e5ec92acab49`，以及冻结路线与 I0 文件。所有输入逐文件 SHA256/Git blob 核对，最终集成提交由 PR/Actions 精确 push HEAD 绑定。
+
+- Linux x86_64 / Python 3.12.14：完整 **513 passed**（78.61 秒），一条继承 Starlette/httpx 弃用 warning。
+- 源码外安装 wheel：**34 passed**（40.56 秒）。保留原故障断言，并增加预算未完成立即 attention、不重复开始，以及 GCJ02/BD09 完整 HTTP/fake 路线流程，检查 WGS84 端点、源文件/revision 不变、无学校记录证据。
+- 同一 wheel 的原 7 项 daemon/TCP/subprocess 场景：**7 passed**（14.38 秒）。仅外部测试副本的启动 harness 清除 PYTHONPATH、加 Python -I；每次启动用同一 sys.executable 断言导入 site-packages。场景覆盖 Linux SIGTERM/SIGINT、停止失败、空闲 hello/heartbeat 重连、claim 响应丢失不重试、active renew 失败停止。Windows 的三项信号场景明确跳过，不能称已实测 Windows 信号处理。
+- CLI smoke 使用约 1.57 米合成路线、合法 2 m/s、2 秒 budget；除服务重启和同 job 查询，还读取 fake 状态确认 route_finished=true。未到端点必须 needs_attention/simulation_incomplete，而不是“计时结束即完成”。两项新路线约束先在历史代码失败，再在本轮通过。
+- core/server/agent 三独立 wheel 环境依赖隔离与 CLI 入口通过；安装测试清空 PYTHONPATH、Python -I、独立 pytest 配置并禁用 pythonpath，实际导入均来自 site-packages。
+- frozen sync、Schema 漂移、ruff check/format、wheel/sdist 构建通过。最终归档成员和 SHA256 随发布证据给出；文档更新后重建并验证 wheel 与已安装测试的字节一致。
+
+这些只证明软件和合成输入行为。Android 只读采样测试没有连接真实设备；GCJ/BD 公式不等于实测测绘精度。MuMu/vivo、步道乐跑 UI/登录/真实上传、学校有效记录与 Docker 容器仍未验证。最终候选 Hosted CI 和 artifact 须独立核查，不能沿用原 PR25 CI 替代。
 
 ## CI 候选安装包
 

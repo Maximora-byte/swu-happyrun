@@ -28,7 +28,9 @@ def runtime(service, tmp_path):
     return s, tmp_path, created.json()
 
 
-def make_runner(s, root, *, scenario="normal", client_type=ControlClient, driver_type=FakeDriver):
+def make_runner(
+    s, root, *, scenario="normal", client_type=ControlClient, driver_type=FakeDriver, run_seconds=2
+):
     client = client_type(s.url, "integration-agent")
     journal = RunJournal(root / "journal.sqlite3")
     driver = driver_type(
@@ -36,6 +38,7 @@ def make_runner(s, root, *, scenario="normal", client_type=ControlClient, driver
         LocalProfileStore(root / "profiles"),
         scenario=scenario,
         state_path=root / "fake.json",
+        route_speed_mps=2,
     )
     runner = AgentRunner(
         client,
@@ -43,7 +46,7 @@ def make_runner(s, root, *, scenario="normal", client_type=ControlClient, driver
         journal,
         SystemClock(),
         device_id=DEVICE_ID,
-        run_seconds=0.05,
+        run_seconds=run_seconds,
         tick_seconds=0.05,
     )
     return runner, driver, journal, client
@@ -55,11 +58,39 @@ def test_real_agent_completes_fake_only(runtime):
     try:
         result = runner.run_once()
         assert result.state == "completed"
+        assert driver.route_progress.finished
+        assert driver.route_progress.distance_m == driver.route_progress.total_distance_m
+        assert driver.route_progress.speed_mps == 0  # Finished motion is stopped.
+        assert (
+            driver.route_progress.distance_m / driver.route_progress.elapsed_seconds
+            == pytest.approx(2)
+        )
         assert driver.start_count == 1 and driver.stop_count == 1
         assert journal.has_intent(created["job_id"], "start")
         assert not journal.has_intent(created["job_id"], "upload")
         assert runner.run_once() is None
         assert driver.start_count == 1
+    finally:
+        journal.close()
+        client.close()
+
+
+def test_budget_exhaustion_is_attention_not_fake_completion(runtime):
+    s, root, created = runtime
+    runner, driver, journal, client = make_runner(s, root, run_seconds=0.05)
+    try:
+        result = runner.run_once()
+        assert result.state == "needs_attention"
+        assert result.reason_code == "simulation_incomplete"
+        assert not driver.route_progress.finished
+        assert driver.start_count == 1 and driver.stop_count == 1
+        assert not driver.verify(result.spec).evidence
+        assert not journal.has_intent(created["job_id"], "upload")
+        assert runner.run_once() is None
+        assert driver.start_count == 1
+        current = s.get("jobs/" + created["job_id"]).json()
+        assert current["state"] == "needs_attention"
+        assert current["reason_code"] == "simulation_incomplete"
     finally:
         journal.close()
         client.close()

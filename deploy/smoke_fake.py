@@ -46,7 +46,7 @@ def create_fixture(root, device_id):
             "rules": {
                 "minimum_distance_m": 1.0,
                 "maximum_duration_seconds": 100000.0,
-                "minimum_speed_mps": 0.0,
+                "minimum_speed_mps": 1.0,
                 "maximum_speed_mps": 10.0,
             },
             "checkpoint_source": "manual_confirmed",
@@ -59,7 +59,7 @@ def create_fixture(root, device_id):
             "input_crs": "WGS84",
             "points": [
                 {"latitude": 0.2, "longitude": 0.2},
-                {"latitude": 0.3, "longitude": 0.3},
+                {"latitude": 0.20001, "longitude": 0.20001},
             ],
             "source_ref": "synthetic-only",
         }
@@ -212,8 +212,12 @@ def run_smoke(root):
                     str(root / "agent.sqlite3"),
                     "--app-version",
                     "test-1",
+                    "--fake-state",
+                    str(root / "fake.json"),
                     "--run-seconds",
-                    "1",
+                    "2",
+                    "--route-speed-mps",
+                    "2",
                     "--once",
                 ],
                 env=env,
@@ -229,6 +233,8 @@ def run_smoke(root):
                 "fake agent did not complete the same job",
             )
             require(not result.get("evidence"), "simulation emitted record evidence")
+            fake_state = json.loads((root / "fake.json").read_text(encoding="utf-8"))
+            require(fake_state.get("route_finished") is True, "synthetic route did not finish")
             require(
                 all(
                     token not in agent.stdout + agent.stderr for token in (admin_token, agent_token)
@@ -261,6 +267,7 @@ def run_smoke(root):
             "create",
             "idempotent_replay",
             "fake_agent_completed",
+            "synthetic_route_finished",
             "query",
             "restart_persistence",
             "token_redaction",

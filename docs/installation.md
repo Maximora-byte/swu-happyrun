@@ -2,6 +2,12 @@
 
 先取得经审核的候选 commit SHA，在独立目录检出该提交。不要把 main、PR 最新页面或旧测试结果当作候选版本的证据。Python 3.11+；开发检查使用仓库锁定依赖。Python/uv 从其官方渠道安装；不需要 Root、LSPosed、APK 或系统安全设置修改。
 
+## 从旧候选替换安装
+
+本轮包版本仍为 `0.1.0`，版本号本身不能区分旧候选。优先新建独立虚拟环境，安装对应已审核 HEAD 的确切 wheel；若复用环境，必须显式强制重装该文件，例如 `python -m pip install --force-reinstall './dist/swu_happyrun-0.1.0-py3-none-any.whl[server,agent]'`，并使用该虚拟环境的 Python。按实际组件选择 extras。
+
+安装前核对准确 push HEAD 和该 artifact 的 SHA256SUMS（[校验步骤](delivery-validation.md#ci-候选安装包)）。安装后在源码目录外运行 `python -I -c "import swu_happyrun; print(swu_happyrun.__file__)"`，确认路径属于目标环境的 site-packages，再执行 smoke。`already installed` 或只看到 `0.1.0` 不能证明旧包已被替换；不要混用 PR 临时 merge SHA 的 artifact 与准确 push HEAD。
+
 ## Windows PowerShell
 
 以下操作在仓库根目录运行；不需要修改 PowerShell execution policy 或激活脚本。
