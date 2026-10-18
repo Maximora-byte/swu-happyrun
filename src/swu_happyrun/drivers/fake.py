@@ -97,7 +97,16 @@ class FakeDriver:
             observed_at=self.clock.utcnow(),
         )
 
+    def _check_run_binding(self) -> None:
+        if self._bound_view is None:
+            raise DriverError("session_mismatch")
+        if self._bound_view.desired_state == "cancel":
+            raise DriverError("cancel_requested")
+        if self._bound_view.recovery_action in {"verify_only", "stop_only"}:
+            raise DriverError("recovery_cannot_start")
+
     def _validate(self, job: JobSpec) -> None:
+        self._check_run_binding()
         if job.mode != "simulation":
             raise DriverError("fake_requires_simulation")
         if job.device_id != self.device_id:
@@ -144,6 +153,7 @@ class FakeDriver:
                 or elapsed_seconds < self._elapsed
             ):
                 raise DriverError("invalid_elapsed_time")
+            self._check_run_binding()
             if self.scenario == "tick_failure":
                 raise DriverError("tick_failed")
             self._execution_guard()

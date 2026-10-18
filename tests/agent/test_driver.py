@@ -415,3 +415,35 @@ def test_inspect_creates_fresh_probe_identity(tmp_path):
     _, driver = driver_fixture(tmp_path)
     first, second = driver.inspect(), driver.inspect()
     assert first.probe_id != second.probe_id
+
+
+@pytest.mark.parametrize("action", ["verify_only", "stop_only"])
+def test_fresh_driver_cannot_start_from_recovery_binding(tmp_path, action):
+    from swu_happyrun.drivers.base import DriverError
+
+    job, driver = driver_fixture(tmp_path)
+    view = session_view(job).model_copy(
+        update={"recovery_action": action, "resume_phase": "verifying"}
+    )
+    driver.bind_session(view)
+    with pytest.raises(DriverError, match="recovery_cannot_start"):
+        driver.prepare(job)
+    assert driver.start_count == 0
+
+
+def test_cancel_binding_blocks_tick_but_allows_stop(tmp_path):
+    from swu_happyrun.drivers.base import DriverError
+
+    job, driver = driver_fixture(tmp_path)
+    driver.prepare(job)
+    driver.start(job)
+    from swu_happyrun.core.states import JobState
+
+    view = session_view(job).model_copy(
+        update={"state": JobState.CANCELLING, "desired_state": "cancel"}
+    )
+    driver.bind_session(view)
+    with pytest.raises(DriverError, match="cancel_requested"):
+        driver.tick(job, 1.0)
+    driver.stop()
+    assert driver.tick_count == 0
