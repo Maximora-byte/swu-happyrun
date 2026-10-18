@@ -37,6 +37,16 @@
 
 `profile_id/route_id` 在代理本地私有配置库解析；服务器只保存引用。代理在 preflight 校验 ID、revision、实际应用版本与配置内容一致，缺少配置或版本不匹配进入 `needs_attention`，不得静默使用最新版。revision 使用规范化配置 JSON 的 SHA-256；具体规范化算法由 C0 固定并提供跨端测试向量。初版通过受控本地文件配置，尚不提供远程配置下载接口。
 
+### C0 实现约定
+
+- 所有 ID 是小写标准 UUID 字符串；配置 revision 是 64 位小写 SHA-256。网络输入时间严格接受以 `Z` 结尾的 RFC3339（最多 6 位小数）；Python aware datetime 会统一为 UTC，序列化输出 `Z`。
+- `core.canonical.profile_revision()` 对已校验模型的 `model_dump(mode='json')` 内容计算哈希：只删除顶层 `revision`，按键排序，紧凑分隔符，UTF-8、不转义 Unicode、禁止非有限数。数组顺序和数字表示（`1` / `1.0`）保留；这是 Python JSON v1 规范，不宣称兼容 RFC 8785。跨端测试向量在 `tests/contracts/test_canonical.py`。
+- 能力名称固定为 `location_read/location_write/sensor_probe/app_ui/record_read`；空列表表示未证实任何执行能力。主机安装发现不是设备执行能力。
+- `core.states.transition_allowed()` 仅检查结构边，不能代替 S1 中的租约、原代理身份、设备占用、开始意图、取消回执和证据绑定检查。例如 preflight → queued 仍须证明没有副作用且无取消意图；needs_attention → leased 仍须批准恢复动作。
+- nullable 字段也必须显式提供。`lease_token` 保留真实 wire 值但从模型 repr 排除；HTTP 层仍必须脱敏验证错误，不能把原始输入或错误堆栈直接回显。
+- `contracts/protocol-v1.schema.json` 从这 13 个共享模型生成；Schema 只表达静态约束，时间顺序、状态/证据关系等仍以模型验证为准。修改模型后运行导出命令，`--check` 用于拒绝漂移。
+- C0/L0 交付不等于 S1 所需上下文授权已经完备。Dot PR #12 提出的恢复例外、动作边、归属与证据会话绑定在 [C1 #14](https://github.com/Maximora-byte/swu-happyrun/issues/14) 通过独立协议 PR 固定；S1 在该任务完成前保持阻塞。现有 EvidenceRef 结构本身不能证明记录属于本次运行，禁止直接据此放开 succeeded。
+
 ## HTTP 接口
 
 | 方法与路径 | 角色 | 输入/输出 |
@@ -65,6 +75,7 @@
 - entering running 事件必须先获服务器接受，代理再在本地日志持久化 `start_intent`，最后执行设备开始。此后即便代理崩溃也按可能已开始处理。
 - 每个设备副作用前检查本地设备锁、当前 fence、取消信号和保守的租约剩余时间；等待/进程暂停可能耗尽租约，不能只依赖先前的 running 回执。租约过期或状态未知时仅执行受控停止。
 - running 之后失联/租约过期：needs_attention，禁止新代理重新开始。原代理重连后须取得同 job 的恢复租约，仅允许 verify_only / stop_only。恢复使用 `POST /leases/claim`，只向原绑定代理返回已获管理员批准的恢复任务；fence 增加，历史 token 失效。
+- verify_only 的合法结构序列是 needs_attention → leased → verifying → succeeded（device）或 completed（simulation），不得经过 preflight、ready 或 running。leased → verifying 仅在原代理持有当前有效恢复租约、持久批准的 recovery_action=verify_only 且 desired_state=run 时可用；普通新领取任务不得走此边。状态表只提供必要结构条件，S1 必须额外检查这些持久上下文及完成证据；取消意图只允许 stop_only。C1 #14 继续固定批准消费、revision、deadline 例外和 stop-ack 重放细节。
 - 旧租约禁止新的设备开始、路线更新、结束上传；持有设备的进程仍必须执行本地受控停止，恢复后报告观测，不能因失去租约而继续运行。
 - 取消活动任务先 cancelling；只有 stop-ack 后 cancelled。断线没有确认时留 needs_attention / `stop_unconfirmed`，不能显示已停止。
 - `desired_state=cancel` 的任务不能回 queued 或作为新运行领取；恢复租约只允许 stop_only。存在可能活动的设备时保留设备占用锁，直到确认停止或完成核验，不能用新 job 绕过旧任务的不确定状态。

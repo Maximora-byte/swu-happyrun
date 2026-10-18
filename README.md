@@ -4,7 +4,18 @@
 
 最新分工（2026-10-18）：**Dot 主导全部主要开发，本地 Codex 负责实测与集成验收。** 当前实施入口为[今晚至次日的冲刺任务](docs/handoffs/2026-10-18-dot-lead-sprint.md)；下列原始计划的旧负责人列由该分工覆盖。
 
-**当前状态：设计与协作计划阶段。尚未提供可运行产品，尚未验证任何步道乐跑版本的完整兼容性。**
+**当前分支继承 C0 共享协议库与 L0 只读诊断，并修复恢复结构边，待评审合并。服务器及执行代理尚未实现；未验证任何步道乐跑版本的完整兼容性。**
+
+## 本地开发与探测
+
+```powershell
+uv sync --all-extras --frozen
+uv run --no-sync python -m pytest -q
+uv run --no-sync python scripts/export_schema.py --check
+uv run --no-sync python -m swu_happyrun.drivers.mumu.discovery --json --index 0
+```
+
+诊断退出码 2 表示需要处理环境条件，例如实例未启动或设备未连接。该命令只读取信息，详细行为与本机证据见[兼容性记录](docs/compatibility.md)。统一 CLI 在 L2 交付。
 
 ## 开发入口
 
