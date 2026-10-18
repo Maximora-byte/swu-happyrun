@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import sys
-import time
 from pathlib import Path
 from uuid import UUID
 
@@ -35,6 +34,8 @@ def _parser():
     commands = parser.add_subparsers(dest="command", required=True)
     doctor = commands.add_parser("doctor")
     doctor.add_argument("--json", action="store_true")
+    doctor.add_argument("--backend", choices=["mumu", "android"], default="mumu")
+    doctor.add_argument("--samples", action="store_true", help="Optional read-only Android samples")
     for arg in ["manager", "index", "adb", "serial", "package"]:
         doctor.add_argument("--" + arg)
     profiles = commands.add_parser("profiles")
@@ -72,7 +73,12 @@ def _parser():
             "tick_failure",
         ],
     )
-    agent.add_argument("--run-seconds", type=float, default=1)
+    agent.add_argument(
+        "--run-seconds", type=float, default=1, help="Maximum simulation time budget"
+    )
+    agent.add_argument(
+        "--route-speed-mps", type=float, help="Synthetic route speed within profile rules"
+    )
     agent.add_argument("--once", action="store_true")
     devices = commands.add_parser("devices")
     devices.add_argument("--url", default="http://127.0.0.1:8080")
@@ -116,6 +122,18 @@ def _token(name):
 
 def _execute(args):
     if args.command == "doctor":
+        if args.backend == "android":
+            if not args.adb:
+                raise UsageError("Android diagnostics requires an explicit adb path")
+            from swu_happyrun.drivers.android_diagnostics import collect_report
+
+            report = collect_report(
+                adb=Path(args.adb), serial=args.serial, package=args.package, samples=args.samples
+            )
+            _emit(report)
+            return 0 if report["status"] == "ok" else 2
+        if args.samples:
+            raise UsageError("Samples require the android diagnostics backend")
         from swu_happyrun.drivers.mumu.discovery import collect_report
 
         report = collect_report(
@@ -181,6 +199,7 @@ def _execute(args):
             return 2
         from swu_happyrun.agent.client import ControlClient
         from swu_happyrun.agent.journal import RunJournal
+        from swu_happyrun.agent.lifecycle import Shutdown, ShutdownRequested, idle_liveness
         from swu_happyrun.agent.runner import AgentRunner
         from swu_happyrun.core.clock import SystemClock
         from swu_happyrun.core.models import AgentHello
@@ -194,10 +213,19 @@ def _execute(args):
             "app_version": args.app_version,
             "state_path": args.fake_state or args.journal.with_suffix(".fake.json"),
         }
+        if args.route_speed_mps is not None:
+            if not hasattr(FakeDriver, "route_progress"):
+                raise UsageError("This fake driver does not support route execution")
+            options["route_speed_mps"] = args.route_speed_mps
         if args.scenario != "normal":
             options["scenario"] = args.scenario
         driver = FakeDriver(args.device_id, LocalProfileStore(args.profiles), **options)
-        with ControlClient(args.url, token) as client, RunJournal(args.journal) as journal:
+        shutdown = Shutdown()
+        with (
+            shutdown.signals(),
+            ControlClient(args.url, token) as client,
+            RunJournal(args.journal) as journal,
+        ):
             runner = AgentRunner(
                 client,
                 driver,
@@ -205,23 +233,38 @@ def _execute(args):
                 SystemClock(),
                 device_id=args.device_id,
                 run_seconds=args.run_seconds,
+                sleep=shutdown.wait,
+                shutdown=shutdown,
             )
-            while True:
-                hello = AgentHello(
-                    protocol_version=1, agent_id=args.agent_id, devices=[driver.inspect()]
-                )
-                client.hello(hello)
-                runner.hello = hello
-                result = runner.run_once()
-                _emit({"status": "idle"} if result is None else result.model_dump(mode="json"))
-                if args.once:
-                    return (
-                        0
-                        if result is None or result.state in {"completed", "succeeded", "cancelled"}
-                        else 3
+            try:
+                while True:
+                    shutdown.check()
+                    hello = AgentHello(
+                        protocol_version=1, agent_id=args.agent_id, devices=[driver.inspect()]
                     )
-                client.heartbeat(hello)
-                time.sleep(10)
+                    # Retry the same probe; a retransmit must not fabricate freshness.
+                    if args.once:
+                        client.hello(hello)
+                    else:
+                        idle_liveness(lambda hello=hello: client.hello(hello), shutdown)
+                    runner.hello = hello
+                    result = runner.run_once()
+                    _emit({"status": "idle"} if result is None else result.model_dump(mode="json"))
+                    shutdown.check()
+                    if args.once:
+                        return (
+                            0
+                            if result is None
+                            or result.state in {"completed", "succeeded", "cancelled"}
+                            else 3
+                        )
+                    # There is no active execution here. Active heartbeat/renewal failures
+                    # remain fail-closed inside the runner, without reconnect retries.
+                    idle_liveness(lambda hello=hello: client.heartbeat(hello), shutdown)
+                    shutdown.wait(10)
+            except ShutdownRequested:
+                _emit({"status": "interrupted"})
+                return 128 + shutdown.signum
     from swu_happyrun.agent.client import ControlClient
 
     with ControlClient(args.url, _token("HAPPYRUN_ADMIN_TOKEN")) as client:

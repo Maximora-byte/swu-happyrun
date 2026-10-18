@@ -12,6 +12,10 @@ from swu_happyrun.core.models import AgentHello, JobEvent, JobView, LeaseCommand
 class ControlError(RuntimeError):
     """Safe diagnostic: excludes request credentials and remote response text."""
 
+    def __init__(self, message, *, retryable=False):
+        super().__init__(message)
+        self.retryable = retryable
+
 
 class ControlClient:
     def __init__(self, base_url: str, token: str, *, transport=None):
@@ -53,11 +57,14 @@ class ControlClient:
         try:
             response = self._http.request(method, path, json=payload, headers=headers)
         except httpx.HTTPError:
-            raise ControlError("control request failed or timed out") from None
+            raise ControlError("control request failed or timed out", retryable=True) from None
         if response.status_code == 204:
             return None
         if response.status_code not in {200, 201}:
-            raise ControlError(f"control request rejected: HTTP {response.status_code}")
+            raise ControlError(
+                f"control request rejected: HTTP {response.status_code}",
+                retryable=response.status_code in {408, 429, 502, 503, 504},
+            )
         try:
             return response.json()
         except ValueError:
