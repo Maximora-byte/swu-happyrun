@@ -73,12 +73,12 @@ def test_invalid_route_rejected(change):
 
 
 @pytest.mark.parametrize("crs", ["GCJ02", "BD09"])
-def test_unverified_conversion_is_rejected(crs):
+def test_outside_conversion_domain_is_rejected(crs):
     from swu_happyrun.core.geo import validate_route
 
     school, route = profiles()
     route.input_crs = crs
-    assert "coordinate_conversion_unverified" in validate_route(route, school)
+    assert "coordinate_outside_conversion_domain" in validate_route(route, school)
 
 
 def test_concave_boundary_rejects_segment_leaving_polygon():
@@ -158,5 +158,5 @@ def test_distance_does_not_silently_treat_other_crs_as_wgs84(crs):
 
     _, route = profiles()
     route.input_crs = crs
-    with pytest.raises(ValueError, match="coordinate_conversion_unverified"):
+    with pytest.raises(ValueError, match="coordinate_outside_conversion_domain"):
         route_distance_m(route)

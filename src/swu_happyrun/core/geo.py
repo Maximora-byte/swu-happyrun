@@ -1,9 +1,10 @@
-"""Conservative WGS84 route validation. No implicit coordinate conversion."""
+"""Route validation in normalized WGS84; no device calibration implied."""
 
 import math
 
 from pydantic import ValidationError
 
+from swu_happyrun.core.coordinates import normalize_points
 from swu_happyrun.core.models import GeoPoint, RouteProfile, SchoolProfile
 
 _REQUIRED_RULES = {
@@ -96,21 +97,26 @@ def _segment_inside(a, b, polygon):
     )
 
 
+def distance_between_points_m(a: GeoPoint, b: GeoPoint) -> float:
+    """Great-circle distance for already-normalized WGS84 points, in meters."""
+    a = GeoPoint.model_validate(a.model_dump(mode="python"))
+    b = GeoPoint.model_validate(b.model_dump(mode="python"))
+    lat1, lat2 = math.radians(a.latitude), math.radians(b.latitude)
+    delta = math.radians(b.longitude - a.longitude)
+    h = (
+        math.sin((lat2 - lat1) / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(delta / 2) ** 2
+    )
+    return 6371008.8 * 2 * math.asin(math.sqrt(min(1.0, max(0.0, h))))
+
+
+def _points_distance_m(points: tuple[GeoPoint, ...]) -> float:
+    return sum(distance_between_points_m(a, b) for a, b in zip(points, points[1:], strict=False))
+
+
 def route_distance_m(route: RouteProfile) -> float:
-    """Great-circle distance between consecutive WGS84 points."""
-    route = RouteProfile.model_validate(route.model_dump(mode="python"))
-    if route.input_crs != "WGS84":
-        raise ValueError("coordinate_conversion_unverified")
-    total = 0.0
-    for a, b in zip(route.points, route.points[1:], strict=False):
-        lat1, lat2 = math.radians(a.latitude), math.radians(b.latitude)
-        delta = math.radians(b.longitude - a.longitude)
-        h = (
-            math.sin((lat2 - lat1) / 2) ** 2
-            + math.cos(lat1) * math.cos(lat2) * math.sin(delta / 2) ** 2
-        )
-        total += 6371008.8 * 2 * math.asin(math.sqrt(min(1.0, max(0.0, h))))
-    return total
+    """Distance after explicit CRS normalization; preserve the source revision."""
+    return _points_distance_m(normalize_points(route))
 
 
 def validate_route(route: RouteProfile, school: SchoolProfile) -> list[str]:
@@ -121,8 +127,11 @@ def validate_route(route: RouteProfile, school: SchoolProfile) -> list[str]:
     except (ValidationError, ValueError, TypeError, AttributeError):
         return ["invalid_profile"]
     reasons = []
-    if route.input_crs != "WGS84":
-        reasons.append("coordinate_conversion_unverified")
+    try:
+        points = normalize_points(route)
+    except ValueError as exc:
+        reasons.append(str(exc))
+        points = None
     if not school.confirmed:
         reasons.append("school_unconfirmed")
     if set(school.rules) != _REQUIRED_RULES:
@@ -132,13 +141,13 @@ def validate_route(route: RouteProfile, school: SchoolProfile) -> list[str]:
         polygon.pop()
     if not _valid_polygon(polygon):
         reasons.append("invalid_boundary")
-    elif route.input_crs == "WGS84" and any(
+    elif points is not None and any(
         not _segment_inside(_xy(a), _xy(b), polygon)
-        for a, b in zip(route.points, route.points[1:], strict=False)
+        for a, b in zip(points, points[1:], strict=False)
     ):
         reasons.append("route_outside_boundary")
-    if route.input_crs == "WGS84":
-        distance = route_distance_m(route)
+    if points is not None:
+        distance = _points_distance_m(points)
         if distance == 0 or distance < school.rules.get("minimum_distance_m", 0):
             reasons.append("distance_below_minimum")
         maximum_speed = school.rules.get("maximum_speed_mps")
