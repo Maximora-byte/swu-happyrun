@@ -74,6 +74,7 @@
         },
         "observed_at": {
           "format": "date-time",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{1,6})?Z$",
           "title": "Observed At",
           "type": "string"
         }
@@ -105,6 +106,7 @@
         },
         "captured_at": {
           "format": "date-time",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{1,6})?Z$",
           "title": "Captured At",
           "type": "string"
         },
@@ -250,6 +252,7 @@
       "properties": {
         "deadline": {
           "format": "date-time",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{1,6})?Z$",
           "title": "Deadline",
           "type": "string"
         },
@@ -268,6 +271,7 @@
         },
         "not_before": {
           "format": "date-time",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{1,6})?Z$",
           "title": "Not Before",
           "type": "string"
         },
@@ -464,6 +468,7 @@
       "properties": {
         "expires_at": {
           "format": "date-time",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{1,6})?Z$",
           "title": "Expires At",
           "type": "string"
         },

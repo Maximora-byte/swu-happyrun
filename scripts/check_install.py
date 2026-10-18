@@ -26,6 +26,7 @@ def main() -> None:
                 "-c",
                 "from swu_happyrun.core.models import JobSpec; "
                 "from swu_happyrun.core.clock import SystemClock; "
+                "import swu_happyrun.drivers.mumu.discovery; "
                 "import importlib.util; "
                 "assert importlib.util.find_spec('fastapi') is None; "
                 "assert importlib.util.find_spec('httpx') is None; "

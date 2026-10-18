@@ -6,10 +6,10 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import NAMESPACE_URL, uuid5
 
 from swu_happyrun.core.models import DeviceCapability
 from swu_happyrun.drivers.command import ProbeError, run_readonly
+from swu_happyrun.drivers.identity import device_id
 
 
 @dataclass(frozen=True)
@@ -21,8 +21,9 @@ class MuMuInstance:
 
 
 class MuMuManager:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, host_id: str | None = None):
         self.path = Path(path)
+        self.host_id = host_id
 
     def inspect(self, index: str) -> list[MuMuInstance]:
         if not isinstance(index, str) or not re.fullmatch(r"all|[0-9]+", index):
@@ -62,9 +63,9 @@ class MuMuManager:
         return result
 
     def capability(self, instance: MuMuInstance) -> DeviceCapability:
-        identity = f"mumu:{os.path.normcase(str(self.path.resolve()))}:{instance.index}"
+        identity = f"{os.path.normcase(str(self.path.resolve()))}:{instance.index}"
         return DeviceCapability(
-            device_id=str(uuid5(NAMESPACE_URL, identity)),
+            device_id=device_id("mumu", identity, host_id=self.host_id),
             backend="mumu",
             app_version=None,
             capabilities=[],

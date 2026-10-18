@@ -45,6 +45,7 @@
 - `core.states.transition_allowed()` 仅检查结构边，不能代替 S1 中的租约、原代理身份、设备占用、开始意图、取消回执和证据绑定检查。例如 preflight → queued 仍须证明没有副作用且无取消意图；needs_attention → leased 仍须批准恢复动作。
 - nullable 字段也必须显式提供。`lease_token` 保留真实 wire 值但从模型 repr 排除；HTTP 层仍必须脱敏验证错误，不能把原始输入或错误堆栈直接回显。
 - `contracts/protocol-v1.schema.json` 从这 13 个共享模型生成；Schema 只表达静态约束，时间顺序、状态/证据关系等仍以模型验证为准。修改模型后运行导出命令，`--check` 用于拒绝漂移。
+- C0/L0 交付不等于 S1 所需上下文授权已经完备。Dot PR #12 提出的恢复例外、动作边、归属与证据会话绑定在 [C1 #14](https://github.com/Maximora-byte/swu-happyrun/issues/14) 通过独立协议 PR 固定；S1 在该任务完成前保持阻塞。现有 EvidenceRef 结构本身不能证明记录属于本次运行，禁止直接据此放开 succeeded。
 
 ## HTTP 接口
 

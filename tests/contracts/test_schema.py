@@ -3,9 +3,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema.exceptions import ValidationError as SchemaError
+from pydantic import ValidationError
 
-from swu_happyrun.core.models import JobSpec
+from swu_happyrun.core.models import DeviceCapability, JobSpec
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -37,3 +40,28 @@ def test_schema_export_and_drift_check(tmp_path, spec_data):
 
 def test_missing_schema_is_a_drift_failure(tmp_path):
     assert export("--output", str(tmp_path / "missing.json"), "--check").returncode == 1
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        "2026-10-18T08:00:00+08:00",
+        "2026-10-18T08:00:00.1234567Z",
+    ],
+)
+def test_timestamp_schema_matches_model_restrictions(tmp_path, timestamp):
+    target = tmp_path / "schema.json"
+    assert export("--output", str(target)).returncode == 0
+    schema = json.loads(target.read_text(encoding="utf-8"))
+    schema["anyOf"] = [{"$ref": "#/$defs/DeviceCapability"}]
+    payload = dict(
+        device_id="00000000-0000-4000-8000-000000000001",
+        backend="mumu",
+        app_version=None,
+        capabilities=[],
+        observed_at=timestamp,
+    )
+    with pytest.raises(ValidationError):
+        DeviceCapability.model_validate(payload)
+    with pytest.raises(SchemaError):
+        Draft202012Validator(schema, format_checker=FormatChecker()).validate(payload)

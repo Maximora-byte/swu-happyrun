@@ -2,18 +2,19 @@
 
 用户要求本地 Codex 与 Matrix 群中的真实 ChatGPT Dot 同步开发本项目，服务器端同步推进。GitHub 仓库是代码与任务事实源，群消息用于通知。
 
-**交接状态：已准备，未发送。** 用户本次选择先准备交接任务，Dot 尚未接单、未确认仓库能力、未启动云端开发。
+**交接状态：GitHub 已收到实际 Dot 回执，Matrix 群消息尚未发送。** Dot 已在 Issue #1 确认仓库读写与 Python 能力，并提交服务器测试设计 PR #12；本地实现交付于 PR #13。服务器运行时代码尚未开始，不能把接入探针或测试设计计为产品实现。
 
-- 私有仓库：[Maximora-byte/swu-happyrun](https://github.com/Maximora-byte/swu-happyrun)
+- 公开仓库：[Maximora-byte/swu-happyrun](https://github.com/Maximora-byte/swu-happyrun)，已按用户要求更改可见性。
 - 启动任务：[Issue #1](https://github.com/Maximora-byte/swu-happyrun/issues/1)
 - 设计基线：`015447dc97637311874dda061cb5fe48babb21f5`；实施前读取最新 main，代码共同基线以后续 C0 合并 SHA 为准。
 - 服务器任务：[S0 #4](https://github.com/Maximora-byte/swu-happyrun/issues/4) → [S1 #5](https://github.com/Maximora-byte/swu-happyrun/issues/5) → [S2 #6](https://github.com/Maximora-byte/swu-happyrun/issues/6)
+- 当前共享实现：[PR #13](https://github.com/Maximora-byte/swu-happyrun/pull/13)。C0 实际合并前可交叉检查和执行契约测试；S0 从最终合并 SHA 开始。恢复/证据绑定后续契约见 [C1 #14](https://github.com/Maximora-byte/swu-happyrun/issues/14)，S1 需等它合并。
 
 ## 先完成的接入检查
 
 1. 通过你自己的 GitHub 连接读取 `Maximora-byte/swu-happyrun`，核对默认分支与基线 SHA。
 2. 阅读 `AGENTS.md`、`docs/design-review.md`、总计划、服务器计划和控制协议 v1。
-3. 在服务器启动 Issue 回报：是否能读取私有仓库、创建分支/PR、实际执行 Python 测试；逐项报告，不用平台名称推断权限。
+3. 在服务器启动 Issue 回报：是否能读取仓库、创建分支/PR、实际执行 Python 测试；逐项报告，不用平台名称推断权限。当前已有一次实际回执，环境变化后再更新。
 4. 对 v1 契约做一次评审，重点检查 lease/fence、恢复、取消、日程和证据边界；有问题先在 Issue 留意见或提交范围明确的文档 PR。
 
 ## 实施责任
@@ -34,7 +35,7 @@
 
 > Dot，请与本地 Codex 协作开发西南大学步道乐跑适配项目，你负责服务器 S0-S2。本地 Codex 负责共享模型、Windows/MuMu 代理和最终集成。
 >
-> 私有仓库：https://github.com/Maximora-byte/swu-happyrun
+> 公开仓库：https://github.com/Maximora-byte/swu-happyrun
 >
 > 请先处理交接任务 https://github.com/Maximora-byte/swu-happyrun/issues/1 ，分别确认你能否读取仓库、创建分支/PR、实际运行 Python 测试，再评审 AGENTS.md、设计评估、控制协议 v1 和服务器实施计划。设计基线为 015447dc97637311874dda061cb5fe48babb21f5，实施前以最新 main 和 C0 合并 SHA 为准。
 >

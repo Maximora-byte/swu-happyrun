@@ -3,14 +3,16 @@
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import NAMESPACE_URL, uuid5
 
 from swu_happyrun.core.models import DeviceCapability
 from swu_happyrun.drivers.command import ProbeError, run_readonly
+from swu_happyrun.drivers.identity import device_id
 
 
 class AdbClient:
-    def __init__(self, path: Path, serial: str, *, package: str | None = None):
+    def __init__(
+        self, path: Path, serial: str, *, package: str | None = None, host_id: str | None = None
+    ):
         if not isinstance(serial, str) or not re.fullmatch(
             r"[A-Za-z0-9][A-Za-z0-9_.:\[\]-]*", serial
         ):
@@ -20,6 +22,7 @@ class AdbClient:
         ):
             raise ValueError("invalid_package")
         self.path, self.serial, self.package = Path(path), serial, package
+        self.host_id = host_id
 
     def _query(self, *args: str) -> str:
         return run_readonly(self.path, "-s", self.serial, *args).strip()
@@ -37,7 +40,7 @@ class AdbClient:
             if match:
                 app_version = match.group(1).strip() or None
         return DeviceCapability(
-            device_id=str(uuid5(NAMESPACE_URL, f"adb:{self.serial}")),
+            device_id=device_id("adb", self.serial, host_id=self.host_id),
             backend="android",
             app_version=app_version,
             capabilities=[],

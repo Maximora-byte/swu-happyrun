@@ -12,6 +12,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    WithJsonSchema,
     model_validator,
 )
 
@@ -41,11 +42,12 @@ def _protocol_version(value: object) -> object:
 
 
 ProtocolVersion = Annotated[Literal[1], BeforeValidator(_protocol_version)]
+UTC_PATTERN = r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?Z$"
 
 
 def _parse_wire_time(value: object) -> object:
     if isinstance(value, str):
-        if not re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?Z", value):
+        if not re.fullmatch(UTC_PATTERN, value):
             raise ValueError("wire timestamp must be UTC RFC3339 ending in Z")
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     return value
@@ -55,6 +57,7 @@ UtcTime = Annotated[
     AwareDatetime,
     BeforeValidator(_parse_wire_time),
     AfterValidator(lambda value: value.astimezone(UTC)),
+    WithJsonSchema({"type": "string", "format": "date-time", "pattern": UTC_PATTERN}),
 ]
 
 

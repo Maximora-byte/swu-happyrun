@@ -34,6 +34,10 @@ MuMu 的 `info --vmindex all` 返回索引映射，单实例 `info --vmindex 0` 
 
 ## 身份与限制
 
-MuMu 设备 UUID 从本地规范化管理器路径和实例索引派生；ADB UUID 从明确选定的 serial 派生。两者不是自动等价的身份。L0 将 ADB 结果放在独立 observation 中；L1 必须核实映射，才能把具体 Android 设备能力绑定到 MuMu 任务设备。
+每台主机首次生成随机 UUID 命名空间并持久保存，Windows 默认在 `%LOCALAPPDATA%/swu-happyrun/host-id`，Linux 默认在 `${XDG_CONFIG_HOME:-~/.config}/swu-happyrun/host-id`。同一主机的多个代理必须共用该文件；可用 `SWU_HAPPYRUN_HOST_ID_FILE` 指定共同路径。探测可以写入这一份本地主机元数据，不写模拟器或应用状态；损坏/不可读时明确报错，不自动换一个身份。测试使用临时文件隔离。
+
+MuMu UUID 从主机命名空间、规范化管理器路径和实例索引派生；ADB UUID 从同一主机命名空间与明确选定的 serial 派生。因此不同电脑使用相同安装路径或 loopback serial 时不会冲突。同一设备更换管理器安装位置或 namespace 会改变 ID，重新登记前必须确认旧任务已结束，不自动迁移活动租约。
+
+MuMu 与 ADB 两者不是自动等价的身份。L0 将 ADB 结果放在独立 observation 中；L1 必须核实映射，才能把具体 Android 设备能力绑定到 MuMu 任务设备。远程代理归属、已登记设备别名去重和设备级 fence 属于 S1/C1，不能只凭客户端 UUID 声明授予执行权。
 
 ADB 的 get-state/getprop 和可选包版本查询只证明连接和版本，不证明 `app_ui`、定位或记录读取能力。测试使用的假设备不能提高兼容性等级。有效乐跑记录仍需 L3 单独实测。
