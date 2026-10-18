@@ -1,0 +1,24 @@
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: swu-happyrun:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      HAPPYRUN_ADMIN_TOKEN: ${HAPPYRUN_ADMIN_TOKEN:?Set a private admin token}
+      HAPPYRUN_AGENT_TOKENS: ${HAPPYRUN_AGENT_TOKENS:?Set a private agent UUID-to-token JSON mapping}
+    volumes:
+      - happyrun-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+volumes:
+  happyrun-data:

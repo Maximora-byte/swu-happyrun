@@ -1,0 +1,62 @@
+# 安装与启动候选版本
+
+先取得经审核的候选 commit SHA，在独立目录检出该提交。不要把 main、PR 最新页面或旧测试结果当作候选版本的证据。Python 3.11+；开发检查使用仓库锁定依赖。Python/uv 从其官方渠道安装；不需要 Root、LSPosed、APK 或系统安全设置修改。
+
+## Windows PowerShell
+
+以下操作在仓库根目录运行；不需要修改 PowerShell execution policy 或激活脚本。
+
+```powershell
+py -3.11 --version
+uv --version
+uv sync --all-extras --frozen
+uv run --no-sync python -m pytest -q
+uv run --no-sync python scripts/export_schema.py --check
+uv run --no-sync ruff check .
+uv run --no-sync ruff format --check .
+uv build
+uv run --no-sync python scripts/check_install.py
+uv run --no-sync python -m swu_happyrun --help
+uv run --no-sync python -m swu_happyrun doctor --json
+```
+
+`doctor` 只能给出实际探测结果，实例停止/ADB 无连接不是设备能力通过。指定实例的旧模块入口仍可单独检查：
+
+```powershell
+uv run --no-sync python -m swu_happyrun.drivers.mumu.discovery --json --index 0
+```
+
+索引 0 仅在本地确认其为指定测试实例后使用，不要选择其他人的实例。诊断退出码 2 表示存在待处理条件，保留 JSON 里的原因。
+
+## Windows fake 启动验收
+
+依赖与所有组件集成后，在同一 PowerShell 运行：
+
+```powershell
+uv run --no-sync python deploy/smoke_fake.py
+```
+
+脚本启动仅回环可见的临时服务，自动创建合成配置与独立测试凭证，启动一次 fake agent，再重启服务验证同一任务。输出 `status=passed` 才表示本次 smoke 通过；其他退出码与结果保留用于排查。实际 Windows 验证状态见交付记录，不能预先视为通过。真实代理的 `--agent-id`、`--device-id`、`--profiles`、`--journal` 必须指向管理员注册的身份及本地私有数据，不复用 smoke 的临时资料。
+
+## Linux
+
+```sh
+python3 --version
+uv --version
+uv sync --all-extras --frozen
+uv run --no-sync python -m pytest -q
+uv run --no-sync python scripts/export_schema.py --check
+uv run --no-sync ruff check .
+uv run --no-sync ruff format --check .
+uv build
+uv run --no-sync python scripts/check_install.py
+```
+
+仅服务运行依赖可用 `uv sync --frozen --extra server` 安装；开发测试仍需 `--all-extras`。代理需要 `--extra agent`；服务端不需要 MuMu/ADB 或 Windows 依赖。CLI 及模块命令是否已集成、具体执行证据以 [交付验证记录](delivery-validation.md) 为准。
+
+## 运行与私有状态
+
+- 服务启动见 [server.md](server.md)；fake 联调见 [fake-e2e.md](fake-e2e.md)。
+- 数据库、代理 journal、配置、账号会话和诊断原始数据应放在仓库之外的私有目录，不能随源码打包。
+- 服务器 ADMIN 与代理 AGENT 使用不同 token；代理身份必须与服务映射中的 UUID 完全一致。不要把 token 放在命令行参数、截图、终端共享记录、Git 或问题描述中。
+- 真实设备运行需要明确能力、配置和版本样本；当前 fake 命令不提供设备执行授权或有效记录证明。
