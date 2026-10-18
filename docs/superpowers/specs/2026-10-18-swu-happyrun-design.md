@@ -4,6 +4,8 @@
 
 修订：按用户要求评估设计、建立 GitHub 仓库并规划本地 Codex / Matrix 群 ChatGPT Dot 协作。修订依据见 [设计评估](../../design-review.md)，具体接口以 [控制协议 v1](../../contracts/control-plane-v1.md) 为准。
 
+最新角色调整：2026-10-18 用户指定 Dot 负责主要开发、本地 Codex 负责实测；本设计中旧的实现负责人分配由 [AGENTS.md](../../../AGENTS.md) 和[冲刺交接](../../handoffs/2026-10-18-dot-lead-sprint.md)覆盖，技术验收边界保持不变。
+
 ## 1. 目标与已确认需求
 
 建立面向西南大学步道乐跑的统一仓库，同时推进 Windows/MuMu 执行端、服务器调度端，以及 vivo X200 Pro 无 Root 环境的兼容性研究。电脑端与服务器端必须共用任务、配置和结果模型。
