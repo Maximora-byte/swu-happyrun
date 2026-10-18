@@ -65,7 +65,7 @@ def test_hello_and_heartbeat(client):
     assert response.json() == {"server_time": "2026-10-19T00:00:00Z"}
 
 
-@pytest.mark.parametrize("suffix", ["cancel", "resume", "renew", "events", "stop-ack"])
+@pytest.mark.parametrize("suffix", ["resume", "renew", "events", "stop-ack"])
 def test_unimplemented_commands_do_not_succeed(client, spec, suffix):
     view = create_job(client, spec).json()
     response = client.post(f"/api/v1/jobs/{view['job_id']}/{suffix}", json={}, headers=ADMIN)

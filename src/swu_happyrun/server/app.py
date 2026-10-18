@@ -10,7 +10,7 @@ from starlette.exceptions import HTTPException
 from swu_happyrun.core.clock import Clock, SystemClock
 from swu_happyrun.server.auth import Authenticator
 from swu_happyrun.server.errors import ApiError
-from swu_happyrun.server.routes import agents, jobs
+from swu_happyrun.server.routes import agents, jobs, leases
 from swu_happyrun.server.settings import ServerSettings
 from swu_happyrun.server.store import SqliteJobStore
 
@@ -57,4 +57,5 @@ def create_app(settings: ServerSettings, *, clock: Clock | None = None) -> FastA
 
     app.include_router(jobs.router, prefix="/api/v1")
     app.include_router(agents.router, prefix="/api/v1")
+    app.include_router(leases.router, prefix="/api/v1")
     return app
