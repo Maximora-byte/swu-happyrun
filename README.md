@@ -2,7 +2,18 @@
 
 西南大学步道乐跑适配项目，规划 Windows/MuMu 执行代理、服务器调度和 vivo 无 Root 兼容性验证。
 
-**当前状态：设计与协作计划阶段。尚未提供可运行产品，尚未验证任何步道乐跑版本的完整兼容性。**
+**当前状态：C0 共享协议库与 L0 只读 MuMu 诊断已实现，待 PR 评审。完整执行代理、服务器及步道乐跑兼容性按后续任务推进。**
+
+## 本地开发与探测
+
+```powershell
+uv sync --all-extras --frozen
+uv run --no-sync python -m pytest -q
+uv run --no-sync python scripts/export_schema.py --check
+uv run --no-sync python -m swu_happyrun.drivers.mumu.discovery --json --index 0
+```
+
+诊断退出码 2 表示需要处理环境条件，例如实例未启动或设备未连接。该命令只读取信息，详细行为与本机证据见[兼容性记录](docs/compatibility.md)。统一 CLI 在 L2 交付。
 
 ## 开发入口
 
@@ -24,9 +35,9 @@
 | Windows/MuMu、ADB、执行代理、设备实测 | 本地 Codex | `src/swu_happyrun/agent/`、`src/swu_happyrun/drivers/`、`tests/agent/` |
 | 服务 API、数据库、租约、调度、容器配置 | Matrix 群中的 ChatGPT Dot | `src/swu_happyrun/server/`、`tests/server/`、`deploy/` |
 
-以上源码目录是计划中的责任边界，尚未实现。双方使用独立分支和 PR，GitHub Issue 记录任务状态；Matrix 用于通知与澄清。消息发送成功、Dot 接单、代码提交、测试通过和设备验收分别记录。
+以上是模块责任边界；当前已实现 core 共享模型与 drivers 中的只读探测。双方使用独立分支和 PR，GitHub Issue 记录任务状态；Matrix 用于通知与澄清。消息发送成功、Dot 接单、代码提交、测试通过和设备验收分别记录。
 
-已创建 11 个开发/交接任务。本轮按用户选择只准备 Dot 交接包，尚未发送 Matrix 启动消息，云端开发未启动。
+已创建 11 个开发/交接任务。本地 C0/L0 已开始，GitHub 中交接共享契约与 PR；Dot 的实际接单与服务器实现状态见[协作记录](docs/status.md)。
 
 ## 兼容性与数据
 

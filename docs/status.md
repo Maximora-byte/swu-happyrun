@@ -7,11 +7,12 @@
 | 初版设计 | 已提交 | `687d0be` |
 | 设计评估、v1 契约与双端计划 | 已发布，待 Dot 交叉评审 | [设计基线 015447d](https://github.com/Maximora-byte/swu-happyrun/commit/015447dc97637311874dda061cb5fe48babb21f5) |
 | GitHub 仓库 | 已创建并推送 | [Maximora-byte/swu-happyrun](https://github.com/Maximora-byte/swu-happyrun)，私有，默认分支 main |
-| Matrix Dot 入口 | 已识别，未派发 | 群名 `Matrix · ChatGPT Dot`；用户本次选择只准备交接任务 |
+| Matrix Dot 入口 | 已识别，待可用登录会话 | 群名 `Matrix · ChatGPT Dot`；独立连接器没有主动发新消息的接口 |
 | Dot 接单与仓库访问 | 未确认，云端开发未启动 | [交接 Issue #1](https://github.com/Maximora-byte/swu-happyrun/issues/1) 与[待发送说明](handoffs/dot-server.md)已准备 |
 | 服务器实现 | 未开始 | S0-S2 |
-| 本地代理实现 | 未开始 | C0、L0-L3 |
-| MuMu Android 15 兼容 | 未验证 | 已确认安装信息，无应用运行证据 |
+| 本地 C0 / L0 | 已实现，待 PR 评审 | 模型、状态表、时钟、配置哈希、Schema、锁文件、CI、只读探测及测试 |
+| 本地 L1-L3 | 未开始 | 等待 C0/L0 评审和设备/应用输入 |
+| MuMu Android 15 兼容 | 主机探测通过，设备能力未验证 | [本机只读证据](compatibility.md)；实例停止，ADB 无连接 |
 | vivo 无 Root 兼容 | 未验证 | 缺实际 Android/app 版本和测试连接 |
 | 西大学校规则与有效记录 | 未验证 | 需实际校区、规则、版本和本人会话 |
 
@@ -35,4 +36,4 @@
 | [#10 I0 双端联调](https://github.com/Maximora-byte/swu-happyrun/issues/10) | 本地 Codex，Dot 修复服务器 | #6、#8；设备验收依赖 #9 |
 | [#11 R0 vivo/纯接口研究](https://github.com/Maximora-byte/swu-happyrun/issues/11) | 本地 Codex，Dot 评审接口样本 | 实际设备版本、连接和脱敏样本 |
 
-本轮交付仅包含设计、协议草案、实施计划和协作任务。Markdown 相对链接、占位符扫描及 Git 空白检查通过；没有业务代码，因此未运行产品测试，也没有生成设备验收结论。
+本轮实现 C0/L0；Windows Python 3.11/3.13 自动测试、Schema 检查、构建与独立安装检查在 PR 中记录实际 HEAD 和结果。GitHub Actions 未运行或失败时单独记录，不代替本地证据。没有产生定位写入、应用流程或有效记录的验收结论。
