@@ -6,6 +6,19 @@
 
 Dot 已承担主要实现与修复；本地 Codex 负责 Windows、真实设备与集成独立验收。此分工覆盖旧计划中的负责人，详见 [冲刺交接](handoffs/2026-10-18-dot-lead-sprint.md) 与 [Issue #16](https://github.com/Maximora-byte/swu-happyrun/issues/16)。本文不宣称全部 v1 已验收，也不把提交、局部测试、软件联调、设备观测和学校有效记录合并为同一种“完成”。
 
+### 路线完整性与代理生命周期修复候选
+
+在 PR #25 历史 HEAD `19c15ba7cfad7fc1039b7b552677a3bd3e82cf6b` 上继续修复。旧版 400/31 项检查是历史软件证据，未覆盖“计时预算耗尽但路线未走完”的缺口，不能作为路线完成证明。本轮成功路径使用短合成路线、2 m/s 合法速度和 2 秒预算；只有到达归一化路线端点才 completed，预算不足立即 needs_attention / simulation_incomplete，不产生学校记录证据。
+
+- [Android 只读诊断 PR #26](https://github.com/Maximora-byte/swu-happyrun/pull/26)：`5e841d1fa8e231caa33608cdd689f0b79b1f9d8d`。新增模块与 [说明](android-diagnostics.md)，没有实测设备或启用位置写入。
+- [坐标归一化 PR #27](https://github.com/Maximora-byte/swu-happyrun/pull/27)：`9db9c8f31567b3300699e79b3a340f7bbaf3c22c`。[转换约束](coordinate-conversion.md)明确离线近似、输入域与源 revision 保留。
+- [代理生命周期 PR #28](https://github.com/Maximora-byte/swu-happyrun/pull/28)：`9c358125a9724fafd3468a64f069e5ec92acab49`。合作式停止、有限空闲重连、claim/renew 不盲目重试、诊断 CLI 接线。
+- [路线执行](route-execution.md)与 I0 测试按逐文件 manifest 组合；最终集成 SHA 以 PR/Actions 准确 push HEAD 为准，不将本地变更 commit 当远程提交。
+- 本轮 Linux / Python 3.12.14 完整 **513 passed**；源码外安装 wheel 的 **34 项真实 HTTP**、**7 项 daemon/TCP/subprocess** 和 CLI smoke 全通过。GCJ02/BD09 路线完整流程检查规范化端点、原文件/revision不变及无 record evidence。
+- 三 extras 安装隔离、frozen、Schema、lint/format、wheel/sdist 构建通过。Windows 信号停止、MuMu/vivo、步道乐跑实际流程、有效学校记录和 Docker 容器仍未实测；最终 Hosted CI 另按不可变 HEAD 核查。
+
+下表保留组成基线与阶段追溯；本轮结果以上述条目和[交付验证记录](delivery-validation.md)为准。
+
 | 范围 | 代码交付状态 | 软件验证证据 / 剩余门槛 | 设备与记录 |
 | --- | --- | --- | --- |
 | C0/L0 继承与恢复结构边 | [替代 PR #17](https://github.com/Maximora-byte/swu-happyrun/pull/17)，HEAD `6ed02c29924ccc3ab26c028fbf46d15477d84eb0` | 修复 verify_only 恢复路径；基于旧 PR #13 继承，最终候选须保留修复 | 只读主机诊断不等于设备执行通过 |
@@ -16,7 +29,7 @@ Dot 已承担主要实现与修复；本地 Codex 负责 Windows、真实设备�
 | L1 profile / driver / fake | [PR #20](https://github.com/Maximora-byte/swu-happyrun/pull/20)，阶段 HEAD `10b2172bebd8aba302cc8a0345503b32d38589f6`，继承 C1 alias 修复 | 阶段本地 216 tests；新 HEAD CI 单列核对；fake 不产 app_record | 真实设备适配 `needs_samples` |
 | L2 agent / journal / CLI | [PR #21](https://github.com/Maximora-byte/swu-happyrun/pull/21)，阶段 HEAD `e935632079c805952e7b143e5438c7d829b34f22`，已继承新版 L1 | Windows lock 与 attention 报告修复已包含；最终集成检查见下方 I0 与交付验证记录，最终提交 CI 单列核对 | 当前物理后端 `unsupported_by_candidate` |
 | 安装/部署/文档 | 候选文件已准备，尚未据此声称容器可运行 | 7 项交付静态/fixture 测试与 lint/format 通过；Docker CLI 不可用，容器检查 `not_tested` | Windows 安装待独立验证 |
-| I0 集成 | 组件不可变 HEAD 与逐文件 manifest 已固定；集成提交 SHA 以 PR/Actions 为准 | Linux完整 400 tests、wheel外部安装 31 真实HTTP用例及CLI smoke通过；冻结安装/Schema/lint/build/三extras隔离通过；最终提交CI/artifact另查 | 不替代本地设备验收 |
+| I0 集成 | 组件不可变 HEAD 与逐文件 manifest 已固定；集成提交 SHA 以 PR/Actions 为准 | 历史基线 Linux完整 400 tests、wheel外部安装 31 真实HTTP用例；本轮513/34+7及CLI smoke见上方；冻结安装/Schema/lint/build/三extras隔离通过；最终提交CI/artifact另查 | 不替代本地设备验收 |
 | L3 乐跑应用适配 | `needs_samples` / `unsupported_by_candidate` | 需要精确版本、本人会话、学校规则与脱敏页面样本，见 [Issue #9](https://github.com/Maximora-byte/swu-happyrun/issues/9) | `not_tested` |
 | vivo 无 Root | 保留研究方向；当前候选 `unsupported_by_candidate` | 见 [证据矩阵](research/vivo-noroot.md)，不推断平台永久不可行 | `not_tested` |
 | 纯接口直传 | 保留研究方向；当前候选 `unsupported_by_candidate` | 未取得西大真实业务协议/签名样本，见 [证据矩阵](research/direct-protocol.md) | `not_tested` |

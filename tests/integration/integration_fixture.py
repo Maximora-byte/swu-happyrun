@@ -35,7 +35,7 @@ def create_fixture(root, device_id):
             "rules": {
                 "minimum_distance_m": 1.0,
                 "maximum_duration_seconds": 100000.0,
-                "minimum_speed_mps": 0.0,
+                "minimum_speed_mps": 1.0,
                 "maximum_speed_mps": 10.0,
             },
             "checkpoint_source": "manual_confirmed",
@@ -48,7 +48,7 @@ def create_fixture(root, device_id):
             "input_crs": "WGS84",
             "points": [
                 {"latitude": 0.2, "longitude": 0.2},
-                {"latitude": 0.3, "longitude": 0.3},
+                {"latitude": 0.20001, "longitude": 0.20001},
             ],
             "source_ref": "synthetic-only",
         }

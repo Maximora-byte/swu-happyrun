@@ -54,7 +54,7 @@ def test_fake_lifecycle_has_no_record_evidence(tmp_path):
     assert driver.stop_count == 1
     result = driver.verify(job)
     assert result.status == "unknown"
-    assert result.reason_code == "simulation_only"
+    assert result.reason_code == "simulation_incomplete"
     assert result.evidence == []
 
 
@@ -264,7 +264,7 @@ def test_restarted_fake_verifies_stopped_state_without_prepare(tmp_path):
     driver.tick(job, 1.0)
     driver.stop()
     _, recovered = persistent_driver(tmp_path)
-    assert recovered.verify(job).reason_code == "simulation_only"
+    assert recovered.verify(job).reason_code == "simulation_incomplete"
     assert recovered.start_count == 1
     assert recovered.stop_count == 1
 
@@ -398,7 +398,7 @@ def test_recovery_rebind_accepts_same_session_higher_fence(tmp_path):
     driver.stop()
     _, recovered = persistent_driver(tmp_path)
     recovered.bind_session(session_view(job, fence=2))
-    assert recovered.verify(job).reason_code == "simulation_only"
+    assert recovered.verify(job).reason_code == "simulation_incomplete"
     assert recovered.start_count == 1
 
 

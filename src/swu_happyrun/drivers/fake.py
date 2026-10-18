@@ -12,6 +12,7 @@ from uuid import uuid4
 from swu_happyrun.core.clock import Clock, SystemClock
 from swu_happyrun.core.models import DeviceCapability, JobSpec, JobView, VerificationResult
 from swu_happyrun.core.profiles import LocalProfileStore
+from swu_happyrun.core.route import RouteExecution, RouteProgress
 from swu_happyrun.drivers.base import DriverError
 
 
@@ -25,6 +26,7 @@ class FakeDriver:
         app_version: str = "test-1",
         scenario: str | None = None,
         state_path: Path | None = None,
+        route_speed_mps: float | None = None,
     ):
         if scenario is not None and scenario not in {
             "normal",
@@ -41,6 +43,9 @@ class FakeDriver:
         self.profiles = profiles
         self.clock = clock or SystemClock()
         self.app_version = app_version
+        self._route_speed_mps = route_speed_mps
+        self._route: RouteExecution | None = None
+        self._route_finished = False
         self.start_count = 0
         self.tick_count = 0
         self.stop_count = 0
@@ -74,6 +79,8 @@ class FakeDriver:
                 else:
                     if self._active or previous.run_session_id == view.run_session_id:
                         raise DriverError("session_mismatch")
+                    self._route = None
+                    self._route_finished = False
                     self._job = None
                     self._started = False
                     self._stopped = False
@@ -122,6 +129,8 @@ class FakeDriver:
             if self._started and self._job == job:
                 raise DriverError("job_already_started")
             self._job = None
+            self._route = None
+            self._route_finished = False
             self._validate(job)
             self._job = job.model_copy(deep=True)
             self._stopped = False
@@ -135,7 +144,15 @@ class FakeDriver:
                 raise DriverError("start_not_prepared")
             # Recheck contents at the side-effect boundary, not just preflight.
             self._validate(job)
+            school, route = self.profiles.resolve(job, app_version=self.app_version)
+            # A deterministic simulation policy, never an inferred school target.
+            speed = self._route_speed_mps
+            if speed is None:
+                speed = school.rules["maximum_speed_mps"]
+            execution = RouteExecution(route, school, speed_mps=speed)
             self._execution_guard()
+            execution.start(now=0.0)
+            self._route = execution
             self._active = True
             self._started = True
             self.start_count += 1
@@ -156,7 +173,11 @@ class FakeDriver:
             self._check_run_binding()
             if self.scenario == "tick_failure":
                 raise DriverError("tick_failed")
+            if self._route is None:
+                # Persisted recovery may stop/verify, never silently resume motion.
+                raise DriverError("route_recovery_requires_stop")
             self._execution_guard()
+            self._route_finished = self._route.tick(now=elapsed_seconds).finished
             self._elapsed = elapsed_seconds
             self.tick_count += 1
             self._save_state()
@@ -169,17 +190,25 @@ class FakeDriver:
                 raise DriverError("stop_unconfirmed")
             if self._active:
                 self.stop_count += 1
+            if self._route is not None:
+                self._route.stop()
             self._active = False
             self._stopped = True
             self._save_state()
+
+    @property
+    def route_progress(self) -> RouteProgress | None:
+        """In-memory synthetic position only; absent on recovery, never evidence."""
+        with self._lock:
+            return self._route.snapshot if self._route is not None else None
 
     def verify(self, job: JobSpec) -> VerificationResult:
         with self._lock:
             if self._active or self._job != job or not self._stopped or not self._started:
                 raise DriverError("verification_not_ready")
-            reason = (
-                "upload_uncertain" if self.scenario == "upload_uncertain" else "simulation_only"
-            )
+            reason = "simulation_only" if self._route_finished else "simulation_incomplete"
+            if self.scenario == "upload_uncertain":
+                reason = "upload_uncertain"
             return VerificationResult(status="unknown", evidence=[], reason_code=reason)
 
     def _save_state(self) -> None:
@@ -192,6 +221,7 @@ class FakeDriver:
             return
         data = {
             "version": 2,
+            "route_finished": self._route_finished,
             "device_id": self.device_id,
             "app_version": self.app_version,
             "scenario": self.scenario,
@@ -256,6 +286,9 @@ class FakeDriver:
                 raise ValueError
             if requested_scenario is not None and scenario != requested_scenario:
                 raise ValueError
+            route_finished = data.get("route_finished", False)
+            if type(route_finished) is not bool or (route_finished and not data["started"]):
+                raise ValueError
             for name in ("active", "stopped", "started"):
                 if type(data[name]) is not bool:
                     raise ValueError
@@ -291,6 +324,7 @@ class FakeDriver:
             data["started"],
         )
         self._elapsed = data["elapsed"]
+        self._route_finished = route_finished
         self.start_count, self.tick_count = data["start_count"], data["tick_count"]
         self.stop_count = data["stop_count"]
         self._stop_failures_remaining = data["stop_failures_remaining"]
