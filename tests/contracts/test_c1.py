@@ -183,6 +183,53 @@ def test_conflicting_record_statuses_rejected():
         )
 
 
+@pytest.mark.parametrize("alias", [{"record_id": "e" * 64}, {"record_namespace": "other.adapter"}])
+@pytest.mark.parametrize("status", ["invalid", "pending"])
+def test_same_canonical_digest_rejects_conflicting_alias_status(alias, status):
+    with pytest.raises(ValidationError, match="conflicting statuses"):
+        m.JobEvent(
+            event_id=ID,
+            expected_revision=1,
+            state="succeeded",
+            reason_code=None,
+            resume_phase=None,
+            evidence=[record(), record(**alias, record_status=status)],
+        )
+
+
+def test_separate_events_allow_pending_to_valid_evolution():
+    pending = m.JobEvent(
+        event_id=ID,
+        expected_revision=1,
+        state="verifying",
+        reason_code=None,
+        resume_phase=None,
+        evidence=[record(record_status="pending")],
+    )
+    valid = m.JobEvent(
+        event_id=SESSION,
+        expected_revision=2,
+        state="succeeded",
+        reason_code=None,
+        resume_phase=None,
+        evidence=[record()],
+    )
+    assert pending.evidence[0].sha256 == valid.evidence[0].sha256
+    assert pending.evidence[0].record_status == "pending"
+    assert valid.evidence[0].record_status == "valid"
+
+
+def test_same_digest_alias_with_same_status_is_not_a_contradiction():
+    assert m.JobEvent(
+        event_id=ID,
+        expected_revision=1,
+        state="succeeded",
+        reason_code=None,
+        resume_phase=None,
+        evidence=[record(), record(record_id="e" * 64)],
+    )
+
+
 @pytest.mark.parametrize(
     "name,data",
     [
