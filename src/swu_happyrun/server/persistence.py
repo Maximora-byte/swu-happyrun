@@ -7,7 +7,7 @@ from swu_happyrun.core.models import JobView
 
 def initialize(db):
     version = db.execute("PRAGMA user_version").fetchone()[0]
-    if version not in (0, 1, 2):
+    if version not in (0, 1, 2, 3):
         raise ValueError("Unsupported database schema version")
     db.execute(
         "CREATE TABLE IF NOT EXISTS jobs (job_id TEXT PRIMARY KEY, "
@@ -72,4 +72,13 @@ def initialize(db):
     )
     for row in db.execute("SELECT view_json FROM jobs"):
         JobView.model_validate_json(row[0])
-    db.execute("PRAGMA user_version=2")
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS schedules (schedule_id TEXT PRIMARY KEY, "
+        "spec_json TEXT NOT NULL, created_date TEXT NOT NULL, scan_date TEXT NOT NULL)"
+    )
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS occurrences (schedule_id TEXT NOT NULL "
+        "REFERENCES schedules(schedule_id), local_date TEXT NOT NULL, status TEXT NOT NULL, "
+        "job_id TEXT REFERENCES jobs(job_id), PRIMARY KEY(schedule_id,local_date))"
+    )
+    db.execute("PRAGMA user_version=3")
