@@ -230,6 +230,43 @@ def test_same_digest_alias_with_same_status_is_not_a_contradiction():
     )
 
 
+@pytest.mark.parametrize("local_time", ["0١:00", "00:0١", "00:0٠", "0٠:00", "1１:2２", "０0:00"])
+def test_schedule_local_time_rejects_non_ascii_digits(spec_data, local_time):
+    with pytest.raises(ValidationError):
+        m.ScheduleSpec(
+            schedule_id=ID,
+            job_template=job(spec_data),
+            timezone="Asia/Shanghai",
+            local_time=local_time,
+            weekdays=[1],
+            enabled=True,
+        )
+
+
+@pytest.mark.parametrize("local_time", ["00:00", "09:09", "23:59"])
+def test_schedule_local_time_ascii_roundtrip(spec_data, local_time):
+    schedule = m.ScheduleSpec(
+        schedule_id=ID,
+        job_template=job(spec_data),
+        timezone="Asia/Shanghai",
+        local_time=local_time,
+        weekdays=[1],
+        enabled=True,
+    )
+    assert m.ScheduleSpec.model_validate_json(schedule.model_dump_json()) == schedule
+
+
+@pytest.mark.parametrize("local_time", ["0١:00", "00:0١", "00:0٠", "0٠:00", "1１:2２"])
+def test_exported_schedule_schema_rejects_non_ascii_digits(local_time):
+    from jsonschema import Draft202012Validator
+
+    schema = json.loads(
+        (Path(__file__).parents[2] / "contracts/protocol-v1.schema.json").read_text()
+    )
+    local_time_schema = schema["$defs"]["ScheduleSpec"]["properties"]["local_time"]
+    assert list(Draft202012Validator(local_time_schema).iter_errors(local_time))
+
+
 @pytest.mark.parametrize(
     "name,data",
     [
