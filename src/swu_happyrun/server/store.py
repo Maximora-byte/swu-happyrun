@@ -65,28 +65,32 @@ class SqliteJobStore(LeaseOperations):
                         409, "idempotency_conflict", "Key already used for another request"
                     )
                 return JobView.model_validate_json(previous[1]), False
-            view = JobView(
-                job_id=str(uuid4()),
-                run_session_id=None,
-                spec=spec,
-                state="queued",
-                revision=0,
-                desired_state="run",
-                fence=0,
-                agent_id=None,
-                reason_code=None,
-                resume_phase=None,
-                recovery_action=None,
-            )
-            db.execute(
-                "INSERT INTO jobs VALUES (?, ?, ?)",
-                (view.job_id, view.model_dump_json(), self.clock.utcnow().isoformat()),
-            )
+            view = self._insert_job(db, spec)
             db.execute(
                 "INSERT INTO job_requests VALUES (?, ?, ?)", (idempotency_key, request, view.job_id)
             )
-            db.execute("INSERT INTO runtime(job_id) VALUES (?)", (view.job_id,))
             return view, True
+
+    def _insert_job(self, db, spec):
+        view = JobView(
+            job_id=str(uuid4()),
+            run_session_id=None,
+            spec=spec,
+            state="queued",
+            revision=0,
+            desired_state="run",
+            fence=0,
+            agent_id=None,
+            reason_code=None,
+            resume_phase=None,
+            recovery_action=None,
+        )
+        db.execute(
+            "INSERT INTO jobs VALUES (?, ?, ?)",
+            (view.job_id, view.model_dump_json(), self.clock.utcnow().isoformat()),
+        )
+        db.execute("INSERT INTO runtime(job_id) VALUES (?)", (view.job_id,))
+        return view
 
     def get(self, job_id: str) -> JobView | None:
         self.expire()

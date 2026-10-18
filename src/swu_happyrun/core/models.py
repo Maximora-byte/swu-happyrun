@@ -265,7 +265,7 @@ class ScheduleSpec(ProtocolModel):
     schedule_id: UUIDString
     job_template: JobSpec
     timezone: Literal["Asia/Shanghai"]
-    local_time: Annotated[str, StringConstraints(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")]
+    local_time: Annotated[str, StringConstraints(pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")]
     weekdays: Annotated[list[Annotated[int, Field(ge=1, le=7)]], Field(min_length=1)]
     enabled: bool
 
