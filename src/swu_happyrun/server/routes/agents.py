@@ -11,10 +11,12 @@ from swu_happyrun.server.errors import ApiError
 router = APIRouter()
 
 
-def observe(hello: AgentHello, principal: Principal, request: Request) -> None:
+def observe(
+    hello: AgentHello, principal: Principal, request: Request, *, heartbeat: bool = False
+) -> None:
     if hello.agent_id != principal.agent_id:
         raise ApiError(403, "identity_mismatch", "Agent identity does not match credentials")
-    request.app.state.store.observe_agent(hello)
+    request.app.state.store.observe_agent(hello, heartbeat=heartbeat)
 
 
 @router.post("/agents/hello")
@@ -29,5 +31,5 @@ def hello_agent(
 def heartbeat(
     hello: AgentHello, request: Request, principal: Annotated[Principal, Depends(agent)]
 ) -> dict:
-    observe(hello, principal, request)
+    observe(hello, principal, request, heartbeat=True)
     return {"server_time": request.app.state.clock.utcnow().isoformat().replace("+00:00", "Z")}

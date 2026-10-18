@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -11,8 +11,14 @@ AGENT = {"Authorization": "Bearer test-agent-a"}
 
 
 class FakeClock:
+    def __init__(self):
+        self.now = datetime(2026, 10, 19, tzinfo=UTC)
+
     def utcnow(self):
-        return datetime(2026, 10, 19, tzinfo=UTC)
+        return self.now
+
+    def advance(self, seconds):
+        self.now += timedelta(seconds=seconds)
 
     def monotonic(self):
         return 0.0
@@ -22,6 +28,7 @@ class FakeClock:
 def spec():
     return dict(
         protocol_version=1,
+        expected_app_version=None,
         mode="simulation",
         profile_id=str(UUID(int=3)),
         profile_revision="a" * 64,

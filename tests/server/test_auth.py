@@ -59,19 +59,12 @@ def test_reject_ambiguous_credentials(tmp_path):
         )
 
 
-def test_assigned_job_visible_only_to_owner(client, spec, settings):
-    import json
-    import sqlite3
+def test_assigned_job_visible_only_to_owner(client, spec):
+    from .test_leases import prepared
 
-    from .conftest import AGENT_A
-
-    original = create_job(client, spec).json()
-    assigned = original | {"agent_id": AGENT_A}
-    with sqlite3.connect(settings.database_path) as db:
-        db.execute(
-            "UPDATE jobs SET view_json=? WHERE job_id=?", (json.dumps(assigned), original["job_id"])
-        )
-    path = "/api/v1/jobs/" + original["job_id"]
+    _, grant = prepared(client, spec)
+    assigned = grant["job"]
+    path = "/api/v1/jobs/" + assigned["job_id"]
     assert client.get(path, headers=AGENT).json() == assigned
     assert client.get(path, headers={"Authorization": "Bearer test-agent-b"}).status_code == 404
 

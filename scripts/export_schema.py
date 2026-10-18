@@ -22,6 +22,11 @@ MODELS = (
     models.RouteProfile,
     models.SchoolProfile,
     models.VerificationResult,
+    models.ClaimRequest,
+    models.ResumeRequest,
+    models.EventRequest,
+    models.StopAckRequest,
+    models.DeviceRegistration,
 )
 
 

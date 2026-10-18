@@ -9,6 +9,7 @@ def spec_data():
     return dict(
         protocol_version=1,
         mode="simulation",
+        expected_app_version=None,
         profile_id="00000000-0000-4000-8000-000000000001",
         profile_revision="a" * 64,
         route_id="00000000-0000-4000-8000-000000000002",
