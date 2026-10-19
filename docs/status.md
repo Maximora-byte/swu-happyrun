@@ -6,6 +6,8 @@
 
 [e490后续设备交付计划](superpowers/plans/2026-10-19-post-e490-device-delivery.md)为最新接续：#52/#53已由#55/#56修复并独立接受；MuMu普通/可选版各30项及独立界面离线流程通过。Dot优先修[#57](https://github.com/Maximora-byte/swu-happyrun/issues/57)的API35联网失败，处理[#58](https://github.com/Maximora-byte/swu-happyrun/issues/58)/[#59](https://github.com/Maximora-byte/swu-happyrun/issues/59)采证工具问题，再推进真实通道、指定乐跑版本与服务器闭环，vivo/纯接口独立研究。旧[七任务](superpowers/plans/2026-10-19-next-stage.md)和[资源计划](superpowers/plans/2026-10-19-resource-guided-adaptation.md)保留历史基线，不再重派已接受的#39/#40。
 
+用户已指定优先北碚一、二、四运动场的OSM/高德/腾讯地图输入。Codex已取得三条OSM跑道并生成本地RouteProfile候选；[地图采集回执](qa/2026-10-19-swu-map-inputs.md)和[#64](https://github.com/Maximora-byte/swu-happyrun/issues/64)交Dot接入。高德精度受限、腾讯无结果，尚未完成三源交叉核验；学校规则和真实记录门槛保持独立。
+
 ## 已合入 main
 
 | 范围 | PR / 准确 HEAD | 独立验收 |
@@ -22,7 +24,7 @@
 - [#35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 的原 CI/TLS 修订为 `28871b2d599a8ec8335570effb3207d2564639ab`；#39/#40合入原候选后为 `2d0fcc550f9c1f6cf8cc6e0106dcafd106cf181a`，整个产品仍待接受。采用版本须重新核对实际 HEAD。
 - [#39](https://github.com/Maximora-byte/swu-happyrun/pull/39) `5d52d78acf6d0f7e7064e1209810746dd05b93d7`：独立接受，merge `0bb9344ddefe8054177101583282c57f27f5b38a` 到原候选分支；[#37](https://github.com/Maximora-byte/swu-happyrun/issues/37) 已关闭。冲突整批回滚、合法精确映射与重传通过；非阻塞错误列断言已交 Dot 改进。
 - [#40](https://github.com/Maximora-byte/swu-happyrun/pull/40) 新修订 `8aef593dd89ca47d63a702ee1cf6952382169bbd`：独立恢复正反例通过，相关222项通过/1权限skip，已合入原候选；[#36](https://github.com/Maximora-byte/swu-happyrun/issues/36)关闭。旧69182c7失败保留在历史QA报告。
-- [#46](https://github.com/Maximora-byte/swu-happyrun/pull/46) 当前候选 `f705f91409df88df9614aa4dd53c136dd00ed8a0`：已合入#55/#56，组合Windows全套1125通过/15跳过/2警告。原`e490dce3b8eec56d2db5ccad939ec49fb3fa73ed`的API35 HTTPS前台9通过/5失败、后续两组恢复未运行，转[#57](https://github.com/Maximora-byte/swu-happyrun/issues/57)跟踪；没有Android修复覆盖此失败，保持Draft。e490独立全套1089通过/12跳过/2失败及原发现保留在[历史评审](https://github.com/Maximora-byte/swu-happyrun/pull/46#issuecomment-6262758607)。
+- [#46](https://github.com/Maximora-byte/swu-happyrun/pull/46) 最近已独立复测组合 `f705f91409df88df9614aa4dd53c136dd00ed8a0`：已合入#55/#56，组合Windows全套1125通过/15跳过/2警告。原`e490dce3b8eec56d2db5ccad939ec49fb3fa73ed`的API35 HTTPS前台9通过/5失败、后续两组恢复未运行，转[#57](https://github.com/Maximora-byte/swu-happyrun/issues/57)跟踪；后续候选提交及修复结果须另按准确HEAD核对，不将此旧结果标为最新HEAD通过。e490独立全套1089通过/12跳过/2失败及原发现保留在[历史评审](https://github.com/Maximora-byte/swu-happyrun/pull/46#issuecomment-6262758607)。
 - [#55](https://github.com/Maximora-byte/swu-happyrun/pull/55) `98057f986bef87138385d5643d91d19a2bc10aac`：普通Windows账户全套1093通过/15精确跳过，合入原候选merge `5eb00e27f59a7fe927dff389e4cdd6d8d8665a55`，#52关闭。
 - [#56](https://github.com/Maximora-byte/swu-happyrun/pull/56) `090f7eea6479cd5ce094741b4730aec6697543dd`：原失租复现零写入；组合全套1125通过/15跳过，tree与最终merge `f705f91409df88df9614aa4dd53c136dd00ed8a0`一致，#53关闭。两修复的Android CI仅build/static，runtime未授权/未执行，不计设备通过。
 - #25准确HEAD的四项Android CI失败未获豁免；#35新push与PR事件必须分别核对，旧绿灯不覆盖新失败。
@@ -47,7 +49,7 @@
 | #6 S2 | #25真实容器CI有成功证据；依赖S1修复与最终组合验收，本机Docker daemon未运行 |
 | #7 L1 | 合成profile/fake/离线转换有实现；已取得MuMu6.8.4.0 location/gyro帮助，真实读回/停止/坐标语义仍缺实现和验收，不能由命令帮助授予能力 |
 | #8 L2 | #40模拟恢复已接受；真实驱动接入与恢复继续按新计划任务2–4验收，不新增不确定start/upload |
-| #9 L3 | 缺精确应用版本、校区正式规则、本人会话和脱敏页面；真实适配仍需实现 |
+| #9 L3 | 已确定北碚一/二/四运动场地图目标，三条OSM本地路线候选结构与revision通过；#64交Dot接入，高德/腾讯尚待核验。精确应用版本、正式规则、本人会话和脱敏页面仍缺，真实适配及记录仍需验收 |
 | #10 I0 | #52/#53已接受；MuMu自身离线模拟通过，API35联网#57仍阻塞完整候选；工具#58/#59交Dot，真实闭环另按任务2–4验收 |
 | #11 R0 | vivo无Root/真实业务纯接口没有有效执行证据，不由fake或其他学校协议推断支持 |
 | #16 冲刺 | 保持开放；软件、设备与学校记录分别验收 |
