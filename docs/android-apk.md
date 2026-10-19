@@ -40,3 +40,11 @@ APK、合成测试输出和截图只保留 7 天；本地数据库、SDK local.p
 - [SDK 包和许可](https://developer.android.com/studio/intro/update)
 - [Android debug 签名与升级](https://developer.android.com/studio/publish/app-signing)
 - [LocationManager mock-location 权限](https://developer.android.com/reference/android/location/LocationManager)
+
+### API31 官方镜像许可兼容修正
+
+首次 Actions 中 API31 Google APIs 镜像要求新 Preview License，stdin EOF 正确拒绝，不能将其称为安装通过。现仅 API31 改为官方稳定 `system-images;android-31;default;x86_64`，API35 保持原 Google APIs 镜像。2026-10-19 只读核对[Google 官方镜像元数据](https://dl.google.com/android/repository/sys-img/android/sys-img2-1.xml)：default API31 revision5 属于 channel-0，使用 `android-sdk-license` 标准 SDK 协议。仍由 `sdkmanager </dev/null` 验证 runner 既有接受状态，缺许可即失败，不自动接受条款或复制许可文件。
+
+Default 镜像没有 Google 服务；HappyRun 本地原生应用不依赖 GMS，因此该镜像可验证本应用安装、界面、持久化与故障流程，不能验证 Google 服务集成、视频改版 MuMu 或真实乐跑兼容性。真正安装/测试结果以新提交 CI 为准。
+
+API35 的同轮日志显示 `Unknown AVD name`：创建工具和模拟器未看到同一 AVD 元数据，并非已证实软件加速不支持或 APK 崩溃。依据[官方 Android 环境变量说明](https://developer.android.com/tools/variables)，CI脚本现把 ANDROID_USER_HOME/ANDROID_EMULATOR_HOME/ANDROID_AVD_HOME 统一到runner临时私有目录，创建后检查ini和list-avds；等待ADB/boot时检查模拟器进程，早退立即打印日志而不空等600秒。保持KVM权限不变及有界软件模式；实际修复后启动与11项测试仍以新HEAD Actions为准。
