@@ -8,6 +8,14 @@
 
 安装前核对准确 push HEAD 和该 artifact 的 SHA256SUMS（[校验步骤](delivery-validation.md#ci-候选安装包)）。安装后在源码目录外运行 `python -I -c "import swu_happyrun; print(swu_happyrun.__file__)"`，确认路径属于目标环境的 site-packages，再执行 smoke。`already installed` 或只看到 `0.1.0` 不能证明旧包已被替换；不要混用 PR 临时 merge SHA 的 artifact 与准确 push HEAD。
 
+## 本地控制台入口
+
+只运行控制台/服务器使用 `uv sync --extra server --frozen`；不需要Playwright或Chromium测试包。普通开发/软件自检使用下方显式server/agent/dev组合；仅执行浏览器QA时额外添加 `--extra browser-test`。
+
+按照[服务器配置](server.md)设置本地服务与ADMIN凭据后，访问 `http://127.0.0.1:8080/console/`（使用实际端口）。可在原server命令加 `--open-browser`，例如 `swu-happyrun server --host 127.0.0.1 --port 8080 --database ./local/server.sqlite3 --open-browser`；请先确认目录可写。
+
+此选项是显式选择，默认仍不打开浏览器；只允许loopback地址，且成功监听后才尝试打开。浏览器不可用时手动打开URL即可，服务不因此失败；它不启动agent或设备任务。ADMIN凭据仅输入本地页面，不放URL。操作与隐私边界见[控制台说明](console.md)。真实设备后端仍按现有unsupported/needs_samples限制处理。
+
 ## Windows PowerShell
 
 以下操作在仓库根目录运行；不需要修改 PowerShell execution policy 或激活脚本。
@@ -15,7 +23,7 @@
 ```powershell
 py -3.11 --version
 uv --version
-uv sync --all-extras --frozen
+uv sync --extra server --extra agent --extra dev --frozen
 uv run --no-sync python -m pytest -q
 uv run --no-sync python scripts/export_schema.py --check
 uv run --no-sync ruff check .
@@ -49,7 +57,7 @@ uv run --no-sync python deploy/smoke_fake.py
 ```sh
 python3 --version
 uv --version
-uv sync --all-extras --frozen
+uv sync --extra server --extra agent --extra dev --frozen
 uv run --no-sync python -m pytest -q
 uv run --no-sync python scripts/export_schema.py --check
 uv run --no-sync ruff check .
@@ -58,7 +66,7 @@ uv build
 uv run --no-sync python scripts/check_install.py
 ```
 
-仅服务运行依赖可用 `uv sync --frozen --extra server` 安装；开发测试仍需 `--all-extras`。代理需要 `--extra agent`；服务端不需要 MuMu/ADB 或 Windows 依赖。CLI 及模块命令是否已集成、具体执行证据以 [交付验证记录](delivery-validation.md) 为准。
+仅服务运行依赖可用 `uv sync --frozen --extra server` 安装；开发测试使用 `--extra server --extra agent --extra dev`。代理需要 `--extra agent`；服务端不需要 MuMu/ADB 或 Windows 依赖。CLI 及模块命令是否已集成、具体执行证据以 [交付验证记录](delivery-validation.md) 为准。
 
 ## 运行与私有状态
 

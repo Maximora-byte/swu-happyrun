@@ -1,8 +1,9 @@
 """S0 create/query endpoints; mutation commands are deliberately not registered."""
 
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from swu_happyrun.core.models import JobSpec, JobView
 from swu_happyrun.server.auth import Principal, administrator, authenticated
@@ -22,6 +23,19 @@ def create_job(
     view, created = request.app.state.store.create(spec, idempotency_key or "")
     response.status_code = 201 if created else 200
     return view
+
+
+@router.get("/jobs")
+def list_jobs(
+    request: Request,
+    principal: Annotated[Principal, Depends(administrator)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    before: UUID | None = None,
+):
+    items, next_cursor = request.app.state.store.list_jobs(
+        limit, str(before) if before is not None else None
+    )
+    return {"items": items, "next_cursor": next_cursor}
 
 
 @router.get("/jobs/{job_id}", response_model=JobView)
