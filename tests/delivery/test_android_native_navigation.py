@@ -15,11 +15,12 @@ def test_native_navigation_shared_budget_and_actual_adapter():
         [sys.executable, str(root / "scripts/check_native_navigation.py")],
         check=False,
         capture_output=True,
-        text=True,
-        encoding="utf-8",
         timeout=60,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "RED reproduced: requested 5000 ms budget failed at 1000 ms" in result.stdout
-    assert "PASS 5 shared-deadline checks" in result.stdout
-    assert "PASS 8 extracted-adapter checks (controlled ports, not ART)" in result.stdout
+    # Keep decoding out of Windows reader threads; invalid bytes fail here.
+    stdout = result.stdout.decode("utf-8", errors="strict")
+    stderr = result.stderr.decode("utf-8", errors="strict")
+    assert result.returncode == 0, stderr
+    assert "RED reproduced: requested 5000 ms budget failed at 1000 ms" in stdout
+    assert "PASS 5 shared-deadline checks" in stdout
+    assert "PASS 8 extracted-adapter checks (controlled ports, not ART)" in stdout
