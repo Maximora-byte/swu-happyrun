@@ -3,6 +3,7 @@
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from swu_happyrun.core.models import DeviceCapability
 from swu_happyrun.drivers.command import ProbeError, run_readonly
@@ -45,4 +46,5 @@ class AdbClient:
             app_version=app_version,
             capabilities=[],
             observed_at=datetime.now(UTC),
+            probe_id=str(uuid4()),
         )
