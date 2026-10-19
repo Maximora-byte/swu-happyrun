@@ -49,7 +49,7 @@ def check_build_only(text):
 
 
 def test_dedicated_workflow_has_no_runtime_or_private_artifact():
-    check_build_only(WORKFLOW.read_text())
+    check_build_only(WORKFLOW.read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize(
@@ -66,7 +66,7 @@ def test_dedicated_workflow_has_no_runtime_or_private_artifact():
 )
 def test_runtime_and_private_upload_mutations_are_rejected(addition):
     with pytest.raises(ValueError):
-        check_build_only(WORKFLOW.read_text() + "\n" + addition)
+        check_build_only(WORKFLOW.read_text(encoding="utf-8") + "\n" + addition)
 
 
 @pytest.mark.parametrize(
@@ -80,4 +80,4 @@ def test_runtime_and_private_upload_mutations_are_rejected(addition):
 )
 def test_missing_identity_cleanup_or_sdk_boundary_rejected(removed):
     with pytest.raises(ValueError):
-        check_build_only(WORKFLOW.read_text().replace(removed, ""))
+        check_build_only(WORKFLOW.read_text(encoding="utf-8").replace(removed, ""))

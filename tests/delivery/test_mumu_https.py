@@ -116,7 +116,7 @@ class MumuHttpsTests(unittest.TestCase):
 
     def test_no_pm_clear_or_old_avd_guard_override_in_new_source(self):
         m = self.module()
-        source = Path(m.__file__).read_text()
+        source = Path(m.__file__).read_text(encoding="utf-8")
         self.assertNotIn('pm", "clear', source)
         self.assertNotIn("HAPPYRUN_DISPOSABLE_EMULATOR", source)
         self.assertNotIn("10.0.2.2", source)
@@ -133,7 +133,7 @@ def test_adapter_namespace_and_guards_are_required():
         / "RemoteMumuHttpsAcceptanceTest.java"
     )
     assert path.exists(), "guarded adapter must exist before any MuMu runtime is enabled"
-    source = path.read_text()
+    source = path.read_text(encoding="utf-8")
     for value in [
         "getApkContentsSigners",
         "mumu-https-qa",
@@ -320,7 +320,7 @@ def test_main_preflight_never_operates_device(monkeypatch, tmp_path):
         ]
     )
     assert code == 2
-    report = json.loads(output.read_text())
+    report = json.loads(output.read_text(encoding="utf-8"))
     assert report["runtime_status"] == "not_run"
     assert all(c["result"] == "not_run" for c in report["cases"])
 
@@ -356,7 +356,7 @@ def test_output_is_exclusive_and_never_aliases_private_inputs(tmp_path):
 
     assert hasattr(m, "reserve_report"), "report must be reserved safely before any operation"
     secret = tmp_path / "private.key"
-    secret.write_text("synthetic sentinel")
+    secret.write_text("synthetic sentinel", encoding="utf-8")
     args = SimpleNamespace(
         output=secret,
         server_key=secret,
@@ -367,7 +367,7 @@ def test_output_is_exclusive_and_never_aliases_private_inputs(tmp_path):
     )
     with unittest.TestCase().assertRaises((ValueError, FileExistsError)):
         m.reserve_report(args)
-    assert secret.read_text() == "synthetic sentinel"
+    assert secret.read_text(encoding="utf-8") == "synthetic sentinel"
     args.output = tmp_path / "new.json"
     with m.reserve_report(args) as output:
         output.write("{}")
@@ -380,7 +380,7 @@ def test_output_is_exclusive_and_never_aliases_private_inputs(tmp_path):
         return
     with unittest.TestCase().assertRaises((ValueError, FileExistsError, OSError)):
         m.reserve_report(args)
-    assert secret.read_text() == "synthetic sentinel"
+    assert secret.read_text(encoding="utf-8") == "synthetic sentinel"
 
 
 def test_server_assertions_cannot_be_disabled_by_python_optimization():
