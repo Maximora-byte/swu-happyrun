@@ -70,6 +70,6 @@ done
 check_emulator_alive
 adb install -r "$root/android/app/build/outputs/apk/debug/app-debug.apk"
 HAPPYRUN_DISPOSABLE_EMULATOR=1 python "$root/scripts/check_android_launch.py" "$root/qa/android"
-adb install -r "$root/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
-HAPPYRUN_DISPOSABLE_EMULATOR=1 bash "$root/scripts/android_acceptance.sh"
+adb install -r "${HAPPYRUN_ANDROID_TEST_APK:-$root/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk}"
+HAPPYRUN_DISPOSABLE_EMULATOR=1 bash "${HAPPYRUN_ANDROID_ACCEPTANCE_SCRIPT:-$root/scripts/android_acceptance.sh}"
 adb exec-out screencap -p > "$root/qa/android/launched.png"

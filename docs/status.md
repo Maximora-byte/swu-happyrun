@@ -2,6 +2,18 @@
 
 更新日期：2026-10-18（Asia/Shanghai）。当前结论以下方“当前交付候选”为准；末尾保存旧快照用于追溯，不能将旧“未接单/未开始”作为本轮状态。
 
+## 向导启动诊断重基（2026-10-19）
+
+本轮向导组合已重基至 629f2e9b86d7a72502f528abd1c1edf999d6a842，保留稳定 API31 镜像、私有 AVD 路径、快速失败与有界启动诊断。启动探针仅增加固定 core/wizard 首屏控件配置，默认 core 不变；向导 CI 显式选择 wizard，两变体仍要求 resumed、精确包名、非零控件范围及无崩溃/ANR。不会点击 Root 确认按钮。
+
+最终 Linux/Python3.12 完整 **612 passed**（95.17秒，1条继承warning），交付专项58项、Ruff/137格式、Schema、frozen、Node与分发隐私通过。34个Java源文件与上一向导组合逐字节相同，复用其23项JUnit实测，未伪称重跑。实际Android编译/AVD及ART仍以新提交CI/设备证据为准；下方584项保留为重基前证据。
+
+## 单入口向导与可选自身模块候选（2026-10-19）
+
+本轮独立基于 cf3cfee12701573b4a577225d66980bb2279a346，新增同一原生入口的环境向导、显式确认后只读 Root 诊断及自身 scope 模块变体。默认不调用 su；取消、刷新和打开说明不授权 Root 检查。模块打包标识与 inactive/unknown/active 实时回执分别展示，任何诊断状态都不解锁真实执行。组合来源、签名升级边界与证据分层见[向导组合说明](android-onboarding-integration.md)。
+
+本地 Java 23 个 JUnit（最后两处文案改动后重新编译复跑）、最终完整 Python **584 passed**（124.76秒，1条继承warning）、交付专项30项通过；首次582项日志保留，未当最终数量。frozen、Schema、Ruff/135文件格式、Node helper、wheel/sdist隐私检查通过。Android 编译、实际 APK 资源检查、无框架安装/同签名替换及每变体四项向导仪器测试尚待本轮准确 HEAD 的 Actions；首次 APK 的11项保持独立。用户最终单包候选必须通过上述门槛后才能推荐。MuMu改版、ART激活/禁用重启、真实Root授权和学校有效记录未验收。
+
 ## 原生 APK 新阶段（2026-10-19）
 
 用户最新目标是在 MuMu 内安装 APK 直接使用。本阶段新增无需 PC 服务的原生 Java/Android SDK 本地应用；旧计划“不做独立 APK”已由本次明确需求覆盖，旧软件证据保留。构建、安装与签名限制见[APK 交付说明](android-apk.md)。当前 APK/官方 emulator 结果必须按本轮集成 HEAD 的 Actions 单独核对，不借用此前 Python/网页测试通过结论。真实 MuMu、应用执行和学校有效记录仍未验收；Root/LSPosed 仅保留可选能力架构，不默认安装或配置。

@@ -115,6 +115,7 @@ jobs:
           sha256sum android/app/build/outputs/apk/debug/app-debug.apk > qa/android/SHA256SUMS
       - name: Install and exercise APK on official Android emulator
         env:
+          HAPPYRUN_ANDROID_LAUNCH_PROFILE: wizard
           HAPPYRUN_ANDROID_API: ${{ matrix.api }}
         run: bash scripts/android_emulator_test.sh
       - name: Upload native APK and synthetic QA evidence
@@ -151,3 +152,82 @@ jobs:
             qa/android/android-completed.png
           if-no-files-found: error
           retention-days: 7
+
+  android-self-probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [31, 35]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Use official preinstalled Android SDK and JDK
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          test -d "$ANDROID_HOME/licenses"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools' 'emulator' </dev/null
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+      - name: Build ordinary and optional variants with one temporary certificate
+        run: |
+          bash scripts/android_gradle.sh verifySelfProbeApi lintDebug lintSelfProbe testDebugUnitTest testSelfProbeUnitTest assembleDebug assembleSelfProbe
+          bash scripts/android_gradle.sh -PprobeInstrumentation assembleSelfProbeAndroidTest
+      - name: Check packaged scope, absent framework classes, and same signing identity
+        run: |
+          set -euo pipefail
+          mkdir -p qa/android
+          python3 scripts/check_selfprobe_apks.py --apkanalyzer "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" --debug android/app/build/outputs/apk/debug/app-debug.apk --optional android/app/build/outputs/apk/selfProbe/app-selfProbe.apk --report qa/android/selfprobe-static.json
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee qa/android/selfprobe-debug-signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/selfProbe/app-selfProbe.apk | tee qa/android/selfprobe-optional-signature.txt
+          grep -q 'certificate SHA-256 digest:' qa/android/selfprobe-debug-signature.txt
+          grep -q 'certificate SHA-256 digest:' qa/android/selfprobe-optional-signature.txt
+          diff <(grep 'certificate SHA-256 digest:' qa/android/selfprobe-debug-signature.txt) <(grep 'certificate SHA-256 digest:' qa/android/selfprobe-optional-signature.txt)
+          sha256sum android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/selfProbe/app-selfProbe.apk > qa/android/selfprobe-SHA256SUMS
+      - name: Verify both variants remain inactive without a framework
+        env:
+          HAPPYRUN_ANDROID_LAUNCH_PROFILE: wizard
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+          HAPPYRUN_ANDROID_ACCEPTANCE_SCRIPT: scripts/android_selfprobe_acceptance.sh
+          HAPPYRUN_ANDROID_TEST_APK: android/app/build/outputs/apk/androidTest/selfProbe/app-selfProbe-androidTest.apk
+        run: bash scripts/android_emulator_test.sh
+      - name: Upload optional candidate and bounded synthetic evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-self-probe-api${{ matrix.api }}-${{ github.sha }}
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/selfProbe/app-selfProbe.apk
+            qa/android/selfprobe-static.json
+            qa/android/selfprobe-debug-signature.txt
+            qa/android/selfprobe-optional-signature.txt
+            qa/android/selfprobe-SHA256SUMS
+            qa/android/selfprobe-debug.txt
+            qa/android/selfprobe-optional.txt
+            qa/android/selfprobe-report.json
+            qa/android/launch-activity.txt
+            qa/android/launch-window.txt
+            qa/android/launch-logcat.txt
+            qa/android/launch-pid.txt
+            qa/android/launch-ui.xml
+            qa/android/launch-screen.png
+            qa/android/launch-verification.txt
+            qa/android/optional-launch/launch.txt
+            qa/android/optional-launch/launch-activity.txt
+            qa/android/optional-launch/launch-window.txt
+            qa/android/optional-launch/launch-logcat.txt
+            qa/android/optional-launch/launch-pid.txt
+            qa/android/optional-launch/launch-ui.xml
+            qa/android/optional-launch/launch-screen.png
+            qa/android/optional-launch/launch-verification.txt
+            qa/android/wizard-debug.txt
+            qa/android/wizard-optional.txt
+            qa/android/wizard-report.json
+            qa/android/emulator.log
+            qa/android/launch.txt
+            qa/android/launched.png
+          retention-days: 7
+          if-no-files-found: error

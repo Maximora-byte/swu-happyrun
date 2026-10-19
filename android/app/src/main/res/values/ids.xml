@@ -12,4 +12,11 @@
     <item type="id" name="actual_run_blocked" />
     <item type="id" name="operation_notice" />
     <item type="id" name="task_history" />
+    <item type="id" name="framework_probe" />
+    <item type="id" name="wizard_refresh" />
+    <item type="id" name="wizard_next" />
+    <item type="id" name="root_evidence" />
+    <item type="id" name="root_check" />
+    <item type="id" name="root_cancel" />
+    <item type="id" name="wizard_environment" />
 </resources>

@@ -21,6 +21,10 @@ import android.widget.TextView;
 import org.happyrun.app.diagnostics.CheckItem;
 import org.happyrun.app.runtime.LocalRuntime;
 import org.happyrun.app.runtime.TaskSnapshot;
+import org.happyrun.app.selfprobe.ProbeReport;
+import org.happyrun.app.selfprobe.SelfProbe;
+import org.happyrun.app.rootprobe.RootDiagnostic;
+import org.happyrun.app.rootprobe.RootReport;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -28,6 +32,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Native Android UI. It observes the runtime; it never invents execution progress. */
 public final class MainActivity extends Activity {
@@ -37,6 +42,8 @@ public final class MainActivity extends Activity {
     private static final int BACKGROUND = Color.rgb(243, 246, 250);
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final ExecutorService rootIo = Executors.newSingleThreadExecutor();
+    private final AtomicBoolean rootCancelled = new AtomicBoolean();
     private LocalRuntime runtime;
     private TaskSnapshot task;
     private ScrollView scroll;
@@ -47,6 +54,18 @@ public final class MainActivity extends Activity {
     private TextView taskId;
     private TextView notice;
     private TextView metrics;
+    private TextView frameworkEvidence;
+    private TextView rootEvidence;
+    private Button wizardNext;
+    private Button wizardRefresh;
+    private Button rootCheck;
+    private Button rootCancel;
+    private LinearLayout requirementsCard;
+    private LinearLayout environmentCard;
+    private String probeStatus = "unknown";
+    private Integer probeApi;
+    private String rootStatus = "not_checked";
+    private boolean rootPending;
     private ProgressBar progress;
     private Button start;
     private Button stop;
@@ -96,6 +115,8 @@ public final class MainActivity extends Activity {
         main.removeCallbacks(poll);
         if (confirmation != null) confirmation.dismiss();
         if (auxiliaryDialog != null) auxiliaryDialog.dismiss();
+        rootCancelled.set(true);
+        rootIo.shutdown();
         io.shutdown();
         // Runtime is process-scoped: rotating the screen must not stop or restart a task.
         super.onDestroy();
@@ -136,6 +157,8 @@ public final class MainActivity extends Activity {
         notice.setVisibility(View.GONE);
         content.addView(notice);
 
+        buildWizard();
+
         LinearLayout simulation = card(R.string.simulation_title);
         simulation.addView(text(getString(R.string.simulation_intro), 15, MUTED, false));
         start = button(R.string.start_simulation, R.id.start_simulation, true);
@@ -175,6 +198,7 @@ public final class MainActivity extends Activity {
         taskCard.addView(history, buttonParams());
 
         LinearLayout environment = card(R.string.diagnostics_title);
+        environmentCard = environment;
         environment.addView(text(getString(R.string.diagnostics_hint), 14, MUTED, false));
         checks = vertical();
         checks.setId(R.id.capability_list);
@@ -185,6 +209,7 @@ public final class MainActivity extends Activity {
         environment.addView(refresh, buttonParams());
 
         LinearLayout requirements = card(R.string.requirements_title);
+        requirementsCard = requirements;
         requirements.addView(text(getString(R.string.requirements_intro), 15, MUTED, false));
         for (String item : new String[] {
                 "学校配置：本人确认的校区边界、规则与路线尚未接入。",
@@ -203,14 +228,106 @@ public final class MainActivity extends Activity {
         content.addView(text(getString(R.string.footer_note), 12, MUTED, false));
     }
 
+    private void buildWizard() {
+        LinearLayout wizard = card(R.string.wizard_title);
+        wizard.addView(text(getString(R.string.wizard_intro), 14, MUTED, false));
+        frameworkEvidence = text("", 14, INK, false);
+        frameworkEvidence.setId(R.id.framework_probe);
+        wizard.addView(frameworkEvidence);
+        wizardRefresh = button(R.string.wizard_refresh, R.id.wizard_refresh, true);
+        wizardRefresh.setOnClickListener(view -> readState(true));
+        wizard.addView(wizardRefresh, buttonParams());
+        wizardNext = button(R.string.wizard_steps, R.id.wizard_next, false);
+        wizardNext.setOnClickListener(view -> {
+            if (WizardPresentation.active(probeStatus, probeApi)) {
+                requirementsCard.requestFocus();
+                scroll.scrollTo(0, requirementsCard.getTop());
+            } else {
+                showAuxiliary(new AlertDialog.Builder(this).setTitle(R.string.wizard_steps)
+                        .setMessage(WizardPresentation.instructions(BuildConfig.SELF_PROBE_ENABLED))
+                        .setPositiveButton("知道了", null));
+            }
+        });
+        wizard.addView(wizardNext, buttonParams());
+        Button environmentLink = button(R.string.wizard_environment, R.id.wizard_environment, false);
+        environmentLink.setOnClickListener(view -> scroll.scrollTo(0, environmentCard.getTop()));
+        wizard.addView(environmentLink, buttonParams());
+        addSpace(wizard, 16);
+        rootEvidence = text(WizardPresentation.root(rootStatus), 14, MUTED, false);
+        rootEvidence.setId(R.id.root_evidence);
+        rootEvidence.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        wizard.addView(rootEvidence);
+        rootCheck = button(R.string.root_check, R.id.root_check, false);
+        rootCheck.setOnClickListener(view -> askRootCheck());
+        wizard.addView(rootCheck, buttonParams());
+        rootCancel = button(R.string.root_cancel, R.id.root_cancel, false);
+        rootCancel.setEnabled(false);
+        rootCancel.setVisibility(View.GONE);
+        rootCancel.setOnClickListener(view -> {
+            if (!rootPending) return;
+            rootCancelled.set(true);
+            rootCancel.setEnabled(false);
+            rootEvidence.setText("正在取消本次检查；不会撤销管理器中已经作出的授权决定。");
+        });
+        wizard.addView(rootCancel, buttonParams());
+        renderWizard();
+    }
+
+    private void renderWizard() {
+        frameworkEvidence.setText(WizardPresentation.framework(
+                probeStatus, probeApi, BuildConfig.SELF_PROBE_ENABLED));
+        wizardNext.setText(WizardPresentation.nextLabel(
+                probeStatus, probeApi, BuildConfig.SELF_PROBE_ENABLED));
+    }
+
+    private void askRootCheck() {
+        if (rootPending || confirmation != null || destroyed) return;
+        confirmation = new AlertDialog.Builder(this)
+                .setTitle(R.string.root_confirm_title)
+                .setMessage(R.string.root_confirm_message)
+                .setNegativeButton(R.string.not_now, null)
+                .setPositiveButton(R.string.root_confirm, (dialog, which) -> runRootCheck())
+                .create();
+        confirmation.setOnDismissListener(dialog -> confirmation = null);
+        confirmation.show();
+    }
+
+    private void runRootCheck() {
+        if (rootPending || destroyed) return;
+        rootPending = true;
+        rootCancelled.set(false);
+        rootStatus = "checking";
+        rootEvidence.setText(WizardPresentation.root(rootStatus));
+        updateButtons();
+        rootIo.execute(() -> {
+            String status;
+            try {
+                RootReport report = RootDiagnostic.run(rootCancelled::get);
+                status = report == null ? "unknown" : report.status;
+            } catch (RuntimeException failure) {
+                status = "unknown";
+            }
+            final String result = status;
+            main.post(() -> {
+                if (destroyed) return;
+                rootPending = false;
+                rootStatus = result;
+                rootEvidence.setText(WizardPresentation.root(rootStatus));
+                updateButtons();
+            });
+        });
+    }
+
     private void readState(boolean includeChecks) {
         if (destroyed || pending || reading) return;
         reading = true;
         final long request = ++serial;
         refresh.setEnabled(false);
+        wizardRefresh.setEnabled(false);
         io.execute(() -> {
             TaskSnapshot snapshot = null;
             List<CheckItem> observations = null;
+            ProbeReport probe = null;
             boolean failed = false;
             String health = "unknown";
             String failedTask = null;
@@ -225,6 +342,10 @@ public final class MainActivity extends Activity {
             } catch (RuntimeException error) {
                 failed = true;
             }
+            if (includeChecks) {
+                try { probe = SelfProbe.inspect(); } catch (RuntimeException ignored) { }
+            }
+            final ProbeReport resultProbe = probe;
             final TaskSnapshot result = snapshot;
             final List<CheckItem> resultChecks = observations;
             final String resultHealth = health;
@@ -234,6 +355,12 @@ public final class MainActivity extends Activity {
                 reading = false;
                 if (destroyed || request != serial) return;
                 refresh.setEnabled(true);
+                wizardRefresh.setEnabled(true);
+                if (includeChecks) {
+                    probeStatus = resultProbe == null ? "unknown" : resultProbe.status;
+                    probeApi = resultProbe == null ? null : resultProbe.bridgeApiVersion;
+                    renderWizard();
+                }
                 runtimeHealth = resultHealth;
                 healthTaskId = resultHealthTaskId;
                 if (unavailable) {
@@ -370,8 +497,11 @@ public final class MainActivity extends Activity {
         }
         for (CheckItem item : observations) {
             addSpace(checks, 16);
-            checks.addView(text(item.name + " · " + TaskPresentation.checkLabel(item.status), 15, INK, true));
-            checks.addView(text(item.detail, 13, MUTED, false));
+            String name = "Root".equals(item.name) ? "Root 路径迹象（被动检查）" : item.name;
+            checks.addView(text(name + " · " + TaskPresentation.checkLabel(item.status), 15, INK, true));
+            checks.addView(text("Root".equals(item.name)
+                    ? item.detail + "。本项不包含上方用户主动发起的授权诊断结果。" : item.detail,
+                    13, MUTED, false));
         }
     }
 
@@ -384,6 +514,10 @@ public final class MainActivity extends Activity {
         start.setEnabled(!pending && !uncertain && healthAllowsActions() && runtime != null && !hasUnresolvedTask());
         stop.setEnabled(!pending && !uncertain && healthAllowsActions() && hasUnresolvedTask());
         history.setEnabled(runtime != null && !historyLoading && !pending);
+        wizardRefresh.setEnabled(!pending && !reading);
+        rootCheck.setEnabled(!rootPending);
+        rootCancel.setEnabled(rootPending && !rootCancelled.get());
+        rootCancel.setVisibility(rootPending ? View.VISIBLE : View.GONE);
     }
 
     private void showHistory() {
