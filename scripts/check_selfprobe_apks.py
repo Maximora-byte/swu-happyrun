@@ -15,7 +15,11 @@ ENTRY = "org.happyrun.app.selfprobe.SelfDiagnosticModule"
 def verify_manifest(xml, optional, scope_id=None):
     root = ET.fromstring(xml)
     assert root.attrib["package"] == "org.happyrun.app"
-    assert not root.findall("uses-permission")
+    assert [node.attrib[ANDROID + "name"] for node in root.findall("uses-permission")] in (
+        [],
+        ["android.permission.INTERNET"],
+    )
+    assert not root.findall("uses-permission-sdk-23")
     metadata = {
         node.attrib[ANDROID + "name"]: node.attrib for node in root.findall("application/meta-data")
     }

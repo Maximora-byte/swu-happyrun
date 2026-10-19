@@ -22,7 +22,7 @@ def setup(monkeypatch, tmp_path):
         "HAPPYRUN_KVM_APPROVED_THIS_RUN": "true",
         "GITHUB_ACTIONS": "true",
         "GITHUB_EVENT_NAME": "push",
-        "GITHUB_REF": "refs/heads/dot/android-onboarding",
+        "GITHUB_REF": "refs/heads/dot/android-remote-agent",
         "GITHUB_SHA": "a" * 40,
         "GITHUB_REPOSITORY": "Maximora-byte/swu-happyrun",
         "RUNNER_ENVIRONMENT": "github-hosted",
@@ -35,9 +35,9 @@ def setup(monkeypatch, tmp_path):
     event.write_text(
         json.dumps(
             {
-                "before": "491019d0b68802fdcf0c67fbe4bd3b846a9eae82",
+                "before": "e5b3b973f9e055fc8bcb4a9e3261cf6320568787",
                 "after": "a" * 40,
-                "ref": "refs/heads/dot/android-onboarding",
+                "ref": "refs/heads/dot/android-remote-agent",
                 "repository": {"full_name": "Maximora-byte/swu-happyrun"},
             }
         )
@@ -119,8 +119,8 @@ def test_missing_device_or_failed_verification_blocks(setup, monkeypatch, kind):
 
 def test_workflow_gate_binds_exact_single_transition():
     workflow = (ROOT / ".github/workflows/checks.yml").read_text(encoding="utf-8")
-    assert "github.event.before == '491019d0b68802fdcf0c67fbe4bd3b846a9eae82'" in workflow
-    assert "github.ref == 'refs/heads/dot/android-onboarding'" in workflow
+    assert "github.event.before == 'e5b3b973f9e055fc8bcb4a9e3261cf6320568787'" in workflow
+    assert "github.ref == 'refs/heads/dot/android-remote-agent'" in workflow
     assert "github.event_name == 'push'" in workflow
     assert "workflow_dispatch:" not in workflow
     assert "sudo chmod" not in workflow
@@ -130,6 +130,8 @@ def test_workflow_gate_binds_exact_single_transition():
     "field,value",
     [
         ("before", "b" * 40),
+        ("before", "77494e21756e514f53e51b3a2c72f22555f0aae6"),
+        ("before", "491019d0b68802fdcf0c67fbe4bd3b846a9eae82"),
         ("before", "6427e91b7099cdf2233983ff55a5bcf9718e6b61"),
         ("before", None),
         ("ref", "refs/heads/main"),
@@ -159,7 +161,7 @@ def synchronize_event(monkeypatch):
             "pull_request": {
                 "head": {
                     "sha": "a" * 40,
-                    "ref": "dot/android-onboarding",
+                    "ref": "dot/android-remote-agent",
                     "repo": {"full_name": "Maximora-byte/swu-happyrun"},
                 },
                 "base": {"repo": {"full_name": "Maximora-byte/swu-happyrun"}},
@@ -170,10 +172,11 @@ def synchronize_event(monkeypatch):
     return path, event
 
 
-def test_exact_same_repo_pr33_synchronize_is_the_same_transition(setup, monkeypatch):
+def test_pull_requests_are_not_this_reviewed_push(setup, monkeypatch):
     synchronize_event(monkeypatch)
-    assert PROBE.main() == 0
-    assert setup[1][0] == ["sudo", "-n", "setfacl", "-n", "-m", "u:1001:rw", "/dev/kvm"]
+    with pytest.raises(SystemExit):
+        PROBE.main()
+    assert setup[1] == []
 
 
 @pytest.mark.parametrize(

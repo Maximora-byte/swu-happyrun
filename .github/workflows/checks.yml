@@ -116,14 +116,9 @@ jobs:
       - name: Enable explicitly approved one-transition KVM access
         if: >-
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == '491019d0b68802fdcf0c67fbe4bd3b846a9eae82' &&
-          ((github.event_name == 'push' && github.ref == 'refs/heads/dot/android-onboarding') ||
-          (github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
-          github.event.number == 33 && github.ref == 'refs/pull/33/merge' &&
-          github.event.pull_request.head.repo.full_name == 'Maximora-byte/swu-happyrun' &&
-          github.event.pull_request.base.repo.full_name == 'Maximora-byte/swu-happyrun' &&
-          github.event.pull_request.head.ref == 'dot/android-onboarding' &&
-          github.event.after == github.event.pull_request.head.sha))
+          github.event.before == 'e5b3b973f9e055fc8bcb4a9e3261cf6320568787' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/dot/android-remote-agent' &&
+          github.event.after == github.sha
         env:
           HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
           HAPPYRUN_ANDROID_API: ${{ matrix.api }}
@@ -208,14 +203,9 @@ jobs:
       - name: Enable explicitly approved one-transition KVM access
         if: >-
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == '491019d0b68802fdcf0c67fbe4bd3b846a9eae82' &&
-          ((github.event_name == 'push' && github.ref == 'refs/heads/dot/android-onboarding') ||
-          (github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
-          github.event.number == 33 && github.ref == 'refs/pull/33/merge' &&
-          github.event.pull_request.head.repo.full_name == 'Maximora-byte/swu-happyrun' &&
-          github.event.pull_request.base.repo.full_name == 'Maximora-byte/swu-happyrun' &&
-          github.event.pull_request.head.ref == 'dot/android-onboarding' &&
-          github.event.after == github.event.pull_request.head.sha))
+          github.event.before == 'e5b3b973f9e055fc8bcb4a9e3261cf6320568787' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/dot/android-remote-agent' &&
+          github.event.after == github.sha
         env:
           HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
           HAPPYRUN_ANDROID_API: ${{ matrix.api }}
