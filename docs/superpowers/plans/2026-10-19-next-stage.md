@@ -10,6 +10,8 @@
 
 **Spec:** [设计](../specs/2026-10-18-swu-happyrun-design.md)、[控制协议v1](../../contracts/control-plane-v1.md)、[最新分工](../../../AGENTS.md)、[上轮独立验收](../../qa/2026-10-19-overnight-review.md)。APK/网页的新增范围沿用 #31–#35 已记录的用户方向，旧设计“不做APK/网页”不再限制当前交付。
 
+**10/19 复测回执：** 见[修复与 MuMu 报告](../../qa/2026-10-19-fix-retest-mumu.md)。任务 1 的 #39 已接受并合入原候选，#37 已关闭；下文开工快照保留历史。任务 2 的 #40 新 HEAD 69182c7 仍有 pre-bind 历史 agent 被覆盖的阻塞，优先补完整重建/runner 负例与校验，不重写已通过的正常恢复。任务 5 已取得 #25 自身模拟完成、重启、中断不重跑及待处理停止的 MuMu 证据；运行中停止仍受慢速 dump 时序限制，匹配签名的 instrumentation 交付仍需推进。复测报告不代表 #35 远程原生或真实学校记录通过。
+
 ## Global Constraints
 
 - Python>=3.11；包名`swu_happyrun`、CLI`swu-happyrun`、API`/api/v1`、协议主版本`1`。
