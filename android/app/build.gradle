@@ -1,0 +1,60 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'org.happyrun.app'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+    buildFeatures { buildConfig true }
+    defaultConfig {
+        applicationId 'org.happyrun.app'
+        buildConfigField 'boolean', 'SELF_PROBE_ENABLED', 'false'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0-candidate'
+        testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+    }
+    buildTypes {
+        selfProbe {
+            initWith debug
+            buildConfigField 'boolean', 'SELF_PROBE_ENABLED', 'true'
+            matchingFallbacks = ['debug']
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+    testBuildType project.hasProperty('probeInstrumentation') ? 'selfProbe' : 'debug'
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint { abortOnError true }
+    useLibrary 'android.test.runner'
+    useLibrary 'android.test.base'
+}
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    selfProbeCompileOnly('de.robv.android.xposed:api:82') { transitive = false }
+}
+
+// Narrow artifact verification: existing AGP/JUnit trust policy is not changed.
+// Resolve and verify the only added dependency before selfProbe compilation/lint.
+def verifySelfProbeApi = tasks.register('verifySelfProbeApi') {
+    doLast {
+        def artifacts = configurations.selfProbeCompileClasspath.resolvedConfiguration.resolvedArtifacts
+            .findAll { it.moduleVersion.id.group == 'de.robv.android.xposed' }
+        if (artifacts.size() != 1) throw new GradleException('Expected exactly one Xposed compile-only artifact')
+        def artifact = artifacts.first()
+        if (artifact.moduleVersion.id.toString() != 'de.robv.android.xposed:api:82')
+            throw new GradleException('Unexpected Xposed coordinate')
+        def digest = java.security.MessageDigest.getInstance('SHA-256').digest(artifact.file.bytes).encodeHex().toString()
+        if (digest != 'f48c635f1c7469fdec0e00ad2ea0b7a6b2f5b55065784a35b7ca3a84615e8e25')
+            throw new GradleException('Xposed API82 SHA256 mismatch')
+        if (configurations.selfProbeRuntimeClasspath.resolvedConfiguration.resolvedArtifacts.any {
+            it.moduleVersion.id.group == 'de.robv.android.xposed'
+        }) throw new GradleException('Xposed API must never be a runtime dependency')
+    }
+}
+tasks.configureEach {
+    if (name == 'preSelfProbeBuild') dependsOn verifySelfProbeApi
+}
+

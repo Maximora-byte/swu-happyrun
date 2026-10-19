@@ -114,3 +114,39 @@ Windows/Python3.11取消/停止失败测试的start_count=0已通过真实TCP可
 这是 CI 配置的预期行为，尚未据此宣称已经产生可下载包。发布/评审时须核查该不可变 HEAD 的实际 Actions run 和 artifact，下载后验证 SHA256；不创建 GitHub Release。
 
 校验文件中的路径以仓库根目录为基准，形如 `dist/<文件名>`。下载 artifact 后将其内容放进独立验收目录的 `dist/`，从该目录运行 `sha256sum -c dist/SHA256SUMS`；Windows 可逐项用 `Get-FileHash -Algorithm SHA256` 对比。不要把路径布局差异当作哈希验证已通过。
+
+## 原生 Android 本地应用集成（2026-10-19）
+
+准确基线 `f3d0699d8923ce7d2325abedcb680fc70f650f4a`，只按五路owned清单组合原生runtime、UI、契约边界、打包和instrumentation，未加入暂停的Windows portable。保留原Python/web实现和测试。Android本地simulation不是控制协议JobView/AGENT，不生成学校记录；真实执行按钮受限。
+
+原配置风险在独立副本加入纯合成Android目录后复现：sdist会收录local.properties、.keystore和.gradle缓存。新打包排除规则复测通过，源码/Gradle配置保留。该实验没有生成真实私钥，原f3d已交付包未泄漏任何此类文件。
+
+本地没有Android SDK/adb/emulator，未编译Activity、未生成或安装APK、未执行instrumentation。实际构建、debug签名、安装启动和11项专用instrumentation必须以同一HEAD的android-apk Actions结果为准。纯Java/Node/Python或XML检查不能替代Android执行；官方AVD通过也不能替代MuMu/目标应用/学校记录验收。
+
+本轮初次冻结组合 Linux/Python3.12.14 完整 **564 passed**（90.58秒，1条继承warning）；frozen依赖、Schema/Android边界防漂移、Ruff、旧web Node生产脚本harness、Bash语法和4份XML解析通过。46个Python package/静态资源文件与f3d基线逐字节一致。上述结果不包含Android编译或仪器执行。
+
+
+最后追加仅Android持久化故障锁存及UI/真实SQLite trigger回归：存储失败停止模拟、显示未保存状态并禁止继续开始/停止；不能把旧持久running当成仍在执行。另增加已核包名的只读PackageInfo诊断。Android CI分别运行API31/35官方AVD，记录debug签名指纹；这些均不能代替MuMu或目标应用执行验收。此前完整Python结果按原快照保留，最后变更另做目标测试/静态/分发检查。
+
+最终五路更新后的Python目标检查（Android契约与delivery）**14 passed**，Schema/边界防漂移、Ruff、旧web Node、脚本/XML/接口静态检查和分发隐私检查通过；Python生产模块仍与f3d相同。APK构建与11项Android测试尚未在本地运行，须取同HEAD的API31/35 Actions证据。
+
+## Android single-entry onboarding integration (2026-10-19)
+
+Base cf3cfee12701573b4a577225d66980bb2279a346; final candidate SHA is bound by PR/Actions. Independent combined source local checks: Python 3.12.14 full 584 passed, one inherited deprecation warning, 124.76 seconds; delivery subset 30 passed; pure Java compilation with -source/-target17 on compiler21 and 23 JUnit passed. Final UI wording changes were followed by Java recompile/retest. The pure optional entry also compiles against independently hash-checked official API82; no Android SDK compilation is inferred.
+
+Frozen lock, Schema drift, Ruff/135 Python format checks, Node helper, shell syntax, eight XML documents, wheel/sdist build and distribution privacy checks passed. The 582-test first run remains historical; two added integration wiring fixtures account for the final 584. Neither local run invokes actual su or installs a framework.
+
+Pending exact-HEAD hosted checks: both Android variant builds/lint, actual APK metadata/DEX/resource-scope inspection, official API31/35 AVD inactive/variant-identity checks and four wizard cases for each variant. New tests use installed-target BuildConfig reflection and dynamic target resource IDs because one optional instrumentation APK is reused across variants. Same-job signature replacement must pass before recommending a single optional APK. Initial eleven native tests remain separate. ART activation, live Root authorization, MuMu variants and real records remain unverified.
+
+## Onboarding launch rebase (2026-10-19)
+
+Rebased onto629f2e9b86d7a72502f528abd1c1edf999d6a842 / tree c061531110495f6691954acf28324228d2aef81f. All172 baseline files verified. Final full Python612 passed/95.17seconds with one inherited warning; delivery58 passed. New profile negative fixtures first failed then passed; all prior launch error/budget/crash cases run with core and wizard. Ruff/137format, Schema, frozen lock, Node helpers, Bash, wheel/sdist and privacy checks passed.
+
+34 Java source files are byte-identical to the previous independently reviewed onboarding candidate: reuse23JUnit evidence, no claim of a fresh Java run. Default core launch controls are unchanged; explicit wizard requires app_scroll/framework_probe/wizard_refresh. Every other launch safety/readiness condition stays unchanged. Optional replacement runs the same bounded probe with separately allowlisted evidence. Actual Android SDK/AVD and ART remain pending exact-HEAD validation.
+
+
+## 6427 后续 CI/轮询修订的本地证据（2026-10-19）
+
+本轮基于 6427e91b7099cdf2233983ff55a5bcf9718e6b61：24 项 Java JUnit、101 项 delivery fixtures、Ruff 与 140 文件格式检查、Schema、frozen lock、wheel/sdist 构建与 Android 分发隐私检查通过。Java 使用本地 JDK compiler 模块的 source/target 17；这不是 Android SDK 编译。完整 Python 612 项是上一精确组合的历史证据，本轮未重复宣称全套重跑。
+
+新增四项轮询仪器测试与原十一项合计十五项；普通及可选模块变体各使用匹配的测试 APK，分别保留四项向导及一项无框架 inactive 检查。测试接线、独立进程清理和精确产物白名单已审阅；实际 Android 测试、KVM ACL 和加速结果待新提交 CI。此前 SystemUI ANR 与下载/启动失败仍是失败证据，轮询优化未被认定为其根因修复。

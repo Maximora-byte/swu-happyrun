@@ -1,0 +1,8 @@
+{
+  "coordinate": "de.robv.android.xposed:api:82",
+  "repository": "https://api.xposed.info/",
+  "artifact_url": "https://api.xposed.info/de/robv/android/xposed/api/82/api-82.jar",
+  "sha256": "f48c635f1c7469fdec0e00ad2ea0b7a6b2f5b55065784a35b7ca3a84615e8e25",
+  "configuration": "selfProbeCompileOnly",
+  "runtime_packaging_allowed": false
+}
