@@ -59,10 +59,12 @@ def test_other_io_errors_still_fail(monkeypatch, tmp_path, code, symlink_or_skip
 
 def test_supported_operation_is_not_skipped(monkeypatch, tmp_path, symlink_or_skip):
     calls = []
-    monkeypatch.setattr(Path, "symlink_to", lambda link, target: calls.append((link, target)))
+    monkeypatch.setattr(
+        Path, "symlink_to", lambda link, target, **kwargs: calls.append((link, target, kwargs))
+    )
     link, target = tmp_path / "link", tmp_path / "target"
     symlink_or_skip(link, target)
-    assert calls == [(link, target)]
+    assert calls == [(link, target, {"target_is_directory": False})]
 
 
 def test_other_windows_error_is_not_skipped(monkeypatch, tmp_path, symlink_or_skip):
@@ -76,3 +78,13 @@ def test_other_windows_error_is_not_skipped(monkeypatch, tmp_path, symlink_or_sk
     with pytest.raises(OSError) as observed:
         symlink_or_skip(tmp_path / "link", tmp_path / "target")
     assert observed.value is error
+
+
+def test_supported_directory_symlink_calls_real_creation(tmp_path, symlink_or_skip):
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "data").write_text("synthetic")
+    link = tmp_path / "link"
+    symlink_or_skip(link, target, target_is_directory=True)
+    assert link.is_symlink()
+    assert (link / "data").read_text() == "synthetic"

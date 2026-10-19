@@ -101,12 +101,12 @@ def test_apk_hash_and_set_exact():
             phase.verify(m, {}, f)
 
 
-def test_symlink_rejected(tmp_path):
+def test_symlink_rejected(tmp_path, symlink_or_skip):
     out = tmp_path / "android/app/build/outputs/apk"
     out.mkdir(parents=True)
     other = tmp_path / "outside"
     other.write_bytes(b"synthetic")
-    (out / "bad.apk").symlink_to(other)
+    symlink_or_skip(out / "bad.apk", other)
     with pytest.raises(ValueError):
         phase.apk_files(tmp_path)
 
