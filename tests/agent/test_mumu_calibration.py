@@ -65,6 +65,45 @@ class Transport:
         return self.cleared
 
 
+@pytest.mark.parametrize("phase", ["write", "read"])
+def test_ambiguous_transport_timeout_latches_off_and_still_allows_cleanup(phase):
+    location, transport, _ = setup_location()
+    original_write = transport.write
+    stops = []
+
+    def timeout(*args):
+        if phase == "write":
+            original_write(*args)  # Side effect happened before acknowledgment was lost.
+        raise TimeoutError()
+
+    setattr(transport, phase, timeout)
+    with pytest.raises(TimeoutError):
+        location.write(POINT, input_crs="WGS84")
+    assert transport.writes == [POINT]
+    with pytest.raises(DriverError, match="channel_halted"):
+        location.write(POINT, input_crs="WGS84")
+    assert transport.writes == [POINT]
+
+    def expired():
+        raise DriverError("lease_expired")
+
+    location.configure_execution_guard(expired)
+
+    def stop():
+        stops.append("attempt")
+        return len(stops) > 1
+
+    transport.stop_and_confirm_empty = stop
+    with pytest.raises(DriverError, match="stop_unconfirmed"):
+        location.stop()
+    location.stop()
+    location.stop()
+    assert stops == ["attempt", "attempt"]
+    with pytest.raises(DriverError, match="channel_halted"):
+        location.write(POINT, input_crs="WGS84")
+    assert transport.writes == [POINT]
+
+
 def test_default_is_closed():
     with pytest.raises(DriverError, match="coordinate_mapping_unverified"):
         MuMuLocation().write(POINT, input_crs="WGS84")
