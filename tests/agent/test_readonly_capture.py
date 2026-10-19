@@ -234,3 +234,125 @@ def test_interrupted_cleanup_releases_lock_but_retains_live_child(monkeypatch):
 
 def test_real_stdout_preserves_universal_newline_contract():
     assert child("import sys; sys.stdout.buffer.write(b'a\\r\\nb\\rc\\n')") == "a\nb\nc\n"
+
+
+def test_internal_guard_consuming_deadline_starts_zero_children(tmp_path):
+    from swu_happyrun.drivers.command import _run_bounded_bytes
+
+    marker = tmp_path / "must-not-exist"
+    with pytest.raises(ProbeError, match="command_timeout"):
+        _run_bounded_bytes(
+            Path(sys.executable),
+            "-c",
+            f"from pathlib import Path; Path({str(marker)!r}).touch()",
+            timeout=0.01,
+            before_spawn=lambda: time.sleep(0.03),
+        )
+    assert not marker.exists()
+
+
+def test_internal_already_cancelled_starts_zero_children(tmp_path):
+    import threading
+
+    from swu_happyrun.drivers.command import _run_bounded_bytes
+
+    cancelled = threading.Event()
+    cancelled.set()
+    with pytest.raises(ProbeError, match="command_cancelled"):
+        _run_bounded_bytes(
+            Path(sys.executable), "-c", "raise AssertionError()", cancel_event=cancelled
+        )
+
+
+def test_internal_guard_failure_releases_lock_without_popen(monkeypatch):
+    from swu_happyrun.drivers import command
+
+    original = command.subprocess.Popen
+    seen = []
+
+    def forbidden(*args, **kwargs):
+        seen.append(True)
+        raise AssertionError("must not launch")
+
+    def guard():
+        raise ValueError("denied")
+
+    monkeypatch.setattr(command.subprocess, "Popen", forbidden)
+    with pytest.raises(ValueError, match="denied"):
+        command._run_bounded_bytes(Path(sys.executable), before_spawn=guard)
+    assert seen == []
+    monkeypatch.setattr(command.subprocess, "Popen", original)
+    assert child("print('released')") == "released\n"
+
+
+def test_internal_bytes_preserve_nonzero_invalid_utf8_and_crlf():
+    from swu_happyrun.drivers.command import _run_bounded_bytes
+
+    stdout, stderr, code = _run_bounded_bytes(
+        Path(sys.executable),
+        "-c",
+        "import sys; sys.stdout.buffer.write(b'\\xff\\r\\n'); "
+        "sys.stderr.buffer.write(b'\\xfe'); sys.exit(9)",
+    )
+    assert (stdout, stderr, code) == (b"\xff\r\n", b"\xfe", 9)
+
+
+def test_internal_stderr_reader_error_is_not_success(monkeypatch):
+    from swu_happyrun.drivers import command
+
+    original = command.subprocess.Popen
+
+    class FailedPipe:
+        def __init__(self, pipe):
+            self.pipe = pipe
+
+        def read1(self, size):
+            raise OSError("private synthetic failure")
+
+        def close(self):
+            self.pipe.close()
+
+    def launch(*args, **kwargs):
+        process = original(*args, **kwargs)
+        process.stderr = FailedPipe(process.stderr)
+        return process
+
+    monkeypatch.setattr(command.subprocess, "Popen", launch)
+    with pytest.raises(ProbeError, match="command_reader_failed"):
+        command._run_bounded_bytes(Path(sys.executable), "-c", "print('valid stdout')")
+
+
+def test_thread_start_interruption_retains_started_reader(monkeypatch):
+    import threading
+
+    from swu_happyrun.drivers import command
+
+    original_start = threading.Thread.start
+    original_popen = command.subprocess.Popen
+    process_holder = []
+
+    def launch(*args, **kwargs):
+        process = original_popen(*args, **kwargs)
+        process_holder.append(process)
+
+        def denied():
+            raise OSError("synthetic kill denial")
+
+        process.kill = denied
+        return process
+
+    def interrupted_start(thread):
+        original_start(thread)
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(command.subprocess, "Popen", launch)
+    monkeypatch.setattr(threading.Thread, "start", interrupted_start)
+    began = time.monotonic()
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            child("import time; time.sleep(2)", timeout=0.2)
+        assert time.monotonic() - began < 1.5
+        assert len(command._PENDING_CAPTURE[1]) == 1
+    finally:
+        for process in process_holder:
+            process.wait(timeout=5)

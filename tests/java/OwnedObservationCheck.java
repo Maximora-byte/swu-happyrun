@@ -37,6 +37,27 @@ public final class OwnedObservationCheck {
         check(!s.stopObserving());check(removed[0]==2);
         check(!s.window.offer("gravity",1,1,new double[]{1,2,3},3));
         boolean late=false;try{s.register(()->{});}catch(IllegalStateException e){late=true;}check(late);
-        System.out.println("owned-observation: passed");
+        boolean tooLong=false;try{new ObservationWindow(0,5000000001L,128);}catch(IllegalArgumentException e){tooLong=true;}check(tooLong);
+        check(!invalids.offer("gravity",102,102,new double[]{1,2,3},3.5));
+        check(!invalids.offer("gravity",102,102,new double[]{1,2,3},4));
+        ObservationWindow privateWindow=new ObservationWindow(100,10000000,128);
+        check(privateWindow.offer("location",101,102,new double[]{1.25,2.75},3.5));
+        privateWindow.close();
+        String report=ObservationReport.encode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "synthetic-boot", "location", 10, privateWindow, true, "samples_observed");
+        check(report.contains("\"window_start_ns\":100"));
+        check(report.contains("\"window_end_ns\":10000100"));
+        check(report.contains("\"values\":[1.25,2.75]"));
+        check(report.contains("\"accuracy\":3.5"));
+        boolean badNonce=false;try{ObservationReport.encode("bad", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "synthetic-boot", "location", 10, privateWindow,true,"samples_observed");}catch(IllegalArgumentException e){badNonce=true;}check(badNonce);
+        java.nio.file.Path dir=java.nio.file.Files.createTempDirectory("owned-observation-check");
+        String nonce="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        ObservationPrivateFile.write(dir.toFile(),nonce,report);
+        java.nio.file.Path output=dir.resolve("owned-observation-"+nonce+".json");
+        check(java.nio.file.Files.readString(output).equals(report));
+        boolean existing=false;try{ObservationPrivateFile.write(dir.toFile(),nonce,"overwrite");}catch(java.io.IOException e){existing=true;}check(existing);
+        check(java.nio.file.Files.readString(output).equals(report));
+        java.nio.file.Files.delete(output);java.nio.file.Files.delete(dir);
+        if(args.length==1 && "synthetic-private-report".equals(args[0]))System.out.println(report);
+        else System.out.println("owned-observation: passed");
     }
 }
