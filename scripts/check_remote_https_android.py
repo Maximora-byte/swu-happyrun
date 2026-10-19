@@ -10,11 +10,19 @@ import subprocess
 import tempfile
 import threading
 import time
-import traceback
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from remote_https_fixture import issue_certificates, server_fixture, trusted_client
+from remote_https_fixture import (
+    error_type,
+    failure_evidence,
+    issue_certificates,
+    remaining_not_run,
+    server_fixture,
+    suite_contaminated,
+    trusted_client,
+)
+from remote_instrumentation_diagnostics import summarize
 
 CASES = (
     "completed",
@@ -86,11 +94,19 @@ def command(fixture, scenario):
     return [*args, PACKAGE + ".test/android.test.InstrumentationTestRunner"]
 
 
-def instrumentation(fixture, scenario):
+def instrumentation(fixture, scenario, diagnostics=None):
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics["phase"] = "instrumentation"
     # Never print command or raw stderr: command contains one-use synthetic credentials.
-    result = subprocess.run(
-        command(fixture, scenario), capture_output=True, text=True, encoding="utf-8", timeout=90
-    )
+    try:
+        result = subprocess.run(
+            command(fixture, scenario), capture_output=True, text=True, encoding="utf-8", timeout=90
+        )
+    except subprocess.TimeoutExpired as failure:
+        diagnostics["instrumentation"] = summarize(failure.stdout, None)
+        diagnostics["instrumentation_timeout"] = True
+        raise
+    diagnostics["instrumentation"] = summarize(result.stdout, result.returncode)
     output = result.stdout
     if (
         result.returncode
@@ -104,6 +120,7 @@ def instrumentation(fixture, scenario):
     if len(matches) != 1:
         raise RuntimeError("Missing unambiguous Android observation")
     state, starts, stopped = matches[0]
+    diagnostics["phase"] = "server_assertions"
     return {
         "android_state": state,
         "driver_starts": int(starts),
@@ -148,16 +165,21 @@ def current(client, fixture, job, headers):
     return response.json()
 
 
-def run_case(case, directory, certificates):
+def run_case(case, directory, certificates, diagnostics=None):
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics["phase"] = "device_reset"
     guard()
     adb("shell", "am", "force-stop", PACKAGE)
     if adb("shell", "pm", "clear", PACKAGE).strip() != "Success":
         raise RuntimeError("Disposable app reset failed")
     certificate = {"bad_ca": "other", "bad_san": "wrong"}.get(case, "server")
     scenario = "lost_renew" if case in {"verify_only", "stop_only"} else case
-    with server_fixture(directory, certificates, certificate, scenario) as fixture:
+    with server_fixture(
+        directory, certificates, certificate, scenario, diagnostics=diagnostics
+    ) as fixture:
+        diagnostics["phase"] = "prepare_job"
         if case in {"bad_ca", "bad_san"}:
-            result = instrumentation(fixture, case)
+            result = instrumentation(fixture, case, diagnostics)
             assert not fixture["evidence"].records, "TLS rejection reached HTTP"
             return {
                 "case": case,
@@ -211,7 +233,7 @@ def run_case(case, directory, certificates):
                             process.wait(timeout=5)
                 initial = {"driver_starts": 1}
             else:
-                initial = instrumentation(fixture, scenario)
+                initial = instrumentation(fixture, scenario, diagnostics)
             if controller:
                 controller.join(timeout=5)
                 assert not controller.is_alive() and not control_errors, (
@@ -235,7 +257,9 @@ def run_case(case, directory, certificates):
                 )
                 response.raise_for_status()
                 fixture["evidence"].scenario = "normal"
-                result = instrumentation(fixture, "restart_recover" if case == "restart" else case)
+                result = instrumentation(
+                    fixture, "restart_recover" if case == "restart" else case, diagnostics
+                )
                 assert result["driver_starts"] == 0 and initial["driver_starts"] == 1
                 assert current(client, fixture, job, headers)["run_session_id"] == original_session
             else:
@@ -325,19 +349,21 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     results = []
     for case in CASES:
+        diagnostics = {}
         try:
             with tempfile.TemporaryDirectory(prefix="case-", dir=args.private_dir) as directory:
-                result = run_case(case, Path(directory), certs)
+                result = run_case(case, Path(directory), certs, diagnostics)
         except Exception as error:
-            frame = traceback.extract_tb(error.__traceback__)[-1]
             result = {
                 "case": case,
                 "result": "failed",
-                "error_type": type(error).__name__,
-                "error_file": Path(frame.filename).name,
-                "error_line": frame.lineno,
+                "error_type": error_type(error),
+                "diagnostics": failure_evidence(error, diagnostics),
             }
         results.append(result)
+        contaminated = suite_contaminated(diagnostics)
+        if contaminated:
+            results.extend(remaining_not_run(CASES, len(results)))
         print("REMOTE_HTTPS_QA", case, result["result"], flush=True)
         (args.output / "report.json").write_text(
             json.dumps(
@@ -353,6 +379,8 @@ def main():
             + "\n",
             encoding="utf-8",
         )
+        if contaminated:
+            break
     if any(result["result"] != "passed" for result in results):
         raise SystemExit(1)
 
