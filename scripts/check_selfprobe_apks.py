@@ -15,10 +15,16 @@ ENTRY = "org.happyrun.app.selfprobe.SelfDiagnosticModule"
 def verify_manifest(xml, optional, scope_id=None):
     root = ET.fromstring(xml)
     assert root.attrib["package"] == "org.happyrun.app"
-    assert [node.attrib[ANDROID + "name"] for node in root.findall("uses-permission")] in (
-        [],
-        ["android.permission.INTERNET"],
-    )
+    permissions = [node.attrib[ANDROID + "name"] for node in root.findall("uses-permission")]
+    assert len(permissions) == len(set(permissions)), "Duplicate permission declaration"
+    allowed = [set(), {"android.permission.INTERNET"}]
+    if optional:
+        location = {
+            "android.permission.ACCESS_COARSE_LOCATION",
+            "android.permission.ACCESS_FINE_LOCATION",
+        }
+        allowed += [location, location | {"android.permission.INTERNET"}]
+    assert set(permissions) in allowed
     assert not root.findall("uses-permission-sdk-23")
     metadata = {
         node.attrib[ANDROID + "name"]: node.attrib for node in root.findall("application/meta-data")
