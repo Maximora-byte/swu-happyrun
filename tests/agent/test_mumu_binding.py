@@ -1,7 +1,7 @@
 import importlib.util
 import json
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -149,7 +149,8 @@ def test_collector_nonzero_command_is_safe(tmp_path, monkeypatch):
     assert "127.0.0.1" not in json.dumps(result)
 
 
-def test_readonly_command_keeps_space_path_one_argument(monkeypatch):
+@pytest.mark.parametrize("path_type", [Path, PureWindowsPath], ids=["native", "windows"])
+def test_readonly_command_keeps_space_path_one_argument(monkeypatch, path_type):
     from swu_happyrun.drivers import command
 
     calls = []
@@ -159,8 +160,9 @@ def test_readonly_command_keeps_space_path_one_argument(monkeypatch):
         return type("Result", (), {"returncode": 0, "stdout": "ok"})()
 
     monkeypatch.setattr(command.subprocess, "run", run)
-    assert command.run_readonly(Path("C:/MuMu Player/adb.exe"), "-s", "serial", "get-state") == "ok"
-    assert calls[0][0][0] == "C:/MuMu Player/adb.exe"
+    path = path_type("C:/MuMu Player/adb.exe")
+    assert command.run_readonly(path, "-s", "serial", "get-state") == "ok"
+    assert calls[0][0] == [str(path), "-s", "serial", "get-state"]
     assert calls[0][1]["shell"] is False
 
 
