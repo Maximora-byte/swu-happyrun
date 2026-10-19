@@ -38,6 +38,37 @@ def _parser():
     doctor.add_argument("--samples", action="store_true", help="Optional read-only Android samples")
     for arg in ["manager", "index", "adb", "serial", "package"]:
         doctor.add_argument("--" + arg)
+    mumu = commands.add_parser("mumu")
+    mumu_actions = mumu.add_subparsers(dest="operation", required=True)
+    replay = mumu_actions.add_parser("replay")
+    replay.add_argument("--instance", required=True)
+    replay.add_argument("--route", type=Path)
+    replay.add_argument("--speed-mps", type=float)
+    replay.add_argument("--duration-seconds", type=float)
+    replay.add_argument("--execute-virtual-replay", action="store_true")
+    replay.add_argument("--isolated-no-personal-data", action="store_true")
+    replay.add_argument("--recover-stop", action="store_true")
+    replay.add_argument(
+        "--no-interactive",
+        action="store_true",
+        help="Run to the explicit duration limit; Ctrl+C still stops",
+    )
+    for option in ("manager", "adb", "binding", "calibration"):
+        replay.add_argument("--" + option, type=Path)
+    replay.add_argument("--serial")
+    replay.add_argument("--device-id")
+    replay.add_argument("--journal", type=Path, default=Path("local/agent.sqlite"))
+    probe_point = mumu_actions.add_parser("probe-point")
+    probe_point.add_argument("--instance", required=True)
+    probe_point.add_argument("--point", type=Path, required=True)
+    probe_point.add_argument("--duration-ms", type=int, default=1000)
+    probe_point.add_argument("--execute-virtual-probe", action="store_true")
+    probe_point.add_argument("--isolated-no-personal-data", action="store_true")
+    for option in ("manager", "adb", "binding", "private-output"):
+        probe_point.add_argument("--" + option, type=Path)
+    probe_point.add_argument("--serial")
+    probe_point.add_argument("--device-id")
+    probe_point.add_argument("--journal", type=Path, default=Path("local/agent.sqlite"))
     profiles = commands.add_parser("profiles")
     checks = profiles.add_subparsers(dest="operation", required=True)
     check = checks.add_parser("check")
@@ -118,6 +149,99 @@ def _parser():
     return parser
 
 
+def _mumu_probe_point(args):
+    from swu_happyrun.core.clock import SystemClock
+    from swu_happyrun.core.models import GeoPoint
+    from swu_happyrun.drivers.base import DriverError
+    from swu_happyrun.drivers.mumu.probe_point import run_probe_point_cli
+    from swu_happyrun.drivers.mumu.virtual_replay import read_private_json
+
+    if not args.instance.isdecimal() or not 1 <= args.duration_ms <= 5000:
+        raise UsageError("invalid point observation parameters")
+    point = GeoPoint.model_validate(read_private_json(args.point))
+    if not args.execute_virtual_probe:
+        _emit(
+            {
+                "status": "preview",
+                "processes_started": 0,
+                "coordinate_semantics": "raw_vendor_unverified",
+                "record_verified": False,
+            }
+        )
+        return 0
+    if not args.isolated_no_personal_data or not all(
+        (args.manager, args.adb, args.serial, args.binding, args.device_id)
+    ):
+        _emit({"status": "blocked", "reason_code": "probe_local_evidence_missing"})
+        return 2
+    UUID(args.device_id)
+    try:
+        return run_probe_point_cli(args, point=point, clock=SystemClock(), emit=_emit)
+    except DriverError as error:
+        _emit({"status": "blocked", "reason_code": error.reason_code, "record_verified": False})
+        return 3
+
+
+def _mumu_replay(args):
+    from swu_happyrun.core.clock import SystemClock
+    from swu_happyrun.core.route import RouteExecution
+    from swu_happyrun.drivers.base import DriverError
+    from swu_happyrun.drivers.mumu.virtual_replay import read_private_json, run_local_cli
+
+    if not args.instance.isdecimal():
+        raise UsageError("invalid instance")
+    clock = SystemClock()
+    execution = None
+    if not args.recover_stop:
+        if args.route is None or args.speed_mps is None or args.duration_seconds is None:
+            raise UsageError("explicit route, speed and duration are required")
+        route = RouteProfile.model_validate(read_private_json(args.route))
+        execution = RouteExecution.for_local_replay(
+            route,
+            speed_mps=args.speed_mps,
+            maximum_duration_seconds=args.duration_seconds,
+            clock=clock,
+        )
+    if not args.execute_virtual_replay:
+        _emit(
+            {
+                "status": "preview",
+                "processes_started": 0,
+                "route_distance_m": execution.total_distance_m if execution else None,
+                "duration_seconds": execution.duration_seconds if execution else None,
+                "record_verified": False,
+                "device_verified": False,
+                "next_action": "explicit_execution_and_local_evidence_required",
+            }
+        )
+        return 0
+    if not args.isolated_no_personal_data:
+        raise UsageError("isolated instance confirmation is required")
+    required = (args.manager, args.adb, args.serial, args.binding, args.device_id)
+    if not all(required) or (not args.recover_stop and not args.calibration):
+        _emit(
+            {
+                "status": "blocked",
+                "reason_code": "replay_local_evidence_missing",
+                "record_verified": False,
+            }
+        )
+        return 2
+    UUID(args.device_id)
+    try:
+        return run_local_cli(args, execution=execution, clock=clock, emit=_emit)
+    except DriverError as error:
+        _emit(
+            {
+                "status": "needs_attention",
+                "reason_code": error.reason_code,
+                "stop_confirmed": False,
+                "record_verified": False,
+            }
+        )
+        return 3
+
+
 def _token(name):
     value = os.environ.get(name, "")
     if not value.strip():
@@ -126,6 +250,8 @@ def _token(name):
 
 
 def _execute(args):
+    if args.command == "mumu":
+        return _mumu_probe_point(args) if args.operation == "probe-point" else _mumu_replay(args)
     if args.command == "doctor":
         if args.backend == "android":
             if not args.adb:
