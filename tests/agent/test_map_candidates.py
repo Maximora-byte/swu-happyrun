@@ -138,10 +138,15 @@ def test_bad_metadata(tmp_path, key, value):
         b'<!ENTITY a "x"><osm/>',
         b"\xff<osm/>",
         b"<osm>\x00</osm>",
-        b"x" * 2000001,
+        None,
     ],
+    ids=["doctype", "entity", "non_utf8", "nul", "oversized"],
 )
 def test_hostile_input(tmp_path, data):
+    if data is None:
+        from swu_happyrun.core.map_candidates import MAX_BYTES
+
+        data = b"x" * (MAX_BYTES + 1)
     with pytest.raises(MapInputError):
         run(tmp_path, data)
 
@@ -248,7 +253,7 @@ def test_cli_new_files_private_and_redacted(tmp_path, capsys):
     source = tmp_path / "in.osm"
     source.write_bytes(sample())
     m = tmp_path / "meta.json"
-    m.write_text(json.dumps(meta(sample())))
+    m.write_text(json.dumps(meta(sample())), encoding="utf-8")
     private = tmp_path / "private.json"
     report = tmp_path / "report.json"
     args = [
@@ -266,8 +271,8 @@ def test_cli_new_files_private_and_redacted(tmp_path, capsys):
         str(report),
     ]
     assert main(args) == 0
-    route = json.loads(private.read_text())
-    public = report.read_text()
+    route = json.loads(private.read_text(encoding="utf-8"))
+    public = report.read_text(encoding="utf-8")
     assert route["route_id"] not in public and "points" not in public
     assert "points" not in capsys.readouterr().out
     before = private.read_bytes()
@@ -323,3 +328,64 @@ def test_no_implicit_metadata_defaults(tmp_path):
 def test_non_utf8_declaration_rejected(tmp_path, prefix):
     with pytest.raises(MapInputError):
         run(tmp_path, prefix + sample())
+
+
+@pytest.mark.parametrize(
+    "size", [2898661, 4 * 1024 * 1024], ids=["original_snapshot_size", "exact_4mib"]
+)
+def test_bounded_whole_snapshot_supported(tmp_path, size):
+    data = sample()
+    data = data.replace(b"</osm>", b" " * (size - len(data)) + b"</osm>")
+    assert len(data) == size
+    result = run(tmp_path, data)
+    assert result.report["source_sha256"] == hashlib.sha256(data).hexdigest()
+    assert result.route.source_ref.endswith(hashlib.sha256(data).hexdigest())
+    with pytest.raises(MapInputError, match="source_digest_mismatch"):
+        run(tmp_path, data, meta(sample()))
+
+
+def test_fixed_limit_plus_one_rejected(tmp_path):
+    from swu_happyrun.core.map_candidates import MAX_BYTES
+
+    assert MAX_BYTES == 4 * 1024 * 1024
+    data = b"x" * (MAX_BYTES + 1)
+    with pytest.raises(MapInputError, match="input_too_large"):
+        run(tmp_path, data)
+
+
+def test_map_collection_ids_fit_windows_environment(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(root / "src"))
+    collected = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", str(Path(__file__).resolve())],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        timeout=30,
+    )
+    assert collected.returncode == 0
+    ids = [line for line in collected.stdout.splitlines() if b"::test_" in line]
+    assert ids
+    assert max(map(len, ids)) < 512
+
+
+def test_cli_text_reads_under_gbk_default(tmp_path, capsys, monkeypatch):
+    from pathlib import Path
+
+    original_read = Path.read_text
+    original_write = Path.write_text
+
+    def locale_read(path, encoding=None, errors=None, **kwargs):
+        return original_read(path, encoding=encoding or "gbk", errors=errors, **kwargs)
+
+    def locale_write(path, data, encoding=None, errors=None, **kwargs):
+        return original_write(path, data, encoding=encoding or "gbk", errors=errors, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", locale_read)
+    monkeypatch.setattr(Path, "write_text", locale_write)
+    test_cli_new_files_private_and_redacted(tmp_path, capsys)

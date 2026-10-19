@@ -29,7 +29,7 @@ Store inputs and generated precise profiles outside version control, in an
 operator-owned private directory. The CLI never fetches URLs or reads API keys.
 Use an OSM 0.6 XML export containing the campus way, the named field object,
 the track way, and all referenced nodes, including node versions. Limits:
-2,000,000 bytes per file and 1,000 nodes per selected ring. UTF-8 only, no DTD,
+4 MiB (4,194,304 bytes) per file and 1,000 nodes per selected ring. UTF-8 only, no DTD,
 ENTITY or NUL. Symlinks, special files, duplicate object IDs/tags, missing nodes,
 open/degenerate/self-intersecting rings and wrong source identities are rejected.
 Input directories must not be concurrently modified by untrusted users; these
@@ -104,3 +104,20 @@ and accepted records remain separate acceptance stages. No real route, device,
 Windows or provider API validation is claimed by synthetic Linux tests.
 
 Tests: `python -m pytest tests/agent/test_map_candidates.py tests/contracts -q`.
+
+## Revision after ordinary Windows replay
+
+The first a0916d6 candidate was not accepted on the original Windows account:
+the unchanged 2,898,661-byte frozen campus XML exceeded the old 2 MB bound;
+one oversized pytest parameter generated an overlong Windows environment value;
+and a test read the UTF-8 report using the GBK locale. These original failures
+remain evidence; hosted CI and the six successful derived-file diagnostic runs
+do not override them.
+
+The fixed 4 MiB input bound now accommodates the reported original file size
+without cropping or changing its source hash. Reads still request at most the
+limit plus one byte, and selected rings remain capped at 1,000 nodes. Synthetic
+regressions cover the reported byte count, exactly 4 MiB, limit plus one, whole-file
+hash mismatch, short collected test IDs and explicit UTF-8 text I/O under a
+simulated GBK default. The original private file and its source chain must still
+be replayed by local Codex against the new exact HEAD; no real replay is claimed.

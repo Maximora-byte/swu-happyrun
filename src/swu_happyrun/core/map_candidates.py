@@ -19,7 +19,8 @@ from swu_happyrun.core.canonical import profile_revision
 from swu_happyrun.core.geo import _inside, _valid_polygon
 from swu_happyrun.core.models import RouteProfile
 
-MAX_BYTES = 2_000_000
+# The original frozen campus export is 2,898,661 bytes. Keep a fixed bound.
+MAX_BYTES = 4 * 1024 * 1024
 # Public identities from Issue 64 / PR 66; no geometry or school IDs.
 TARGETS = {
     1: (("way", 843421786, 2), ("way", 843421789, 1)),
