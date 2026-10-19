@@ -2,6 +2,10 @@
 
 更新：2026-10-19（Asia/Shanghai）。Dot 主导实现和修复；本地 Codex 负责独立测试、设备观测和集成审核。本轮只使用 GitHub，没有发送 Matrix 消息。
 
+## 下一轮执行入口
+
+[下一轮开发与验收计划](superpowers/plans/2026-10-19-next-stage.md)已按用户要求准备。#37已有修复PR #39（5d52d78），#36已有修复PR #40（28f8116），均待独立接受；不重复派发重写。Dot按计划收尾修复并继续Android恢复、CI/Windows可复现性、MuMu测试入口、统一候选及真实适配准备。
+
 ## 已合入 main
 
 | 范围 | PR / 准确 HEAD | 独立验收 |
