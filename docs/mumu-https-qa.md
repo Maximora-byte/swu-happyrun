@@ -1,0 +1,63 @@
+# MuMu 自身应用 HTTPS 验收入口
+
+## 边界与来源
+
+这是独立于官方 AVD harness 的本机入口。`scripts/check_mumu_https.py` 不调用旧 AVD 的 guard、reset 或 fixture，不放宽 emulator/qemu 限制，不使用 AVD 主机地址假设。产品基线固定为 `9534f51efe3a557e6b4bda5605426e4004a34783` / tree `53d6858c01b982e1143436018d7201e934c4ee58`。
+
+需要另外构建含 `RemoteMumuHttpsAcceptanceTest.java` 的配对 remoteQa app/test APK。普通 APK 和没有 adapter 的 9534 remoteQa APK不能用于此入口。产品源码与新增测试 adapter 分开追溯：交付 manifest 保留产品 commit/tree，另外记录 adapter source commit、唯一文件路径和 SHA256；入口再核对当前受审 adapter 文件内容。不能把 adapter 构建称为未经修改的旧 9534 测试 APK。
+
+交付工具 `build_local_https_delivery.py` / `check_local_https_delivery.py` 是前置依赖，来自独立 [PR #75](https://github.com/Maximora-byte/swu-happyrun/pull/75)，固定工具提交 `3ac878f0e62869705f81007f72ae2bcf0a55083e`；此入口不重复构建或签名。请使用同一审核组合中的工具和源码，不从旧 APK拼装配对。
+
+本入口只操作 `org.happyrun.app` / `org.happyrun.app.test`，驱动为产品现有 `RemoteFakeDriver`。不操作第三方乐跑、定位/传感器、学校接口或学校记录。不安装/卸载 APK，不清 app 数据，不点击 UI，不启动模拟器，不修改 Root、防火墙、系统 CA、TLS hostname verifier 或网络设置。
+
+## 已实现用例的验收含义
+
+- `completed`：真实 HTTPS、产品 runner、真实服务器终态 completed，恰好一次模拟开始，停止后距离不再增长。
+- `two_jobs`：同一个真实 `RemoteForegroundSession` 完成两个不同任务，累计两次开始；这是 session 测试，不是 Activity/UI/多显示器验收。
+- `disconnect_running`：开始持久化后主动断开本次 runner/client；不允许报告 completed，模拟驱动停止。
+- `lost_renew`：真实 fixture 第四次续租响应故障，产品进入不确定状态并停止，必须证明故障实际触发。
+- `cancel`：服务器先进入 cancelling，必须观察到真实 `/stop-ack` 的 200 才接受 cancelled，不能仅凭取消请求成功。
+- `restart`：观察到持久 start 后真实 force-stop 自身包；等租约转 needs_attention，再对同 job/session 请求 verify_only，并验证新 fence 增大、零新增开始、保持 verification_pending。它验证的是不确定开始的恢复，不冒充“已完成记录恢复成功”。
+
+Activity/UI生命周期、显示器 viewport、真实传感器/第三方目标和有效学校记录始终单列未验证。任一用例、fixture退出、控制线程或自身进程清理失败，都停止后续用例；不会继续运行污染后的套件。
+
+## 本机前置条件
+
+1. 用户确认独立 MuMu 实例没有个人数据。用户/本地验收者负责观察实例、ADB serial、MuMu/Android版本以及自身 app 的 task/display。入口不猜地址或实例映射。
+2. 已在该实例安装准确 manifest 对应的 remoteQa app/test，并手动打开自身 app，形成唯一自身任务。签名不匹配时停止，不能自动卸载或绕过签名。
+3. 用项目既有 `MumuBinding` 的完整字段格式保存当前本地复核结果：instance/serial 与 mapped instance/serial一致，`mapping_source=local_review`，唯一自身 task，app/engine/host版本、boot ID、全新 observation UUID、带时区 observed_at。入口首次接收要求不超过30秒；它验证格式与一致性，不把自填 JSON 当成独立认证。必须由本地验收者先真实核实映射。
+4. 明确选择本机已有可达的私有 IPv4 和可用端口；不默认监听所有接口，不自动改网络或防火墙。证书 SAN 必须精确包含实际地址。loopback 只适用于你已验证相应路径可达的情况；不能假定 MuMu 的 loopback 就是主机。
+5. 公有 CA 和 leaf certificate 与交付 manifest/APK 内测试 CA一致。服务器私钥仅在本机保留，通过 `--server-key` 本地路径使用；不上传、不贴到聊天、不加入交付包。fixture 在监听前核对 leaf/key配对。用户实际私钥与实现测试临时生成的 localhost 合成密钥完全分离。
+6. 本机 Python3.11+，按冻结依赖安装 server/agent/dev；使用明确可信 ADB、MuMuManager、OpenSSL、apksigner、apkanalyzer、aapt2路径。入口仅使用仓库已有的 `MuMuManager info --vmindex` 查询，不猜新的 MuMu 命令。
+
+每次 instrument 前重新读取原实例、boot、Android版本和安装 app/test 的实际 APK SHA256；Android内再校验自身 app/test签名、包名、唯一自身task、原boot和显式模拟许可。一次本机进程内使用单调时钟限制新观测到动作的间隔；不会伪造跨进程单调时间或重写原复核时间。重启恢复仍由同一 host进程持有本轮 run UUID，不能传入任意旧 run目录继续执行。
+
+## 运行
+
+先构建并验证包含受审 adapter 的交付包。以下参数值都由本地观察/交付工具提供，示例不提供猜测的 serial 或 MuMu地址。
+
+纯公有材料/产物预检（不会调用 ADB、不会读取私钥）：
+
+```powershell
+python scripts/check_mumu_https.py --bundle "$bundle" --ca-cert "$ca" --server-cert "$leaf" --host "$observedHost" --openssl "$openssl" --apksigner "$apksigner" --apkanalyzer "$apkanalyzer" --aapt2 "$aapt2" --output "$newPreflightReport"
+```
+
+无 adapter / 哈希不匹配 / 信任不匹配时 exit2、全部 not_run。正确预检 exit0 只表示预检通过，`runtime_status` 仍为 `not_run`。
+
+实际本机执行必须显式确认以下三个开关；尤其 force-stop 会停止该隔离实例中的自身包进程（包括重启用例与失败清理），但不会清数据：
+
+```powershell
+python scripts/check_mumu_https.py --bundle "$bundle" --ca-cert "$ca" --server-cert "$leaf" --host "$observedHost" --port $port --openssl "$openssl" --apksigner "$apksigner" --apkanalyzer "$apkanalyzer" --aapt2 "$aapt2" --adb "$adb" --manager "$manager" --serial "$observedSerial" --instance "$observedIndex" --binding "$freshBinding" --server-key "$localPrivateKey" --private-dir "$existingPrivateDirectory" --execute-own-app-simulation --allow-own-package-force-stop --isolated-no-personal-data --output "$newRuntimeReport"
+```
+
+`--output` 必须是新文件，位于已有非 symlink父目录、交付包外，不能别名到任何输入。入口以独占方式新建，不能覆盖已有报告或私钥。所有工具输出和 instrumentation 原文只在本机内存中处理；公开报告仅有固定阶段/错误类别、布尔、计数与已核 source摘要，不含 token、路径、serial、账号、原始日志或截图。
+
+每例使用新随机 `files/mumu-https-qa/<runUUID>/journal`；owner以独占新建保存，仅恢复本轮完全一致的owner。拒绝 symlink、旧目录复用或不符owner。正常结束不自动删除这些目录；失败 journal保留给本地复核。主机fixture SQLite也保留在本次私有目录，不能原样上传。用户app其他目录、数据库与 shared preferences不清理。
+
+只有所有六项及其清理均成功才 exit0 / runtime passed。任何失败 exit1；前置条件不足 exit2。若身份已变化导致安全清理被拒绝，报告单列 cleanup失败，后续不运行；本地验收者先核对当前实例及自身进程，不得靠放宽guard继续。
+
+## 实现验证和现场证据
+
+宿主机单测、合成 localhost TLS 和 JVM namespace helper 只能证明实现层边界，不能证明 MuMu已连通或安装过此候选。完整 Android Gradle编译、MuMu实际执行与独立接受各自记录准确 commit、adapter hash、命令和退出码。旧 API35 归档不代替本候选的新构建或本机运行；未运行和中断都不是 passed。
+
+专用 `mumu-adapter-build-only.yml` 只在 `dot/mumu-own-https-runner` 的 push 或同仓库该分支 PR 编译新增 adapter，使用官方 SDK35/build-tools35.0.0、现有固定 Gradle8.9/AGP8.7.3 和预装 JDK17。其一次性 CA 只用于编译资源，私钥与公有资源在 shell 退出时清理，不上传任何产物；该作业不能提供用户本地 HTTPS 服务用的成套交付或设备运行证据。最终以准确 head 的 CI 编译退出结果为准。
