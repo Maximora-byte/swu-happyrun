@@ -1,10 +1,12 @@
 # 协作状态
 
-更新：2026-10-19（Asia/Shanghai）。Dot 主导实现和修复；本地 Codex 负责独立测试、设备观测和集成审核。本轮只使用 GitHub，没有发送 Matrix 消息。
+更新：2026-10-20（Asia/Shanghai）。Dot 主导实现和修复；本地 Codex 负责独立测试、设备观测和集成审核。本轮只使用 GitHub，没有发送 Matrix 消息。
 
 ## 下一轮执行入口
 
-[e490后续设备交付计划](superpowers/plans/2026-10-19-post-e490-device-delivery.md)为最新接续：#52/#53/#58/#59已分别按范围接受；MuMu普通/可选版各30项历史离线流程通过，vendor139/135仍保留。新[#62](https://github.com/Maximora-byte/swu-happyrun/pull/62)和[#69](https://github.com/Maximora-byte/swu-happyrun/pull/69)已完成原账户真实JDK及原始XML验收并合入候选，详见[本轮回执](qa/2026-10-19-map-jdk-acceptance.md)。Dot继续收尾[#57](https://github.com/Maximora-byte/swu-happyrun/issues/57)间歇失败诊断，推进真实通道、指定乐跑版本与服务器闭环；Codex接续冻结构建的MuMu现场验收，vivo/纯接口独立研究。旧[七任务](superpowers/plans/2026-10-19-next-stage.md)和[资源计划](superpowers/plans/2026-10-19-resource-guided-adaptation.md)保留历史基线，不再重派已接受的#39/#40。
+**最新执行入口为[夜间虚拟跑步计划](superpowers/plans/2026-10-20-dot-virtual-run-night.md)与[Issue #86](https://github.com/Maximora-byte/swu-happyrun/issues/86)。** 用户明确使用MuMu虚拟定位/虚拟轨迹模拟跑步，不要求本人实跑。Dot优先交原生有界调用、自有探针私有读回和可执行轨迹控制器；Codex接受#74/#77并原机验证。候选已到`ec15ea880012b85f7e25778b6b8d149553827040`（#85），tree2d55bd3，Windows完整1580通过/23条件skip/6subtests、准确自动CI通过；#85仅参数准备，虚拟输入仍待设备证据。#84报告已合main83757fd6。按收到后1/3/6小时交检查点，目标10月21日早间可安装/可用的分项交付；本人登录、正式学校规则与有效记录仍独立接受，不将轨迹控制器写成整个项目完成。
+
+[e490后续设备交付计划](superpowers/plans/2026-10-19-post-e490-device-delivery.md)保留前阶段任务明细，当前顺序以上述#86为准：#52/#53/#58/#59已分别按范围接受；MuMu普通/可选版各30项历史离线流程通过，vendor139/135仍保留。新[#62](https://github.com/Maximora-byte/swu-happyrun/pull/62)和[#69](https://github.com/Maximora-byte/swu-happyrun/pull/69)已完成原账户真实JDK及原始XML验收并合入候选，详见[本轮回执](qa/2026-10-19-map-jdk-acceptance.md)。Dot继续收尾[#57](https://github.com/Maximora-byte/swu-happyrun/issues/57)间歇失败诊断，推进虚拟输入通道、指定乐跑版本与服务器闭环；Codex接续冻结构建的MuMu现场验收，vivo/纯接口独立研究。旧[七任务](superpowers/plans/2026-10-19-next-stage.md)和[资源计划](superpowers/plans/2026-10-19-resource-guided-adaptation.md)保留历史基线，不再重派已接受的#39/#40。
 
 用户已指定优先北碚一、二、四运动场的OSM/高德/腾讯地图输入。#69/ba6使用未裁剪的2,898,661-byte原XML三场地正式导入均通过，原hash、点序/节点版本摘要及revision一致；两类Windows新增测试失败也已修复并实际复测。[旧a091失败](qa/2026-10-19-map69-retest.md)保留，不由旧派生诊断覆盖。高德精度受限、腾讯无结果，尚未完成三源交叉核验；[#64](https://github.com/Maximora-byte/swu-happyrun/issues/64)、学校规则和真实记录门槛保持独立。
 
@@ -32,7 +34,7 @@ MuMu HTTPS最新接续：#76新HEAD`6d8fa394`已完成新四APK真实构建、�
 - [#35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 的原 CI/TLS 修订为 `28871b2d599a8ec8335570effb3207d2564639ab`；#39/#40合入原候选后为 `2d0fcc550f9c1f6cf8cc6e0106dcafd106cf181a`，整个产品仍待接受。采用版本须重新核对实际 HEAD。
 - [#39](https://github.com/Maximora-byte/swu-happyrun/pull/39) `5d52d78acf6d0f7e7064e1209810746dd05b93d7`：独立接受，merge `0bb9344ddefe8054177101583282c57f27f5b38a` 到原候选分支；[#37](https://github.com/Maximora-byte/swu-happyrun/issues/37) 已关闭。冲突整批回滚、合法精确映射与重传通过；非阻塞错误列断言已交 Dot 改进。
 - [#40](https://github.com/Maximora-byte/swu-happyrun/pull/40) 新修订 `8aef593dd89ca47d63a702ee1cf6952382169bbd`：独立恢复正反例通过，相关222项通过/1权限skip，已合入原候选；[#36](https://github.com/Maximora-byte/swu-happyrun/issues/36)关闭。旧69182c7失败保留在历史QA报告。
-- [#46](https://github.com/Maximora-byte/swu-happyrun/pull/46) 当前候选含已接受#75/#76，merge `e681aaa8ae81c61c8386ca697a2451b4bb7c08e7`、tree9400abf与本地完整预览相同，普通Windows/Python3.11.16为1515通过/23条件skip/1既有warning/6 subtests通过。本轮MuMu六组HTTPS自身模拟使用冻结9534产品+0cea工具+6d8 adapter通过；未将候选merge标成APK产品源码。历史9534的1298通过/17skip和4c授权API35协议15/UI3/前台14及两组恢复均保留原范围。#57旧间歇失败未逐项定因，保持开放；#74/#77未接受，完整候选仍Draft，不抹去[历史e490问题](https://github.com/Maximora-byte/swu-happyrun/pull/46#issuecomment-6262758607)。
+- [#46](https://github.com/Maximora-byte/swu-happyrun/pull/46) 当前候选含已接受#75/#76/#85，merge `ec15ea880012b85f7e25778b6b8d149553827040`、tree2d55bd3与完整受测#85 HEAD相同，普通Windows/Python3.11.16为1580通过/23条件skip/1既有warning/6 subtests通过；3.13专项302通过/1权限skip，见[#85接受回执](https://github.com/Maximora-byte/swu-happyrun/pull/85#issuecomment-6271923969)。MuMu六组HTTPS自身模拟仍对应冻结9534产品+0cea工具+6d8 adapter；#85没有设备执行增量。历史e681的1515通过/23skip、9534的1298通过/17skip和4c授权API35结果均保留原范围。#57旧间歇失败未逐项定因，保持开放；#74/#77未接受，完整候选仍Draft，不抹去[历史e490问题](https://github.com/Maximora-byte/swu-happyrun/pull/46#issuecomment-6262758607)。
 - [#55](https://github.com/Maximora-byte/swu-happyrun/pull/55) `98057f986bef87138385d5643d91d19a2bc10aac`：普通Windows账户全套1093通过/15精确跳过，合入原候选merge `5eb00e27f59a7fe927dff389e4cdd6d8d8665a55`，#52关闭。
 - [#56](https://github.com/Maximora-byte/swu-happyrun/pull/56) `090f7eea6479cd5ce094741b4730aec6697543dd`：原失租复现零写入；组合全套1125通过/15跳过，tree与最终merge `f705f91409df88df9614aa4dd53c136dd00ed8a0`一致，#53关闭。两修复的Android CI仅build/static，runtime未授权/未执行，不计设备通过。
 - [#65](https://github.com/Maximora-byte/swu-happyrun/pull/65) `c7e260b7eafe58d06277afc106f167db5dd3a2ba`：Windows聚焦39通过/1skip、准确HEAD全套1177通过/16skip；同源新APK普通/optional实际入口共14项正反例符合预期，实际dump139仍exit1。合入原候选merge `6dda2a4e74e40b92387bcbede2ec4db28abb7662`，#58按自身采证范围关闭。
