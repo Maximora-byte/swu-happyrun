@@ -1,8 +1,116 @@
 # 协作状态
 
+更新日期：2026-10-18（Asia/Shanghai）。当前结论以下方“当前交付候选”为准；末尾保存旧快照用于追溯，不能将旧“未接单/未开始”作为本轮状态。
+
+## 向导 CI 修复与空闲轮询优化（2026-10-19）
+
+基于已发布 6427e91b7099cdf2233983ff55a5bcf9718e6b61 的独立下一候选：修复已观测的编译后资源ID检查与Windows中文夹具编码问题；停止空任务/终态无条件轮询，活动任务继续有界更新，仅快照变化重绘，用户刷新可排队。此优化不声称已证实 SystemUI ANR 的根因。Root仍须显式确认，不自动调用。
+
+用户已明确批准本轮临时测试机KVM访问。门禁仅匹配本仓库onboarding分支从6427开始的下一push或PR33 synchronize，使用当前用户ACL且保留旧mask；本地只运行mock，真实加速结果待CI。本地24项Java JUnit、101项交付fixture、lint/140格式通过。CI保留原11项并新增4项轮询回归，每变体native15、wizard4、inactive1独立计数，使用各自匹配的instrumentation APK。新仪器测试未在本地执行，旧失败不能标为已修复验收通过。
+
+## 向导启动诊断重基（2026-10-19）
+
+本轮向导组合已重基至 629f2e9b86d7a72502f528abd1c1edf999d6a842，保留稳定 API31 镜像、私有 AVD 路径、快速失败与有界启动诊断。启动探针仅增加固定 core/wizard 首屏控件配置，默认 core 不变；向导 CI 显式选择 wizard，两变体仍要求 resumed、精确包名、非零控件范围及无崩溃/ANR。不会点击 Root 确认按钮。
+
+最终 Linux/Python3.12 完整 **612 passed**（95.17秒，1条继承warning），交付专项58项、Ruff/137格式、Schema、frozen、Node与分发隐私通过。34个Java源文件与上一向导组合逐字节相同，复用其23项JUnit实测，未伪称重跑。实际Android编译/AVD及ART仍以新提交CI/设备证据为准；下方584项保留为重基前证据。
+
+## 单入口向导与可选自身模块候选（2026-10-19）
+
+本轮独立基于 cf3cfee12701573b4a577225d66980bb2279a346，新增同一原生入口的环境向导、显式确认后只读 Root 诊断及自身 scope 模块变体。默认不调用 su；取消、刷新和打开说明不授权 Root 检查。模块打包标识与 inactive/unknown/active 实时回执分别展示，任何诊断状态都不解锁真实执行。组合来源、签名升级边界与证据分层见[向导组合说明](android-onboarding-integration.md)。
+
+本地 Java 23 个 JUnit（最后两处文案改动后重新编译复跑）、最终完整 Python **584 passed**（124.76秒，1条继承warning）、交付专项30项通过；首次582项日志保留，未当最终数量。frozen、Schema、Ruff/135文件格式、Node helper、wheel/sdist隐私检查通过。Android 编译、实际 APK 资源检查、无框架安装/同签名替换及每变体四项向导仪器测试尚待本轮准确 HEAD 的 Actions；首次 APK 的11项保持独立。用户最终单包候选必须通过上述门槛后才能推荐。MuMu改版、ART激活/禁用重启、真实Root授权和学校有效记录未验收。
+
+## 原生 APK 新阶段（2026-10-19）
+
+用户最新目标是在 MuMu 内安装 APK 直接使用。本阶段新增无需 PC 服务的原生 Java/Android SDK 本地应用；旧计划“不做独立 APK”已由本次明确需求覆盖，旧软件证据保留。构建、安装与签名限制见[APK 交付说明](android-apk.md)。当前 APK/官方 emulator 结果必须按本轮集成 HEAD 的 Actions 单独核对，不借用此前 Python/网页测试通过结论。真实 MuMu、应用执行和学校有效记录仍未验收；Root/LSPosed 仅保留可选能力架构，不默认安装或配置。
+
+本轮将原生UI、持久化本地simulation、只读能力诊断、独立本地状态边界和APK构建/测试脚本组合；本地simulation不伪装服务端JobView或AGENT。未知能力不启用真实执行，needs_attention须明确停止确认后才能新建模拟；历史任务保留。Python分发保护另经合成文件RED→GREEN验证，排除新增Android目录里的local.properties、签名材料和构建缓存，保留审查源码；旧已交付包没有这些敏感文件。
+
+本轮初次冻结组合 Linux/Python3.12.14 完整 **564 passed**（90.58秒，1条继承warning）；frozen依赖、Schema/Android边界防漂移、Ruff、旧web Node生产脚本harness、Bash语法和4份XML解析通过。46个Python package/静态资源文件与f3d基线逐字节一致。上述结果不包含Android编译或仪器执行。
+
+## 当前交付候选
+
+Dot 已承担主要实现与修复；本地 Codex 负责 Windows、真实设备与集成独立验收。此分工覆盖旧计划中的负责人，详见 [冲刺交接](handoffs/2026-10-18-dot-lead-sprint.md) 与 [Issue #16](https://github.com/Maximora-byte/swu-happyrun/issues/16)。本文不宣称全部 v1 已验收，也不把提交、局部测试、软件联调、设备观测和学校有效记录合并为同一种“完成”。
+
+### 控制台第二轮修订（2026-10-19）
+
+首轮 [CI run 39184117989](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39184117989) 实际执行 Chromium，9组通过、3组失败；三处失败使用了不适用于 fieldset 的 Playwright disabled 判断，现改查原生属性与真实输入控件禁用状态。截图审阅还发现创建/详情入口位于长任务列表之后，现将入口前置，点击任务后滚动并聚焦详情；新增桌面/手机 viewport 断言。新浏览器结果以本轮同 HEAD Actions 为准，不能沿用首轮局部通过。
+
+同次 Windows/Python3.11 的取消后停止失败用例出现 start_count=0。独立真实TCP诊断用可控26秒偏移复现固定服务UTC与实时agent时钟混用，使开始前租约预算不足；测试现保持服务UTC随单调时钟推进，并保留显式租约过期注入。修复只涉及测试，不改变生产租约防线；该重现不证明历史CI只有这一种原因。
+
+本轮 Linux/Python3.12.14 完整 **557 passed**（97.91秒）；新wheel源码外 **35 HTTP passed**（43.32秒），包括新增0/26秒时钟回归。冻结依赖、Schema、lint/format和Node检查通过；同一wheel源码外 **7 daemon passed**（15.79秒），CLI smoke、console真实TCP、core/server/agent三extras隔离通过，Playwright不进入普通运行环境。下方556/34结果保留为首轮快照，不覆盖本轮修改。真实Chromium与Windows复验须查看本轮同HEAD Actions，不能用本地Linux结果代替。
+
+### 本地管理控制台首轮快照（2026-10-19）
+
+在准确基线 `585e1b0674022c8262109a7ea5e5720c0532eee9` 上增加同源控制台、ADMIN任务分页和显式 `server --open-browser`。内置HTML/JS/CSS随wheel分发，不引入服务器运行时前端下载；令牌只保留当前页面内存。操作与边界见[控制台](console.md)、[API](console-api.md)、[浏览器验收](console-browser-qa.md)。默认不打开浏览器，不启动agent，不解除真实设备限制。
+
+本轮 Linux/Python3.12.14 完整 **556 passed**；新wheel源码外 **34 HTTP + 7 daemon**、CLI smoke与新增console真实TCP检查通过。新增检查核对三asset字节/安全头、静态白名单、ADMIN认证分页、重启cursor稳定。冻结依赖、Schema、lint/format、Node生产脚本harness、构建与三extras隔离通过；Playwright仅browser-test extra。
+
+本地未执行Chromium，受现有IPC隔离限制；页面交互、布局和截图验收结果以同一候选HEAD的Actions `console-browser-qa` 及PR记录为准。HTTP/Node检查不替代真实浏览器验收。MuMu/vivo、具体乐跑、学校记录与容器实测仍受已列环境/样本限制。
+
+### CI 测试同步修正（2026-10-19）
+
+准确基线 `4d73f42ec15e0c2cc14371f8a4441ef2101e6e41` 的 [CI run 39179740749](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39179740749) 在 Windows/Python3.13 的 active-renewal 测试失败。独立延迟父进程检查后，确定性复现旧测试错过短暂 active 状态；这说明测试存在竞态，但未证明该次 CI 只有这一种原因。本轮只修测试同步：在启动前预设故障，由服务端处理首个已持久化 active 的 renew 时注入503；父进程退出后断言停止与不重试。
+
+组合复测另暴露 readiness 测试直接改健康标志、被后台 tick 覆盖的竞争，原518通过/1失败日志保留。现以真实 tick 成功→异常→恢复和队列屏障验证503脱敏、health200、ready恢复与线程退出。两处都不修改生产模块。
+
+最终完整 **519 passed**；同一已验收 wheel 的新 **7 daemon** 与 **15 scheduler** 场景在源码外安装环境复跑通过。生产源码与 wheel 字节不变，先前34 HTTP、9 lifecycle、50外部边界及CLI smoke证据按相同wheel SHA复用，不称本轮重新跑过。新远端CI结果仍须单独核对；设备/容器等已列阻塞不变。
+
+### 信号处理重入修复候选（2026-10-19）
+
+在准确基线 `58264f22ba8829ec707f2d1a07617332f42ef48d` 上追加最小修复：信号 handler 内原有 Event.set 可能重入正在持有的 condition 锁而死锁。现改为无锁记录 signum，等待使用单调时钟和最长 50ms 的检查间隔。新真实子进程回归先在旧安装 wheel 上以 3 秒超时复现，再在修复包通过。
+
+本轮 Linux / Python 3.12.14：完整 **519 passed**；源码外安装 wheel **34 HTTP + 7 daemon + 9 lifecycle + 50 外部边界** 均通过，CLI smoke、三 extras 隔离、frozen/Schema/lint/build 通过。后文513/34/7属于上一轮路线修复证据，不覆盖此信号重入缺口。最终准确提交 SHA/Hosted CI 由集成 PR 绑定。
+
+真实设备检查仍受环境阻塞：云端无 Docker/Podman/nerdctl/containerd/ADB 和 Docker socket，用户桌面离线、无已保存可用环境；没有实际容器、MuMu/vivo、步道乐跑或学校记录验收结论。
+
+### 路线完整性与代理生命周期修复候选
+
+在 PR #25 历史 HEAD `19c15ba7cfad7fc1039b7b552677a3bd3e82cf6b` 上继续修复。旧版 400/31 项检查是历史软件证据，未覆盖“计时预算耗尽但路线未走完”的缺口，不能作为路线完成证明。本轮成功路径使用短合成路线、2 m/s 合法速度和 2 秒预算；只有到达归一化路线端点才 completed，预算不足立即 needs_attention / simulation_incomplete，不产生学校记录证据。
+
+- [Android 只读诊断 PR #26](https://github.com/Maximora-byte/swu-happyrun/pull/26)：`5e841d1fa8e231caa33608cdd689f0b79b1f9d8d`。新增模块与 [说明](android-diagnostics.md)，没有实测设备或启用位置写入。
+- [坐标归一化 PR #27](https://github.com/Maximora-byte/swu-happyrun/pull/27)：`9db9c8f31567b3300699e79b3a340f7bbaf3c22c`。[转换约束](coordinate-conversion.md)明确离线近似、输入域与源 revision 保留。
+- [代理生命周期 PR #28](https://github.com/Maximora-byte/swu-happyrun/pull/28)：`9c358125a9724fafd3468a64f069e5ec92acab49`。合作式停止、有限空闲重连、claim/renew 不盲目重试、诊断 CLI 接线。
+- [路线执行](route-execution.md)与 I0 测试按逐文件 manifest 组合；最终集成 SHA 以 PR/Actions 准确 push HEAD 为准，不将本地变更 commit 当远程提交。
+- 本轮 Linux / Python 3.12.14 完整 **513 passed**；源码外安装 wheel 的 **34 项真实 HTTP**、**7 项 daemon/TCP/subprocess** 和 CLI smoke 全通过。GCJ02/BD09 路线完整流程检查规范化端点、原文件/revision不变及无 record evidence。
+- 三 extras 安装隔离、frozen、Schema、lint/format、wheel/sdist 构建通过。Windows 信号停止、MuMu/vivo、步道乐跑实际流程、有效学校记录和 Docker 容器仍未实测；最终 Hosted CI 另按不可变 HEAD 核查。
+
+下表保留组成基线与阶段追溯；本轮结果以上述条目和[交付验证记录](delivery-validation.md)为准。
+
+| 范围 | 代码交付状态 | 软件验证证据 / 剩余门槛 | 设备与记录 |
+| --- | --- | --- | --- |
+| C0/L0 继承与恢复结构边 | [替代 PR #17](https://github.com/Maximora-byte/swu-happyrun/pull/17)，HEAD `6ed02c29924ccc3ab26c028fbf46d15477d84eb0` | 修复 verify_only 恢复路径；基于旧 PR #13 继承，最终候选须保留修复 | 只读主机诊断不等于设备执行通过 |
+| C1 恢复/归属/证据契约 | [PR #19](https://github.com/Maximora-byte/swu-happyrun/pull/19)，阶段 HEAD `a82e4d97a5a7e1de5112eabeecac6e97312089a7` | 摘要别名一致性与 ASCII 日程时间修复；该版本本地 163 tests 通过，最终集成重跑结果见 I0 记录 | 无设备/学校有效记录结论 |
+| S0 API 与 SQLite | [PR #18](https://github.com/Maximora-byte/swu-happyrun/pull/18)，阶段 HEAD `c474119cdc18fa34fefffd5e8ea64c79f0106159`（继承 C0） | 本地 152 tests；该 HEAD 两个 CI run success 已核对；不代表 S1/S2 | 不依赖真实设备 |
+| S1 租约、取消、恢复 | [PR #22](https://github.com/Maximora-byte/swu-happyrun/pull/22)，阶段 HEAD `e3ffab6a0309d2b7e484edfe9498f4e2aab9e1b2` | 本地 223 tests、独立审计 14 项；安装包实际 HTTP 故障矩阵已执行，见 I0 记录 | 不依赖真实设备 |
+| S2 日程与重启 | [PR #23](https://github.com/Maximora-byte/swu-happyrun/pull/23)，阶段 HEAD `561155a24582c0e5bfcb4fbba7a9f2d2c53eaea9` | 本地 252 tests、独立审计 6 项；ready/tzdata/schema3；最终软件集成结果见 I0 记录 | 无设备结论 |
+| L1 profile / driver / fake | [PR #20](https://github.com/Maximora-byte/swu-happyrun/pull/20)，阶段 HEAD `10b2172bebd8aba302cc8a0345503b32d38589f6`，继承 C1 alias 修复 | 阶段本地 216 tests；新 HEAD CI 单列核对；fake 不产 app_record | 真实设备适配 `needs_samples` |
+| L2 agent / journal / CLI | [PR #21](https://github.com/Maximora-byte/swu-happyrun/pull/21)，阶段 HEAD `e935632079c805952e7b143e5438c7d829b34f22`，已继承新版 L1 | Windows lock 与 attention 报告修复已包含；最终集成检查见下方 I0 与交付验证记录，最终提交 CI 单列核对 | 当前物理后端 `unsupported_by_candidate` |
+| 安装/部署/文档 | 候选文件已准备，尚未据此声称容器可运行 | 7 项交付静态/fixture 测试与 lint/format 通过；Docker CLI 不可用，容器检查 `not_tested` | Windows 安装待独立验证 |
+| I0 集成 | 组件不可变 HEAD 与逐文件 manifest 已固定；集成提交 SHA 以 PR/Actions 为准 | 历史基线 Linux完整 400 tests、wheel外部安装 31 真实HTTP用例；本轮513/34+7及CLI smoke见上方；冻结安装/Schema/lint/build/三extras隔离通过；最终提交CI/artifact另查 | 不替代本地设备验收 |
+| L3 乐跑应用适配 | `needs_samples` / `unsupported_by_candidate` | 需要精确版本、本人会话、学校规则与脱敏页面样本，见 [Issue #9](https://github.com/Maximora-byte/swu-happyrun/issues/9) | `not_tested` |
+| vivo 无 Root | 保留研究方向；当前候选 `unsupported_by_candidate` | 见 [证据矩阵](research/vivo-noroot.md)，不推断平台永久不可行 | `not_tested` |
+| 纯接口直传 | 保留研究方向；当前候选 `unsupported_by_candidate` | 未取得西大真实业务协议/签名样本，见 [证据矩阵](research/direct-protocol.md) | `not_tested` |
+
+上述阶段 HEAD 用于追溯已报告的检查，不是最终统一候选。最终安装与验收必须使用集成 PR 正文和对应 Actions `github.sha` 指定的不可变 HEAD；I0 manifest 记录组件来源，不能混用分支最新内容。
+
+### 发布门槛与可复现资料
+
+- 候选 HEAD 由集成 PR 正文/Actions `github.sha` 绑定，父基线、各 PR 继承关系和最终集成命令/结果在 I0 发布记录补齐；“推进中”不是验收通过。
+- [50 项验收设计覆盖映射](acceptance-coverage.md) 标明实际测试方法与尚未覆盖范围；映射存在不等于通过。
+- [交付验证记录](delivery-validation.md) 区分执行过和未执行的检查；[安装](installation.md)、[服务器](server.md)、[fake 与故障](fake-e2e.md)、[本地 QA](local-qa.md) 提供操作步骤。
+- CI 只在既有检查和独立安装成功后生成候选 wheel/sdist/checksum artifact。未核对实际 run 和 artifact 前，不称已有可下载安装包；没有创建 Release。
+- MuMu 已知历史证据仅为 6.8.4.0 / Android 15 实例可查询且停止、ADB 无设备。新的 device_verified / record_verified 必须来自指定版本的实际观测。
+- 本轮不操作用户桌面，不修改生产服务器、DNS、账号、Root 或系统安全设置。原始截图、路线、数据库、账号与 token 留私有环境。
+
+## 历史记录（下列内容已被上方当前状态覆盖）
+
+以下原文保留当时接单与分工背景；“未开始”“旧负责人”“本轮交付仅设计”等表述仅适用于对应历史快照。
+
+
 更新日期：2026-10-18（Asia/Shanghai）。此文件记录证据，不由收到消息或计划勾选自动推断完成。
 
-## 最新分工与证据
+### 当时的分工与证据
 
 - 用户最新要求：Dot 主导主要开发，本地 Codex 负责实测与集成审核；见[冲刺任务](handoffs/2026-10-18-dot-lead-sprint.md)。目标明早候选版、24 小时内一次 v1 验收，不承诺未经实测的完整兼容性。
 - 仓库已公开。当前 main 尚未合入业务代码；C0/L0 在 [PR #13](https://github.com/Maximora-byte/swu-happyrun/pull/13)，HEAD `3ff0a33a01c629432a2036f4e105bed52157bd9e`，109 tests 和四组 CI 已通过，但 Dot 报告的 verify_only 恢复路径问题仍是阻塞。
@@ -11,7 +119,7 @@
 - 本地 MuMu 6.8.4.0 / Android 15.0 实例查询通过，实例停止，ADB 无设备；定位/传感器、应用、vivo 与学校有效记录未验证。
 - 本轮冲刺消息的实际送达与接单回执以 Matrix / Issue 为证；不能由这份计划的存在推断 Dot 已开始夜间任务。
 
-## 初次建仓快照（历史记录）
+### 初次建仓快照（历史记录）
 
 以下是本轮角色调整前的历史快照；状态和负责人以本页上方、最新 AGENTS.md 与冲刺任务为准。
 
@@ -30,7 +138,7 @@
 
 每次交接记录 Issue/PR URL、基线与 HEAD、运行的检查、未验证范围。旧 Workflow 连接器本轮返回内部错误；Matrix Dot 独立连接器能够列出群与连接状态，不把回调 HTTP 接收当作 Dot 接单。
 
-## 任务清单
+### 初次任务清单（历史负责人）
 
 负责人是计划分工，非 GitHub 用户指派；Dot 尚未实际接单。ready 表示可进入实施，不表示已经开工。
 
@@ -49,3 +157,7 @@
 | [#11 R0 vivo/纯接口研究](https://github.com/Maximora-byte/swu-happyrun/issues/11) | 本地 Codex，Dot 评审接口样本 | 实际设备版本、连接和脱敏样本 |
 
 本轮交付仅包含设计、协议草案、实施计划和协作任务。Markdown 相对链接、占位符扫描及 Git 空白检查通过；没有业务代码，因此未运行产品测试，也没有生成设备验收结论。
+
+最后追加仅Android持久化故障锁存及UI/真实SQLite trigger回归：存储失败停止模拟、显示未保存状态并禁止继续开始/停止；不能把旧持久running当成仍在执行。另增加已核包名的只读PackageInfo诊断。Android CI分别运行API31/35官方AVD，记录debug签名指纹；这些均不能代替MuMu或目标应用执行验收。此前完整Python结果按原快照保留，最后变更另做目标测试/静态/分发检查。
+
+最终五路更新后的Python目标检查（Android契约与delivery）**14 passed**，Schema/边界防漂移、Ruff、旧web Node、脚本/XML/接口静态检查和分发隐私检查通过；Python生产模块仍与f3d相同。APK构建与11项Android测试尚未在本地运行，须取同HEAD的API31/35 Actions证据。

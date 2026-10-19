@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HappyRun</string>
+    <string name="app_subtitle">本机运行助手</string>
+    <string name="simulation_badge">本地模拟 · 不产生学校记录</string>
+    <string name="home_title">先检查，再开始。</string>
+    <string name="home_intro">无需电脑端服务。当前版本可在应用内验证模拟执行流程；真实乐跑能力仍需逐项验证。</string>
+    <string name="diagnostics_title">运行环境</string>
+    <string name="refresh_checks">重新检查</string>
+    <string name="diagnostics_hint">检查仅读取可见信息，不申请 Root、不安装模块、不更改系统设置。</string>
+    <string name="simulation_title">体验一次本地模拟</string>
+    <string name="simulation_intro">使用内置 8 秒、20 米合成路线验证本地引擎。进度来自真实任务状态，不操作其他应用，也不写入系统位置或传感器。</string>
+    <string name="start_simulation">开始本地模拟</string>
+    <string name="start_title">开始本地模拟？</string>
+    <string name="start_message">这会创建一个新的本地模拟任务，不是恢复旧任务。在 HappyRun 内执行合成路线，并保存本地任务状态。不会启动真实乐跑、修改系统位置或生成学校有效记录。</string>
+    <string name="start_confirm">开始模拟</string>
+    <string name="not_now">暂不</string>
+    <string name="task_title">当前任务</string>
+    <string name="no_task">还没有模拟任务</string>
+    <string name="no_task_hint">点击“开始本地模拟”，无需填写令牌、UUID 或学校账号。</string>
+    <string name="stop_simulation">停止模拟</string>
+    <string name="stop_title">停止当前模拟？</string>
+    <string name="stop_message">停止并确认当前应用内的本地模拟。若之前进程中断，会把本地未确认模拟标为已停止，之后才可显式创建新模拟；不会操作真实设备，也不会把未完成任务显示为完成。</string>
+    <string name="stop_confirm">确认停止</string>
+    <string name="continue_task">继续模拟</string>
+    <string name="requirements_title">真实运行还缺什么？</string>
+    <string name="requirements_intro">下面这些条件未全部得到实际验证前，不开放真实执行。模拟完成不代表设备能力或学校记录验收通过。</string>
+    <string name="real_execution_unavailable">真实执行尚未开放</string>
+    <string name="root_note">Root / LSPosed 是可选适配方向。发现 Root 迹象，不代表已取得权限；框架存在，也不代表模块已激活或目标应用受支持。</string>
+    <string name="checking">正在读取本机状态…</string>
+    <string name="operation_pending">正在处理，请稍候…</string>
+    <string name="read_failed">暂时无法读取任务状态。未确认结果前不会自动创建新任务。</string>
+    <string name="operation_failed">操作未确认，请重新检查状态。不会自动重跑。</string>
+    <string name="footer_note">仅展示本机可核实的结果 · 不索取学校登录凭据</string>
+    <string name="task_history">查看最近任务</string>
+    <string name="history_title">最近 50 条本地任务</string>
+    <string name="history_empty">还没有本地任务记录。</string>
+    <string name="history_note">历史记录仅供查看。新模拟会创建新任务，不是恢复这条记录。</string>
+</resources>

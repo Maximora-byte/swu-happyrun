@@ -25,10 +25,272 @@ jobs:
           version: "0.12.19"
           python-version: ${{ matrix.python }}
           enable-cache: true
-      - run: uv sync --all-extras --frozen
+      - run: uv sync --extra server --extra agent --extra dev --frozen
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
       - run: uv run --no-sync python -m pytest -q
       - run: uv run --no-sync python scripts/export_schema.py --check
       - run: uv build
+      - run: uv run --no-sync python scripts/check_distribution_privacy.py
       - run: uv run --no-sync python scripts/check_install.py
+      - name: Checksum candidate distributions
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
+        run: sha256sum dist/*.whl dist/*.tar.gz > dist/SHA256SUMS
+      - name: Upload candidate distributions
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
+  console-browser-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.12.19"
+          python-version: "3.11"
+          enable-cache: true
+      - name: Install frozen browser QA dependencies
+        run: uv sync --extra server --extra agent --extra dev --extra browser-test --frozen
+      - name: Install official Playwright Chromium
+        run: uv run --no-sync python -m playwright install --with-deps chromium
+      - name: Install Chinese screenshot fonts
+        run: sudo apt-get install --no-install-recommends -y fonts-noto-cjk
+      - name: Check console JavaScript syntax and helpers
+        run: node --check src/swu_happyrun/server/web/app.js && node tests/console/test_console_helpers.cjs
+      - name: Exercise console with real Chromium and synthetic local data
+        env:
+          HAPPYRUN_EMIT_QA_SCREENSHOTS: "1"
+        run: uv run --no-sync python scripts/check_console_browser.py --output-dir qa/console-browser
+      - name: Upload synthetic console screenshots and report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: console-browser-qa-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            qa/console-browser/desktop-1440.png
+            qa/console-browser/mobile-390.png
+            qa/console-browser/failure-*.png
+            qa/console-browser/results.json
+          if-no-files-found: error
+          retention-days: 7
+
+  android-apk:
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [31, 35]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Select preinstalled JDK 17 and official Android SDK
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          test -d "$ANDROID_HOME/licenses"
+          # EOF rejects new interactive license agreements; never pipe yes.
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools' 'emulator' </dev/null || { echo 'SDK install failed; review any missing/new license explicitly.' >&2; exit 1; }
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+          test -x "$ANDROID_HOME/build-tools/35.0.0/apksigner"
+      - name: Build and test native Android candidate
+        run: bash scripts/android_gradle.sh lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
+      - name: Verify debug APK signing and checksum
+        run: |
+          set -euo pipefail
+          mkdir -p qa/android
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee qa/android/signature.txt
+          sha256sum android/app/build/outputs/apk/debug/app-debug.apk > qa/android/SHA256SUMS
+      - name: Enable explicitly approved one-transition KVM access
+        if: >-
+          github.repository == 'Maximora-byte/swu-happyrun' &&
+          github.event.before == '491019d0b68802fdcf0c67fbe4bd3b846a9eae82' &&
+          ((github.event_name == 'push' && github.ref == 'refs/heads/dot/android-onboarding') ||
+          (github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
+          github.event.number == 33 && github.ref == 'refs/pull/33/merge' &&
+          github.event.pull_request.head.repo.full_name == 'Maximora-byte/swu-happyrun' &&
+          github.event.pull_request.base.repo.full_name == 'Maximora-byte/swu-happyrun' &&
+          github.event.pull_request.head.ref == 'dot/android-onboarding' &&
+          github.event.after == github.event.pull_request.head.sha))
+        env:
+          HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: python scripts/check_ci_kvm.py
+      - name: Install and exercise APK on official Android emulator
+        env:
+          HAPPYRUN_ANDROID_LAUNCH_PROFILE: wizard
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: bash scripts/android_emulator_test.sh
+      - name: Upload native APK and synthetic QA evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-debug-candidate-api${{ matrix.api }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/reports/lint-results-debug.html
+            android/app/build/test-results/testDebugUnitTest/*.xml
+            qa/android/SHA256SUMS
+            qa/android/signature.txt
+            qa/android/emulator.log
+            qa/android/launch.txt
+            qa/android/launch-activity.txt
+            qa/android/launch-window.txt
+            qa/android/launch-logcat.txt
+            qa/android/launch-pid.txt
+            qa/android/launch-ui.xml
+            qa/android/launch-screen.png
+            qa/android/launch-verification.txt
+            qa/android/launched.png
+            qa/android/native_ui.txt
+            qa/android/prepare_completed.txt
+            qa/android/completed_persistence.txt
+            qa/android/prepare_interruption.txt
+            qa/android/recover_without_replay.txt
+            qa/android/storage_FirstIntentFailureIsVisibleWithoutTask.txt
+            qa/android/storage_NewIntentFailurePreservesPreviousCompletion.txt
+            qa/android/storage_TickAndAttentionWriteFailureNeverClaimsSavedOrStopped.txt
+            qa/android/report.json
+            qa/android/polling_EmptyUiStaysIdle.txt
+            qa/android/polling_TerminalUiStaysIdle.txt
+            qa/android/polling_ActiveProgressBackgroundReturnAndStop.txt
+            qa/android/polling_StorageLatchRemainsVisibleAndIdle.txt
+            qa/android/android-onboarding.png
+            qa/android/android-completed.png
+          if-no-files-found: error
+          retention-days: 7
+
+  android-self-probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [31, 35]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Use official preinstalled Android SDK and JDK
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          test -d "$ANDROID_HOME/licenses"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools' 'emulator' </dev/null
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+      - name: Build ordinary and optional variants with one temporary certificate
+        run: |
+          bash scripts/android_gradle.sh verifySelfProbeApi lintDebug lintSelfProbe testDebugUnitTest testSelfProbeUnitTest assembleDebug assembleDebugAndroidTest assembleSelfProbe
+          bash scripts/android_gradle.sh -PprobeInstrumentation assembleSelfProbeAndroidTest
+      - name: Check packaged scope, absent framework classes, and same signing identity
+        run: |
+          set -euo pipefail
+          mkdir -p qa/android
+          python3 scripts/check_selfprobe_apks.py --apkanalyzer "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" --aapt2 "$ANDROID_HOME/build-tools/35.0.0/aapt2" --debug android/app/build/outputs/apk/debug/app-debug.apk --optional android/app/build/outputs/apk/selfProbe/app-selfProbe.apk --report qa/android/selfprobe-static.json
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee qa/android/selfprobe-debug-signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/selfProbe/app-selfProbe.apk | tee qa/android/selfprobe-optional-signature.txt
+          grep -q 'certificate SHA-256 digest:' qa/android/selfprobe-debug-signature.txt
+          grep -q 'certificate SHA-256 digest:' qa/android/selfprobe-optional-signature.txt
+          diff <(grep 'certificate SHA-256 digest:' qa/android/selfprobe-debug-signature.txt) <(grep 'certificate SHA-256 digest:' qa/android/selfprobe-optional-signature.txt)
+          sha256sum android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/selfProbe/app-selfProbe.apk > qa/android/selfprobe-SHA256SUMS
+      - name: Enable explicitly approved one-transition KVM access
+        if: >-
+          github.repository == 'Maximora-byte/swu-happyrun' &&
+          github.event.before == '491019d0b68802fdcf0c67fbe4bd3b846a9eae82' &&
+          ((github.event_name == 'push' && github.ref == 'refs/heads/dot/android-onboarding') ||
+          (github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
+          github.event.number == 33 && github.ref == 'refs/pull/33/merge' &&
+          github.event.pull_request.head.repo.full_name == 'Maximora-byte/swu-happyrun' &&
+          github.event.pull_request.base.repo.full_name == 'Maximora-byte/swu-happyrun' &&
+          github.event.pull_request.head.ref == 'dot/android-onboarding' &&
+          github.event.after == github.event.pull_request.head.sha))
+        env:
+          HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: python scripts/check_ci_kvm.py
+      - name: Verify both variants remain inactive without a framework
+        env:
+          HAPPYRUN_ANDROID_LAUNCH_PROFILE: wizard
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+          HAPPYRUN_ANDROID_ACCEPTANCE_SCRIPT: scripts/android_selfprobe_acceptance.sh
+        run: bash scripts/android_emulator_test.sh
+      - name: Upload optional candidate and bounded synthetic evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-self-probe-api${{ matrix.api }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/selfProbe/app-selfProbe.apk
+            qa/android/selfprobe-static.json
+            qa/android/selfprobe-debug-signature.txt
+            qa/android/selfprobe-optional-signature.txt
+            qa/android/selfprobe-SHA256SUMS
+            qa/android/selfprobe-debug.txt
+            qa/android/selfprobe-optional.txt
+            qa/android/selfprobe-report.json
+            qa/android/native-debug/native_ui.txt
+            qa/android/native-debug/prepare_completed.txt
+            qa/android/native-debug/completed_persistence.txt
+            qa/android/native-debug/prepare_interruption.txt
+            qa/android/native-debug/recover_without_replay.txt
+            qa/android/native-debug/storage_FirstIntentFailureIsVisibleWithoutTask.txt
+            qa/android/native-debug/storage_NewIntentFailurePreservesPreviousCompletion.txt
+            qa/android/native-debug/storage_TickAndAttentionWriteFailureNeverClaimsSavedOrStopped.txt
+            qa/android/native-debug/report.json
+            qa/android/native-debug/android-onboarding.png
+            qa/android/native-debug/android-completed.png
+            qa/android/native-debug/polling_EmptyUiStaysIdle.txt
+            qa/android/native-debug/polling_TerminalUiStaysIdle.txt
+            qa/android/native-debug/polling_ActiveProgressBackgroundReturnAndStop.txt
+            qa/android/native-debug/polling_StorageLatchRemainsVisibleAndIdle.txt
+            qa/android/native-optional/native_ui.txt
+            qa/android/native-optional/prepare_completed.txt
+            qa/android/native-optional/completed_persistence.txt
+            qa/android/native-optional/prepare_interruption.txt
+            qa/android/native-optional/recover_without_replay.txt
+            qa/android/native-optional/storage_FirstIntentFailureIsVisibleWithoutTask.txt
+            qa/android/native-optional/storage_NewIntentFailurePreservesPreviousCompletion.txt
+            qa/android/native-optional/storage_TickAndAttentionWriteFailureNeverClaimsSavedOrStopped.txt
+            qa/android/native-optional/report.json
+            qa/android/native-optional/android-onboarding.png
+            qa/android/native-optional/android-completed.png
+            qa/android/native-optional/polling_EmptyUiStaysIdle.txt
+            qa/android/native-optional/polling_TerminalUiStaysIdle.txt
+            qa/android/native-optional/polling_ActiveProgressBackgroundReturnAndStop.txt
+            qa/android/native-optional/polling_StorageLatchRemainsVisibleAndIdle.txt
+            qa/android/launch-activity.txt
+            qa/android/launch-window.txt
+            qa/android/launch-logcat.txt
+            qa/android/launch-pid.txt
+            qa/android/launch-ui.xml
+            qa/android/launch-screen.png
+            qa/android/launch-verification.txt
+            qa/android/optional-launch/launch.txt
+            qa/android/optional-launch/launch-activity.txt
+            qa/android/optional-launch/launch-window.txt
+            qa/android/optional-launch/launch-logcat.txt
+            qa/android/optional-launch/launch-pid.txt
+            qa/android/optional-launch/launch-ui.xml
+            qa/android/optional-launch/launch-screen.png
+            qa/android/optional-launch/launch-verification.txt
+            qa/android/wizard-debug.txt
+            qa/android/wizard-optional.txt
+            qa/android/wizard-report.json
+            qa/android/emulator.log
+            qa/android/launch.txt
+            qa/android/launched.png
+          retention-days: 7
+          if-no-files-found: error

@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'"
+    />
+    <title>HappyRun · 任务控制台</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到主要内容</a>
+    <header class="topbar">
+      <a class="brand" href="#overview"
+        ><span class="brand-icon" aria-hidden="true">H</span
+        ><span>HappyRun<small>本地任务控制台</small></span></a
+      >
+      <div class="top-actions">
+        <span class="chip" id="connection-state">未连接</span
+        ><button id="logout" class="quiet" hidden>退出连接</button>
+      </div>
+    </header>
+    <div class="safety-banner">
+      <strong>模拟验证阶段</strong
+      ><span
+        >模拟完成不代表学校有效记录。MuMu / vivo
+        实机执行与乐跑应用适配尚未实现或验收。</span
+      >
+    </div>
+    <main id="main">
+      <section
+        id="connection-panel"
+        class="connection card"
+        aria-labelledby="connect-title"
+      >
+        <span class="eyebrow">安全连接 · 仅限当前服务</span>
+        <h1 id="connect-title">把任务状态，看清楚。</h1>
+        <p class="muted">
+          连接后可查看设备登记、创建模拟任务，并处理需要关注的运行。
+        </p>
+        <form id="connect-form">
+          <label for="token">管理员令牌（ADMIN）</label>
+          <div class="input-action">
+            <input
+              id="token"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              required
+              placeholder="输入当前服务的管理员令牌"
+            /><button type="submit">连接控制台</button>
+          </div>
+        </form>
+        <p class="hint">
+          令牌只保留在当前页面内存中，不保存到浏览器；刷新或退出后需重新连接。请仅在回环地址或可信
+          HTTPS 页面输入。
+        </p>
+      </section>
+      <p id="notice" role="status" aria-live="polite" class="notice" hidden></p>
+      <div id="workspace" class="workspace" hidden>
+        <aside>
+          <nav aria-label="控制台导航">
+            <a href="#overview">概览<span>01</span></a
+            ><a href="#jobs">任务<span>02</span></a
+            ><a href="#devices">设备<span>03</span></a
+            ><a href="#schedules">日程<span>04</span></a>
+          </nav>
+          <p class="aside-note">
+            协议 v1<br />所有时间显示为<br />中国标准时间 UTC+8
+          </p>
+        </aside>
+        <div class="content">
+          <section id="overview">
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">WORKSPACE</span>
+                <h1>运行概览</h1>
+              </div>
+              <button id="refresh-all" class="secondary">刷新状态</button>
+            </div>
+            <div class="stats">
+              <article class="card stat">
+                <span>服务健康</span><strong id="health-state">待检查</strong
+                ><small>HTTP 服务可达性</small>
+              </article>
+              <article class="card stat">
+                <span>调度就绪</span><strong id="ready-state">待检查</strong
+                ><small>数据库与调度循环</small>
+              </article>
+              <article class="card stat">
+                <span>登记设备</span><strong id="device-count">—</strong
+                ><small>登记不代表在线或具备执行能力</small>
+              </article>
+            </div>
+            <div class="guide">
+              <strong>第一次使用？</strong>
+              <p>
+                先登记设备归属，在代理端准备相同的学校配置与路线文件，再创建模拟任务。网页不会启动代理、MuMu
+                或设备进程。
+              </p>
+            </div>
+          </section>
+          <section id="jobs">
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">JOBS</span>
+                <h2>任务中心</h2>
+              </div>
+              <button id="refresh-jobs" class="secondary">刷新列表</button>
+            </div>
+            <form id="job-lookup" class="card compact">
+              <label for="lookup-id">按任务 UUID 查询</label>
+              <div class="input-action">
+                <input
+                  id="lookup-id"
+                  required
+                  placeholder="输入完整任务 UUID"
+                  spellcheck="false"
+                /><button type="submit" class="secondary">查询任务</button>
+              </div>
+            </form>
+            <details class="card create-panel">
+              <summary>创建任务<span>默认模拟模式</span></summary>
+              <p class="hint">
+                导入已有 JobSpec JSON
+                可减少手动填写。只在本地解析，不上传配置文件；创建时提交配置引用，代理仍需持有完全相同版本的文件。
+              </p>
+              <label class="file-label" for="import-job"
+                >导入 JobSpec JSON<input
+                  id="import-job"
+                  type="file"
+                  accept="application/json,.json"
+              /></label>
+              <form id="job-form">
+                <fieldset id="job-fields">
+                  <legend>任务设置</legend>
+                  <div class="form-grid">
+                    <label
+                      >运行模式<select name="mode" id="job-mode">
+                        <option value="simulation">模拟 · fake 驱动</option>
+                        <option value="device">
+                          实机请求 · 当前候选不支持执行
+                        </option>
+                      </select></label
+                    ><label
+                      >设备 UUID<input
+                        name="device_id"
+                        required
+                        spellcheck="false"
+                        placeholder="已登记的设备 UUID"
+                        list="device-options" /></label
+                    ><label
+                      >学校配置 UUID<input
+                        name="profile_id"
+                        required
+                        spellcheck="false" /></label
+                    ><label
+                      >学校配置 revision<input
+                        name="profile_revision"
+                        required
+                        spellcheck="false"
+                        placeholder="原文件的 64 位小写 SHA-256" /></label
+                    ><label
+                      >路线 UUID<input
+                        name="route_id"
+                        required
+                        spellcheck="false" /></label
+                    ><label
+                      >路线 revision<input
+                        name="route_revision"
+                        required
+                        spellcheck="false"
+                        placeholder="原文件的 64 位小写 SHA-256" /></label
+                    ><label
+                      >最早开始（UTC+8）<input
+                        name="not_before"
+                        type="datetime-local"
+                        step="1"
+                        required /></label
+                    ><label
+                      >截止时间（UTC+8）<input
+                        name="deadline"
+                        type="datetime-local"
+                        step="1"
+                        required /></label
+                    ><label id="app-version-label" hidden
+                      >目标应用版本<input
+                        name="expected_app_version"
+                        spellcheck="false"
+                        placeholder="必须与已确认版本完全一致"
+                    /></label>
+                  </div>
+                  <p id="device-warning" class="warning" hidden>
+                    实机模式仅保存协议请求，当前候选无法执行真实乐跑流程；不会生成有效学校记录。请勿把登记或创建成功当成设备可用。
+                  </p>
+                </fieldset>
+                <p id="creation-state" class="hint" aria-live="polite">
+                  不会自动生成配置 revision、学校规则或路线。
+                </p>
+                <div class="actions">
+                  <button type="submit" id="create-job">创建模拟任务</button
+                  ><button
+                    type="button"
+                    id="reset-creation"
+                    class="secondary"
+                    hidden
+                  >
+                    处理未确认的创建
+                  </button>
+                </div>
+              </form>
+            </details>
+            <article
+              id="job-detail"
+              class="card"
+              hidden
+              tabindex="-1"
+              aria-label="任务详情"
+            ></article>
+            <div id="jobs-list" class="stack" aria-live="polite"></div>
+            <button id="load-more" class="secondary" hidden>
+              加载更早任务
+            </button>
+          </section>
+          <section id="devices">
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">DEVICES</span>
+                <h2>设备登记</h2>
+              </div>
+              <button id="refresh-devices" class="secondary">刷新设备</button>
+            </div>
+            <p class="muted">
+              这里只提供固定的设备与代理归属。当前 API
+              不提供在线状态、心跳或能力观测，不能据此判断设备可用。
+            </p>
+            <div id="devices-list" class="stack"></div>
+            <datalist id="device-options"></datalist>
+            <details class="card">
+              <summary>登记一台设备</summary>
+              <form id="device-form">
+                <div class="form-grid">
+                  <label
+                    >设备 UUID<input
+                      name="device_id"
+                      required
+                      spellcheck="false" /></label
+                  ><label
+                    >代理 UUID<input
+                      name="agent_id"
+                      required
+                      spellcheck="false"
+                  /></label>
+                </div>
+                <p class="hint">
+                  登记后不可在当前协议中转移归属。请使用代理实际配置的
+                  ID；两个不同 UUID 不代表两台不同物理设备。
+                </p>
+                <button type="submit">确认登记归属</button>
+              </form>
+            </details>
+          </section>
+          <section id="schedules">
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">SCHEDULES</span>
+                <h2>日程</h2>
+              </div>
+              <button id="refresh-schedules" class="secondary">刷新日程</button>
+            </div>
+            <p class="muted">
+              Asia/Shanghai ·
+              启停仅影响未来未生成的任务，不会取消已经创建的任务。过期日程不补跑。
+            </p>
+            <div id="schedules-list" class="stack"></div>
+          </section>
+          <footer>
+            HappyRun 控制协议 v1 · 配置与执行能力以实际代理检查为准
+          </footer>
+        </div>
+      </div>
+    </main>
+    <dialog
+      id="confirm-dialog"
+      aria-labelledby="confirm-title"
+      aria-describedby="confirm-text"
+    >
+      <h2 id="confirm-title">确认操作</h2>
+      <p id="confirm-text"></p>
+      <div class="actions">
+        <button id="confirm-back" class="secondary">返回</button
+        ><button id="confirm-accept">确认</button>
+      </div>
+    </dialog>
+  </body>
+</html>
