@@ -113,6 +113,21 @@ jobs:
           mkdir -p qa/android
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee qa/android/signature.txt
           sha256sum android/app/build/outputs/apk/debug/app-debug.apk > qa/android/SHA256SUMS
+      - name: Enable explicitly approved one-transition KVM access
+        if: >-
+          github.repository == 'Maximora-byte/swu-happyrun' &&
+          github.event.before == '6427e91b7099cdf2233983ff55a5bcf9718e6b61' &&
+          ((github.event_name == 'push' && github.ref == 'refs/heads/dot/android-onboarding') ||
+          (github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
+          github.event.number == 33 && github.ref == 'refs/pull/33/merge' &&
+          github.event.pull_request.head.repo.full_name == 'Maximora-byte/swu-happyrun' &&
+          github.event.pull_request.base.repo.full_name == 'Maximora-byte/swu-happyrun' &&
+          github.event.pull_request.head.ref == 'dot/android-onboarding' &&
+          github.event.after == github.event.pull_request.head.sha))
+        env:
+          HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: python scripts/check_ci_kvm.py
       - name: Install and exercise APK on official Android emulator
         env:
           HAPPYRUN_ANDROID_LAUNCH_PROFILE: wizard
@@ -148,6 +163,10 @@ jobs:
             qa/android/storage_NewIntentFailurePreservesPreviousCompletion.txt
             qa/android/storage_TickAndAttentionWriteFailureNeverClaimsSavedOrStopped.txt
             qa/android/report.json
+            qa/android/polling_EmptyUiStaysIdle.txt
+            qa/android/polling_TerminalUiStaysIdle.txt
+            qa/android/polling_ActiveProgressBackgroundReturnAndStop.txt
+            qa/android/polling_StorageLatchRemainsVisibleAndIdle.txt
             qa/android/android-onboarding.png
             qa/android/android-completed.png
           if-no-files-found: error
@@ -173,25 +192,39 @@ jobs:
           test -f "$ANDROID_HOME/platforms/android-35/android.jar"
       - name: Build ordinary and optional variants with one temporary certificate
         run: |
-          bash scripts/android_gradle.sh verifySelfProbeApi lintDebug lintSelfProbe testDebugUnitTest testSelfProbeUnitTest assembleDebug assembleSelfProbe
+          bash scripts/android_gradle.sh verifySelfProbeApi lintDebug lintSelfProbe testDebugUnitTest testSelfProbeUnitTest assembleDebug assembleDebugAndroidTest assembleSelfProbe
           bash scripts/android_gradle.sh -PprobeInstrumentation assembleSelfProbeAndroidTest
       - name: Check packaged scope, absent framework classes, and same signing identity
         run: |
           set -euo pipefail
           mkdir -p qa/android
-          python3 scripts/check_selfprobe_apks.py --apkanalyzer "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" --debug android/app/build/outputs/apk/debug/app-debug.apk --optional android/app/build/outputs/apk/selfProbe/app-selfProbe.apk --report qa/android/selfprobe-static.json
+          python3 scripts/check_selfprobe_apks.py --apkanalyzer "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" --aapt2 "$ANDROID_HOME/build-tools/35.0.0/aapt2" --debug android/app/build/outputs/apk/debug/app-debug.apk --optional android/app/build/outputs/apk/selfProbe/app-selfProbe.apk --report qa/android/selfprobe-static.json
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee qa/android/selfprobe-debug-signature.txt
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/selfProbe/app-selfProbe.apk | tee qa/android/selfprobe-optional-signature.txt
           grep -q 'certificate SHA-256 digest:' qa/android/selfprobe-debug-signature.txt
           grep -q 'certificate SHA-256 digest:' qa/android/selfprobe-optional-signature.txt
           diff <(grep 'certificate SHA-256 digest:' qa/android/selfprobe-debug-signature.txt) <(grep 'certificate SHA-256 digest:' qa/android/selfprobe-optional-signature.txt)
           sha256sum android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/selfProbe/app-selfProbe.apk > qa/android/selfprobe-SHA256SUMS
+      - name: Enable explicitly approved one-transition KVM access
+        if: >-
+          github.repository == 'Maximora-byte/swu-happyrun' &&
+          github.event.before == '6427e91b7099cdf2233983ff55a5bcf9718e6b61' &&
+          ((github.event_name == 'push' && github.ref == 'refs/heads/dot/android-onboarding') ||
+          (github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
+          github.event.number == 33 && github.ref == 'refs/pull/33/merge' &&
+          github.event.pull_request.head.repo.full_name == 'Maximora-byte/swu-happyrun' &&
+          github.event.pull_request.base.repo.full_name == 'Maximora-byte/swu-happyrun' &&
+          github.event.pull_request.head.ref == 'dot/android-onboarding' &&
+          github.event.after == github.event.pull_request.head.sha))
+        env:
+          HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: python scripts/check_ci_kvm.py
       - name: Verify both variants remain inactive without a framework
         env:
           HAPPYRUN_ANDROID_LAUNCH_PROFILE: wizard
           HAPPYRUN_ANDROID_API: ${{ matrix.api }}
           HAPPYRUN_ANDROID_ACCEPTANCE_SCRIPT: scripts/android_selfprobe_acceptance.sh
-          HAPPYRUN_ANDROID_TEST_APK: android/app/build/outputs/apk/androidTest/selfProbe/app-selfProbe-androidTest.apk
         run: bash scripts/android_emulator_test.sh
       - name: Upload optional candidate and bounded synthetic evidence
         if: ${{ !cancelled() }}
@@ -208,6 +241,36 @@ jobs:
             qa/android/selfprobe-debug.txt
             qa/android/selfprobe-optional.txt
             qa/android/selfprobe-report.json
+            qa/android/native-debug/native_ui.txt
+            qa/android/native-debug/prepare_completed.txt
+            qa/android/native-debug/completed_persistence.txt
+            qa/android/native-debug/prepare_interruption.txt
+            qa/android/native-debug/recover_without_replay.txt
+            qa/android/native-debug/storage_FirstIntentFailureIsVisibleWithoutTask.txt
+            qa/android/native-debug/storage_NewIntentFailurePreservesPreviousCompletion.txt
+            qa/android/native-debug/storage_TickAndAttentionWriteFailureNeverClaimsSavedOrStopped.txt
+            qa/android/native-debug/report.json
+            qa/android/native-debug/android-onboarding.png
+            qa/android/native-debug/android-completed.png
+            qa/android/native-debug/polling_EmptyUiStaysIdle.txt
+            qa/android/native-debug/polling_TerminalUiStaysIdle.txt
+            qa/android/native-debug/polling_ActiveProgressBackgroundReturnAndStop.txt
+            qa/android/native-debug/polling_StorageLatchRemainsVisibleAndIdle.txt
+            qa/android/native-optional/native_ui.txt
+            qa/android/native-optional/prepare_completed.txt
+            qa/android/native-optional/completed_persistence.txt
+            qa/android/native-optional/prepare_interruption.txt
+            qa/android/native-optional/recover_without_replay.txt
+            qa/android/native-optional/storage_FirstIntentFailureIsVisibleWithoutTask.txt
+            qa/android/native-optional/storage_NewIntentFailurePreservesPreviousCompletion.txt
+            qa/android/native-optional/storage_TickAndAttentionWriteFailureNeverClaimsSavedOrStopped.txt
+            qa/android/native-optional/report.json
+            qa/android/native-optional/android-onboarding.png
+            qa/android/native-optional/android-completed.png
+            qa/android/native-optional/polling_EmptyUiStaysIdle.txt
+            qa/android/native-optional/polling_TerminalUiStaysIdle.txt
+            qa/android/native-optional/polling_ActiveProgressBackgroundReturnAndStop.txt
+            qa/android/native-optional/polling_StorageLatchRemainsVisibleAndIdle.txt
             qa/android/launch-activity.txt
             qa/android/launch-window.txt
             qa/android/launch-logcat.txt

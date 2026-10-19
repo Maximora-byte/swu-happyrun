@@ -26,3 +26,17 @@ The 7-day artifact allowlist contains only the two APKs, bounded synthetic repor
 ## Variant identity
 
 BuildConfig.SELF_PROBE_ENABLED is false by default and true only for selfProbe. The first-run UI may use it to identify packaged module capability; it does not establish framework installation, activation or a successful hook receipt. Runtime SelfProbe.inspect() remains the only in-process diagnostic receipt.
+
+## First hosted inspection correction (2026-10-19)
+
+The 6427e91b7099cdf2233983ff55a5bcf9718e6b61 hosted runs built/linted both variants, then correctly failed closed at the scope checker: compiled manifests use numeric resource references, whereas the initial checker expected a symbolic name. The correction binds that numeric ID to the exact compiled array name using the runner's official aapt2 resource dump and verifies every configuration contains exactly one org.happyrun.app item. It never accepts an arbitrary numeric ID or concatenates multiple entries.
+
+The actual API35 artifact 12160506533 was downloaded read-only and its ZIP digest verified against Actions. Official Google Maven aapt2 8.7.3-12006047 (Apache 2.0 POM) independently produced the observed table; a separate binary AXML/ARSC read confirmed the same binding. APK execution was not involved. CI uses its existing build-tools 35 aapt2; full APK inspection/signature/AVD results still require the corrected commit's hosted run.
+
+Windows fixtures also require explicit UTF-8 when reading the Chinese module manifest. A cp1252-default fixture reproduced the failure before the correction. Linux fixtures are not a Windows-run pass.
+
+## One-transition hosted KVM approval
+
+On 2026-10-19 the user explicitly approved hardware acceleration access for this round's temporary Android 12/15 GitHub test machines. The added gate permits only the immediate transition from 6427e91b7099cdf2233983ff55a5bcf9718e6b61 on Maximora-byte/swu-happyrun, branch dot/android-onboarding. The approval environment variable is absent/false by default. Exact trusted push events are checked against after/GITHUB_SHA; PR33 synchronize additionally requires same-repository head/base, the expected head branch and merge ref, and explicit before/after/head.sha agreement. Missing payload fields fail closed; base.sha is never substituted.
+
+The script verifies a GitHub-hosted Linux runner, API31/35, a character device and non-root current UID, then uses setfacl -n to grant only that named user's read/write ACL on /dev/kvm without recalculating the existing mask or broadening others' effective ACLs. Every command has a 30-second bound; insufficient effective access fails closed. It checks effective access and the official emulator acceleration check. No chmod, group/udev changes, user device changes, SDK license acceptance or framework installation is performed. Future transitions with another before SHA cannot pass. Local verification uses mocks only; actual ACL application and accelerated acceptance remain hosted-CI work.

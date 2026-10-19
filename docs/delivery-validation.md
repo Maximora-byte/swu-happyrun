@@ -143,3 +143,10 @@ Pending exact-HEAD hosted checks: both Android variant builds/lint, actual APK m
 Rebased onto629f2e9b86d7a72502f528abd1c1edf999d6a842 / tree c061531110495f6691954acf28324228d2aef81f. All172 baseline files verified. Final full Python612 passed/95.17seconds with one inherited warning; delivery58 passed. New profile negative fixtures first failed then passed; all prior launch error/budget/crash cases run with core and wizard. Ruff/137format, Schema, frozen lock, Node helpers, Bash, wheel/sdist and privacy checks passed.
 
 34 Java source files are byte-identical to the previous independently reviewed onboarding candidate: reuse23JUnit evidence, no claim of a fresh Java run. Default core launch controls are unchanged; explicit wizard requires app_scroll/framework_probe/wizard_refresh. Every other launch safety/readiness condition stays unchanged. Optional replacement runs the same bounded probe with separately allowlisted evidence. Actual Android SDK/AVD and ART remain pending exact-HEAD validation.
+
+
+## 6427 后续 CI/轮询修订的本地证据（2026-10-19）
+
+本轮基于 6427e91b7099cdf2233983ff55a5bcf9718e6b61：24 项 Java JUnit、101 项 delivery fixtures、Ruff 与 140 文件格式检查、Schema、frozen lock、wheel/sdist 构建与 Android 分发隐私检查通过。Java 使用本地 JDK compiler 模块的 source/target 17；这不是 Android SDK 编译。完整 Python 612 项是上一精确组合的历史证据，本轮未重复宣称全套重跑。
+
+新增四项轮询仪器测试与原十一项合计十五项；普通及可选模块变体各使用匹配的测试 APK，分别保留四项向导及一项无框架 inactive 检查。测试接线、独立进程清理和精确产物白名单已审阅；实际 Android 测试、KVM ACL 和加速结果待新提交 CI。此前 SystemUI ANR 与下载/启动失败仍是失败证据，轮询优化未被认定为其根因修复。

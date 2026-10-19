@@ -34,5 +34,10 @@ for method in FirstIntentFailureIsVisibleWithoutTask NewIntentFailurePreservesPr
   adb -s "$ANDROID_SERIAL" shell pm clear "$PACKAGE" | grep -qx 'Success'
   run_case "storage_$method" "org.happyrun.app.StorageFailureTest#test$method" 1
 done
-printf '%s\n' '{"suite":"android-native","tests":11,"result":"passed","simulation_only":true,"mumu_verified":false,"record_verified":false}' > "$OUTPUT_DIR/report.json"
-echo 'ANDROID_QA_RESULT 11 passed / 0 failed'
+for method in EmptyUiStaysIdle TerminalUiStaysIdle ActiveProgressBackgroundReturnAndStop StorageLatchRemainsVisibleAndIdle; do
+  adb -s "$ANDROID_SERIAL" shell am force-stop "$PACKAGE"
+  adb -s "$ANDROID_SERIAL" shell pm clear "$PACKAGE" | grep -qx 'Success'
+  run_case "polling_$method" "org.happyrun.app.PollingAcceptanceTest#test$method" 1
+done
+printf '%s\n' '{"suite":"android-native","tests":15,"result":"passed","simulation_only":true,"mumu_verified":false,"record_verified":false}' > "$OUTPUT_DIR/report.json"
+echo 'ANDROID_QA_RESULT 15 passed / 0 failed'

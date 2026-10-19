@@ -75,6 +75,9 @@ public final class MainActivity extends Activity {
     private boolean foreground;
     private boolean destroyed;
     private boolean reading;
+    private boolean explicitReading;
+    private boolean refreshQueued;
+    private List<Object> renderedKey;
     private boolean pending;
     private boolean uncertain = true;
     private String runtimeHealth = "unknown";
@@ -87,7 +90,6 @@ public final class MainActivity extends Activity {
         @Override public void run() {
             if (!foreground || destroyed) return;
             readState(false);
-            main.postDelayed(this, 500);
         }
     };
 
@@ -100,7 +102,6 @@ public final class MainActivity extends Activity {
         super.onStart();
         foreground = true;
         readState(true);
-        main.postDelayed(poll, 500);
     }
 
     @Override protected void onStop() {
@@ -318,12 +319,44 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void schedulePoll() {
+        main.removeCallbacks(poll);
+        if (!destroyed && PollingPolicy.shouldPoll(task == null ? null : task.state,
+                foreground, uncertain, pending, reading, runtimeHealth,
+                task == null || task.persisted)) {
+            main.postDelayed(poll, 500);
+        }
+    }
+
+    private void renderIfChanged(TaskSnapshot snapshot) {
+        List<Object> next = snapshot == null
+                ? PollingPolicy.key(null, runtimeHealth, healthTaskId)
+                : PollingPolicy.key(snapshot.id, snapshot.state, snapshot.mode,
+                        snapshot.recordVerified, snapshot.reason,
+                        snapshot.distanceM, snapshot.totalDistanceM, snapshot.startedAtMs,
+                        snapshot.updatedAtMs, snapshot.persisted, runtimeHealth, healthTaskId);
+        if (!next.equals(renderedKey)) {
+            render(snapshot);
+            renderedKey = next;
+        }
+    }
+
     private void readState(boolean includeChecks) {
-        if (destroyed || pending || reading) return;
+        if (destroyed) return;
+        if (pending || reading) {
+            // A user refresh during a background read must not be silently lost.
+            if (includeChecks) refreshQueued = true;
+            return;
+        }
+        if (includeChecks) refreshQueued = false;
+        main.removeCallbacks(poll);
         reading = true;
+        explicitReading = includeChecks;
         final long request = ++serial;
-        refresh.setEnabled(false);
-        wizardRefresh.setEnabled(false);
+        if (explicitReading) {
+            refresh.setEnabled(false);
+            wizardRefresh.setEnabled(false);
+        }
         io.execute(() -> {
             TaskSnapshot snapshot = null;
             List<CheckItem> observations = null;
@@ -353,9 +386,8 @@ public final class MainActivity extends Activity {
             final boolean unavailable = failed;
             main.post(() -> {
                 reading = false;
+                explicitReading = false;
                 if (destroyed || request != serial) return;
-                refresh.setEnabled(true);
-                wizardRefresh.setEnabled(true);
                 if (includeChecks) {
                     probeStatus = resultProbe == null ? "unknown" : resultProbe.status;
                     probeApi = resultProbe == null ? null : resultProbe.bridgeApiVersion;
@@ -368,12 +400,14 @@ public final class MainActivity extends Activity {
                     showNotice(R.string.read_failed);
                 } else {
                     uncertain = false;
-                    render(result);
+                    renderIfChanged(result);
                     if (resultChecks != null) renderChecks(resultChecks);
                     if (includeChecks) notice.setVisibility(View.GONE);
                 }
                 showHealthNotice();
                 updateButtons();
+                if (refreshQueued && foreground) readState(true);
+                else schedulePoll();
             });
         });
     }
@@ -408,6 +442,7 @@ public final class MainActivity extends Activity {
         if (stopId == null && hasUnresolvedTask()) return;
         if (stopId != null && (task == null || !stopId.equals(task.id))) return;
         pending = true;
+        main.removeCallbacks(poll);
         final long request = ++serial;
         updateButtons();
         refresh.setEnabled(false);
@@ -439,14 +474,14 @@ public final class MainActivity extends Activity {
                 refresh.setEnabled(true);
                 runtimeHealth = resultHealth;
                 healthTaskId = resultHealthTaskId;
-                if (!"ok".equals(runtimeHealth)) render(result);
+                if (!"ok".equals(runtimeHealth)) renderIfChanged(result);
                 if (unavailable) {
                     uncertain = true;
                     showNotice(R.string.operation_failed);
                 } else {
                     uncertain = false;
                     notice.setVisibility(View.GONE);
-                    render(result);
+                    renderIfChanged(result);
                     state.requestFocus();
                     scroll.post(() -> {
                         if (!destroyed) scroll.scrollTo(0, state.getParent() instanceof View
@@ -455,7 +490,9 @@ public final class MainActivity extends Activity {
                 }
                 showHealthNotice();
                 updateButtons();
-                if (unavailable) readState(false);
+                // Failure remains locked until an explicit refresh or next onStart.
+                if (refreshQueued && foreground) readState(true);
+                else if (!unavailable) readState(false);
             });
         });
     }
@@ -514,7 +551,8 @@ public final class MainActivity extends Activity {
         start.setEnabled(!pending && !uncertain && healthAllowsActions() && runtime != null && !hasUnresolvedTask());
         stop.setEnabled(!pending && !uncertain && healthAllowsActions() && hasUnresolvedTask());
         history.setEnabled(runtime != null && !historyLoading && !pending);
-        wizardRefresh.setEnabled(!pending && !reading);
+        refresh.setEnabled(!pending && !explicitReading);
+        wizardRefresh.setEnabled(!pending && !explicitReading);
         rootCheck.setEnabled(!rootPending);
         rootCancel.setEnabled(rootPending && !rootCancelled.get());
         rootCancel.setVisibility(rootPending ? View.VISIBLE : View.GONE);

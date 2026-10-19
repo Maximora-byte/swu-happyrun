@@ -28,3 +28,11 @@ Local Java/Python checks and artifact inspection are listed separately from host
 The startup probe retains its default core profile (app_scroll, task_state, start_simulation). This onboarding candidate explicitly selects the allowlisted wizard profile (app_scroll, framework_probe, wizard_refresh) for the ordinary CI job and both optional-job installations. Unknown profiles and the wrong/empty first screen fail. Root controls are not required to be visible and the launch probe performs no UI clicks.
 
 The same resumed MainActivity, exact package, positive bounds, deadline, ANR/crash and command-error checks apply to both profiles. The optional replacement gets its own diagnostic subdirectory and exact artifact whitelist. Stable API31/default, private AVD directories and early process failure checks from the launch baseline are retained.
+
+## Following the first hosted run
+
+The next candidate is based on6427e91b7099cdf2233983ff55a5bcf9718e6b61. Real hosted variant compilation/lint passed, but numeric scope-reference inspection and Windows default decoding failed. These are corrected with exact compiled-resource ID binding and UTF-8 fixtures. API31 screenshots show a SystemUI ANR overlay above the rendered wizard; they do not establish an application ANR or successful instrumentation.
+
+Idle/terminal unconditional polling is removed while active progress polling remains. This reduces unnecessary work without asserting the cause of that system failure. Explicit user refresh can queue behind a background read. Root confirmation and conservative evidence wording are retained.
+
+Each optional-job installation now uses its matching test APK. Both variants run native15 (original11 plus4 isolated polling cases), wizard4 and inactive1 separately. Native fixtures use disposable synthetic state; tests do not authorize Root. Reports and exact allowlisted logs remain distinct. User-approved one-transition KVM gating is documented in the packaging guide; no local ACL grant or actual Root check was performed.
