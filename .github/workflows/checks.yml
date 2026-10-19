@@ -129,7 +129,7 @@ jobs:
         if: >-
           steps.runtime_gate.outputs.authorized == 'true' &&
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == '09b67d1f839d4b17d5b06114698cb18ec9fa0d7d' &&
+          github.event.before == 'b4ca97743f64a52b4981fbcf338899de008b52bc' &&
           github.event_name == 'push' && github.ref == 'refs/heads/dot/android-foreground-agent' &&
           github.event.after == github.sha
         env:
@@ -170,6 +170,7 @@ jobs:
             qa/android/build-provenance.json
             qa/android/runtime-status.json
             qa/android/emulator.log
+            qa/android/emulator-build.json
             qa/android/launch.txt
             qa/android/launch-activity.txt
             qa/android/launch-window.txt
@@ -251,7 +252,7 @@ jobs:
         if: >-
           steps.runtime_gate.outputs.authorized == 'true' &&
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == '09b67d1f839d4b17d5b06114698cb18ec9fa0d7d' &&
+          github.event.before == 'b4ca97743f64a52b4981fbcf338899de008b52bc' &&
           github.event_name == 'push' && github.ref == 'refs/heads/dot/android-foreground-agent' &&
           github.event.after == github.sha
         env:
@@ -355,6 +356,7 @@ jobs:
             qa/android/build-provenance.json
             qa/android/runtime-status.json
             qa/android/emulator.log
+            qa/android/emulator-build.json
             qa/android/launch.txt
             qa/android/launched.png
           retention-days: 7

@@ -10,7 +10,7 @@ from pathlib import Path
 REPOSITORY = "Maximora-byte/swu-happyrun"
 BRANCH = "refs/heads/dot/android-foreground-agent"
 # Same-round diagnostic retry: only ordinary API31, exact one-transition grant.
-BEFORE = "09b67d1f839d4b17d5b06114698cb18ec9fa0d7d"
+BEFORE = "b4ca97743f64a52b4981fbcf338899de008b52bc"
 
 
 def authorized(env, event):

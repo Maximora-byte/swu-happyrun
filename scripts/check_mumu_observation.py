@@ -78,6 +78,7 @@ METRICS = frozenset(
     }
 )
 ASSERTIONS = {
+    "Task restore is unsupported on a non-default display": "restore_display_unsupported",
     "Task components must match own MainActivity": "task_component_mismatch",
     "Base activity must be present": "base_activity_missing",
     "Base activity must match MainActivity": "base_activity_mismatch",

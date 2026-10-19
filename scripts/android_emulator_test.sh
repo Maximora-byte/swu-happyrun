@@ -71,6 +71,7 @@ while [[ "$(timeout 5 adb -s "$ANDROID_SERIAL" shell getprop sys.boot_completed 
   sleep 2
 done
 check_emulator_alive
+HAPPYRUN_DISPOSABLE_EMULATOR=1 python "$root/scripts/check_emulator_build.py" "$root/qa/android/emulator-build.json"
 adb install -r "${HAPPYRUN_ANDROID_APK:-$root/android/app/build/outputs/apk/debug/app-debug.apk}"
 HAPPYRUN_DISPOSABLE_EMULATOR=1 python "$root/scripts/check_android_launch.py" "$root/qa/android"
 adb install -r "${HAPPYRUN_ANDROID_TEST_APK:-$root/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk}"

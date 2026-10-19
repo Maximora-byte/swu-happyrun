@@ -2,6 +2,10 @@ package org.happyrun.app;
 
 /** Fail-closed, read-only predicate. No UI/input/runtime references or side effects. */
 final class DisplayObservationGate {
+    static boolean canRestoreOnDefaultDisplay(int expectedDisplay, int systemDefaultDisplay) {
+        return expectedDisplay >= 0 && systemDefaultDisplay >= 0
+            && expectedDisplay == systemDefaultDisplay;
+    }
     static final class Snapshot {
         String observationId, packageName, activity, signature;
         int display = -1, task = -1, taskCount, dumpExit;

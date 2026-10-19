@@ -5,7 +5,6 @@ import android.app.ActivityManager;
 import android.app.Instrumentation;
 import android.content.Context;
 import android.content.ComponentName;
-import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
 import android.content.pm.Signature;
@@ -17,6 +16,7 @@ import android.os.SystemClock;
 import android.test.InstrumentationTestCase;
 import android.test.InstrumentationTestRunner;
 import android.view.View;
+import android.view.Display;
 import java.security.MessageDigest;
 import java.util.List;
 import java.util.UUID;
@@ -102,6 +102,13 @@ public final class DisplayObservationTest extends InstrumentationTestCase {
             baseIntentComponent == null ? null : baseIntentComponent.getClassName(),
             baseActivity == null ? null : baseActivity.getPackageName(),
             baseActivity == null ? null : baseActivity.getClassName()));
+        // Recent-task restoration without launch options can fall back to the system default display.
+        // Refuse other displays before restoring; never move a task to satisfy an expectation.
+        Display defaultDisplay = ((DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE))
+            .getDisplay(Display.DEFAULT_DISPLAY);
+        assertTrue("Task restore is unsupported on a non-default display",
+            DisplayObservationGate.canRestoreOnDefaultDisplay(display,
+                defaultDisplay == null ? -1 : defaultDisplay.getDisplayId()));
         long started = SystemClock.elapsedRealtime();
         Instrumentation.ActivityMonitor monitor = getInstrumentation().addMonitor(MainActivity.class.getName(), null, false);
         Activity activity = null;
@@ -109,7 +116,7 @@ public final class DisplayObservationTest extends InstrumentationTestCase {
             // No CLEAR_TASK, reset, coordinates, shell input or simulated movement.
             // Preserve the observed task/display; never move it to make an expectation pass.
             phase("launch");
-            tasks.get(0).startActivity(context, new Intent(context, MainActivity.class), null);
+            tasks.get(0).moveToFront();
             phase("activity");
             activity = monitor.waitForActivityWithTimeout(5000);
             assertNotNull("Own Activity not observed within the bounded window", activity);

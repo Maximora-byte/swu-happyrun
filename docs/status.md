@@ -278,3 +278,16 @@ Android 行为及接受条件未变。继续只在精确 before2107 的普通 AP
 ### 09b 远端栈诊断
 
 09b67d1f839d4b17d5b06114698cb18ec9fa0d7d 的普通 API31 安全栈确认异常经 Parcel/Binder 返回，仍未定位服务端精确行。本轮只补固定服务端栈帧标签、去重与 remote marker 布尔，最多 12 帧；不含异常消息或对象值，Android 行为与接受条件不变。精确 before09b 的单普通31用于最后一次纯结构化栈采证，其他 runtime 未执行。若服务端栈缺失，不将猜测写成根因。
+
+### b4 后的默认显示 recent-task 恢复验证候选
+
+b4 单机安全栈出现 `server_task_add_child:1725`，说明异常经服务端返回，
+但现有 guest 源码版本未确定，不能把别的 AOSP tag 行号直接当空对象证明。
+本次仅测试入口改用同一个已严格核验的 `AppTask.moveToFront()` 恢复 recent task；
+必须先由系统查询确认默认 display 与独立期望相等，非默认或查询缺失在恢复前拒绝。
+恢复后同 task/display、焦点、可见控件及其余身份/时效条件继续严格检查。
+
+精确 before `b4ca97743f64a52b4981fbcf338899de008b52bc` 的普通 API31
+用于实际验证；其他 runtime 明确未执行，完整矩阵仍待后续验收。隔离官方 AVD
+额外保存限定公开 guest build 字段和镜像 revision，缺失写 unknown；不采集设备
+序列号、账户或全量 getprop，不将此入口用于用户设备自动采集。

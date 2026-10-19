@@ -47,7 +47,7 @@ def test_persistent_and_live_component_identities_are_checked_before_launch():
         assert component + ".getPackageName()" in source
         assert component + ".getClassName()" in source
     assert source.index("DisplayObservationGate.taskComponentsMatch(") < source.index(
-        "tasks.get(0).startActivity("
+        "tasks.get(0).moveToFront("
     )
     assert '"base_activity_present"' in source
     assert '"base_intent_is_expected"' in source
@@ -68,3 +68,12 @@ def test_task_identity_failure_is_safe_and_cannot_be_success():
     assert result["last_phase"] == "task_identity"
     assert "private" not in str(result)
     assert not MODULE.accepted(raw, 0, "fresh", 0, 12, "abc")
+
+
+def test_unsupported_restore_display_is_explicit_and_rejected():
+    raw = (
+        "junit.framework.AssertionFailedError: "
+        "Task restore is unsupported on a non-default display\n"
+    )
+    assert MODULE.diagnostics(raw, 0)["assertion_code"] == "restore_display_unsupported"
+    assert not MODULE.accepted(raw, 0, "fresh", 7, 12, "abc")

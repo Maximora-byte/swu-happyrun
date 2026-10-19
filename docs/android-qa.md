@@ -148,3 +148,16 @@ simulation controls are farther down the long page and are not misreported as
 first-frame visible; the observation does not scroll to them. API31/API35 exact-head
 CI still must actually execute these checks; host fixtures and old dumpsys-format
 compatibility tests are not execution evidence.
+
+### Recent-task restoration scope
+
+Instrumentation can leave the selected own task in recents without a live Activity.
+The isolated observation entry validates the exact persistent MainActivity component,
+then uses that same AppTask's public `moveToFront()` restoration path. Before restoring,
+it requires the independently observed display to equal the system-reported default
+display. Non-default or unavailable default displays fail as
+`restore_display_unsupported` before restoration. No display is reassigned, no new
+task is requested, and no task/data reset is performed. This is a current support
+limit, not evidence of general multi-display or MuMu compatibility. The restored
+Activity must still satisfy the original task/display/signature/window/viewport and
+fresh-observation checks; a restoration return alone cannot pass acceptance.
