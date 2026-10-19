@@ -328,3 +328,13 @@ optional API31/35 通过；历史 af3 同类成功与本次失败均保留。
 验证等待修订，HTTPS/API35 保留原完整顺序获取主错误与退出错误安全证据。
 其他组合继续构建/静态检查，runtime 明确 not_run；不能称最终全矩阵通过。
 后续完整验收仍需准确新 HEAD 的六组合实际结果。
+
+### 73af 双组合结果与最终六组合验收
+
+73af 普通 API31 实际 display7/native15/namespace3 通过；HTTPS API35
+实际 15HTTP+3UI+14前台+持久恢复1+存活旧fence1 通过。本轮没有复现
+234 的两个 RuntimeError，因此其根因仍 open；新增安全诊断未证明修复根因。
+本候选仅更新门禁与状态，产品、QA判定、预算和资源字节不变。最终本分支
+精确 before73af 的一次可信 push 恢复普通/optional/HTTPS × API31/35
+完整六组合，旧 before234 拒绝，其他事件运行明确 not_run。最终结果以
+准确新 HEAD 为准，不合并不同 HEAD 的绿灯冒充统一验收。

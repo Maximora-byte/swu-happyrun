@@ -181,6 +181,10 @@ def test_dirty_checkout_rejected_before_provenance(monkeypatch, tmp_path):
 def test_exact_final_matrix_only(job, api):
     env, event = grant()
     env.update(GITHUB_JOB=job, HAPPYRUN_ANDROID_API=api)
-    assert phase.authorized(env, event) == (
-        (job, api) in {("android-apk", "31"), ("remote-https", "35")}
-    )
+    assert phase.authorized(env, event)
+
+
+def test_previous_diagnostic_transition_is_consumed():
+    env, event = grant()
+    event["before"] = "234d280c23f5275371a5092bfdc7a4b7ea302f65"
+    assert not phase.authorized(env, event)
