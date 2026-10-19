@@ -55,6 +55,12 @@ def snapshot(settings):
         }
 
 
+def assert_device_probe_mapping(settings, report):
+    with sqlite3.connect(settings.database_path) as db:
+        actual = dict(db.execute("SELECT device_id, current_probe FROM devices"))
+    assert actual == {item["device_id"]: item["probe_id"] for item in report["devices"]}
+
+
 def batch(devices):
     return {
         "protocol_version": 1,
@@ -111,7 +117,7 @@ def test_conflicting_new_probe_batch_is_atomic_across_restart(settings, network)
                 stored = snapshot(settings)
                 assert len(stored["agents"]) == 1
                 assert len(stored["probes"]) == 2
-                assert all(row[2] is not None for row in stored["devices"])
+                assert_device_probe_mapping(settings, valid)
             else:
                 stored = before
             fresh_conflict = copy.deepcopy(valid)
@@ -206,3 +212,25 @@ def test_sqlite_abort_after_first_probe_write_rolls_back_entire_batch(settings, 
     replayed = snapshot(settings)
     assert replayed["probes"] == accepted["probes"]
     assert replayed["devices"] == accepted["devices"]
+
+
+def test_probe_mapping_assertion_rejects_fence_only_and_swapped_probes(settings):
+    from swu_happyrun.core.models import AgentHello, DeviceRegistration
+    from swu_happyrun.server.store import SqliteJobStore
+
+    store = SqliteJobStore(settings.database_path, FakeClock())
+    devices = [str(uuid4()), str(uuid4())]
+    for device in devices:
+        store.register_device(DeviceRegistration(device_id=device, agent_id=AGENT_A))
+    report = batch(devices)
+    with pytest.raises(AssertionError):
+        assert_device_probe_mapping(settings, report)  # fence=0, current_probe=NULL
+    store.observe_agent(AgentHello.model_validate(report))
+    assert_device_probe_mapping(settings, report)
+    with sqlite3.connect(settings.database_path) as db:
+        db.execute(
+            "UPDATE devices SET current_probe=? WHERE device_id=?",
+            (report["devices"][1]["probe_id"], devices[0]),
+        )
+    with pytest.raises(AssertionError):
+        assert_device_probe_mapping(settings, report)
