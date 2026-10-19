@@ -50,7 +50,15 @@ uv run --no-sync python deploy/smoke_fake.py
 
 完整50项原始设计映射见 [acceptance coverage](acceptance-coverage.md)。这些是软件和合成故障证据；无真实设备/登录/上传/学校有效记录结论。Docker不可用，容器构建与卷重启仍未执行。最终wheel/sdist SHA256和完整archive成员检查随集成PR报告和CI artifact提供；不存在凭据、数据库、日志、虚拟环境或原始截图入包。
 
-## 本轮控制台软件验证（2026-10-19）
+## 控制台第二轮验证（2026-10-19）
+
+首轮 [run 39184117989](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39184117989) Chromium 9通过/3失败保留，未当成整体验收成功。fieldset断言改用原生disabled及实际input/select；422恢复编辑检查实际input。另修创建/详情入口前置及滚动聚焦，新增真实viewport断言。
+
+Windows/Python3.11取消/停止失败测试的start_count=0已通过真实TCP可控26秒时钟偏移复现：旧fixture固定服务UTC而agent使用实时UTC，开始前剩余租约预算不足。新fixture同步服务UTC的单调推进，增加0/26秒两参数回归并保留原故障断言及显式advance31；协议测试的可控时钟与生产代码不变。此证据不排除历史CI另有环境因素。
+
+本轮 Linux/Python3.12.14 完整 **557 passed**（97.91秒）；新wheel源码外 **35 HTTP passed**（43.32秒），包括新增0/26秒时钟回归。冻结依赖、Schema、lint/format和Node检查通过；同一wheel源码外 **7 daemon passed**（15.79秒），CLI smoke、console真实TCP、core/server/agent三extras隔离通过，Playwright不进入普通运行环境。下方556/34结果保留为首轮快照，不覆盖本轮修改。真实Chromium与Windows复验须查看本轮同HEAD Actions，不能用本地Linux结果代替。
+
+## 首轮控制台软件验证（2026-10-19）
 
 准确继承 `585e1b0674022c8262109a7ea5e5720c0532eee9`，按冻结清单组合API9文件、UI6文件、浏览器CI4文件及QA脚本1文件。入口异步打开器修复纳入最终组合：只在loopback成功监听后启动daemon线程，阻塞浏览器opener不拖住服务请求或退出；测试使用阻塞fake opener，不打开真实浏览器。
 

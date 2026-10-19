@@ -2,7 +2,7 @@
 
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from integration_fixture import create_fixture
@@ -17,9 +17,17 @@ from swu_happyrun.drivers.fake import FakeDriver
 
 
 @pytest.fixture
-def runtime(service, tmp_path):
+def runtime(service, tmp_path, monkeypatch):
     s = service
     s.clock.now = datetime.now(UTC)
+    started = s.clock.monotonic()
+    # Runtime agents use a live wall/monotonic clock. Keep server UTC advancing
+    # too, while retaining Clock.advance() for explicit lease-expiry fault tests.
+    monkeypatch.setattr(
+        s.clock,
+        "utcnow",
+        lambda: s.clock.now + timedelta(seconds=s.clock.monotonic() - started),
+    )
     spec = create_fixture(tmp_path, DEVICE_ID)
     s.spec = spec.model_dump(mode="json")
     assert s.hello().status_code == 200
@@ -87,8 +95,14 @@ def test_budget_exhaustion_is_attention_not_fake_completion(runtime):
         assert not driver.verify(result.spec).evidence
         assert not journal.has_intent(created["job_id"], "upload")
         assert runner.run_once() is None
-        assert driver.start_count == 1
         current = s.get("jobs/" + created["job_id"]).json()
+        assert driver.start_count == 1, {
+            "job_state": current["state"],
+            "reason": current["reason_code"],
+            "phase": current["resume_phase"],
+            "desired_state": current["desired_state"],
+            "server_agent_wall_drift": (runner.clock.utcnow() - s.clock.utcnow()).total_seconds(),
+        }
         assert current["state"] == "needs_attention"
         assert current["reason_code"] == "simulation_incomplete"
     finally:
@@ -327,7 +341,8 @@ def test_retry_preflight_then_start_failure_reports_running_attention_immediatel
         client.close()
 
 
-def test_cancel_stop_failure_reports_attention_immediately(runtime):
+@pytest.mark.parametrize("fixture_age_seconds", [0, 26])
+def test_cancel_stop_failure_reports_attention_immediately(runtime, fixture_age_seconds):
     from swu_happyrun.drivers.base import DriverError
 
     s, root, created = runtime
@@ -341,10 +356,27 @@ def test_cancel_stop_failure_reports_attention_immediately(runtime):
             raise DriverError("injected_stop_failure")
 
     runner, driver, journal, client = make_runner(s, root, driver_type=CannotStop)
+    # Advance elapsed fixture time and agent wall time together, without sleeping.
+    # Server lease clock must follow this passage too; real HTTP and runner
+    # monotonic elapsed/deadline accounting remain untouched.
+    original_monotonic = s.clock.monotonic
+    s.clock.monotonic = lambda: original_monotonic() + fixture_age_seconds
+
+    class AgedAgentClock(SystemClock):
+        def utcnow(self):
+            return super().utcnow() + timedelta(seconds=fixture_age_seconds)
+
+    runner.clock = AgedAgentClock()
     try:
         runner.run_once()
-        assert driver.start_count == 1
         current = s.get("jobs/" + created["job_id"]).json()
+        assert driver.start_count == 1, {
+            "job_state": current["state"],
+            "reason": current["reason_code"],
+            "phase": current["resume_phase"],
+            "desired_state": current["desired_state"],
+            "server_agent_wall_drift": (runner.clock.utcnow() - s.clock.utcnow()).total_seconds(),
+        }
         assert current["state"] == "needs_attention"
         assert current["desired_state"] == "cancel"
         assert current["reason_code"] == "stop_unconfirmed"

@@ -118,6 +118,13 @@ class Suite:
                     path=str(self.output / ("failure-" + str(len(self.results)) + ".png"))
                 )
 
+    async def assert_fields_locked(self):
+        # Playwright's enabled-state matcher does not treat fieldset as a control.
+        # Check its native property and every real descendant control instead.
+        assert await self.page.locator("#job-fields").evaluate("node => node.disabled")
+        for control in await self.page.locator("#job-fields input, #job-fields select").all():
+            await expect(control).to_be_disabled()
+
     async def overflow(self):
         assert await self.page.evaluate("document.documentElement.scrollWidth <= innerWidth"), (
             "Horizontal page overflow"
@@ -167,9 +174,28 @@ class Suite:
         await p.reload()
         await expect(p.locator("#workspace")).to_be_hidden()
 
+    async def assert_detail_in_viewport(self):
+        detail = self.page.locator("#job-detail")
+        await expect(detail).to_be_focused()
+        await expect(detail).to_be_in_viewport(ratio=0.15)
+        assert await detail.evaluate(
+            "node => node.getBoundingClientRect().top >= 0 && "
+            "node.getBoundingClientRect().top < innerHeight * 0.8"
+        ), "Task detail heading is outside the visible viewport"
+
     async def pagination_lookup(self):
         p = await self.fresh()
+        assert await p.evaluate(
+            "Boolean(document.querySelector('.create-panel').compareDocumentPosition("
+            "document.querySelector('#jobs-list')) & Node.DOCUMENT_POSITION_FOLLOWING)"
+        ), "Creation entry must precede the long job list"
+        assert await p.evaluate(
+            "Boolean(document.querySelector('#job-detail').compareDocumentPosition("
+            "document.querySelector('#jobs-list')) & Node.DOCUMENT_POSITION_FOLLOWING)"
+        ), "Selected detail must precede the long job list"
         await expect(p.locator(".job-row")).to_have_count(25)
+        await p.locator(".job-row button").first.click()
+        await self.assert_detail_in_viewport()
         await p.locator("#load-more").click()
         await expect(p.locator(".job-row")).to_have_count(50)
         await p.locator("#load-more").click()
@@ -180,6 +206,11 @@ class Suite:
         await p.locator("#lookup-id").fill(ids[-1])
         await p.locator("#job-lookup button").click()
         await expect(p.locator("#job-detail")).to_contain_text(ids[-1])
+        await self.assert_detail_in_viewport()
+        await p.set_viewport_size({"width": 390, "height": 844})
+        await p.locator(".job-row button").first.click()
+        await self.assert_detail_in_viewport()
+        await self.overflow()
         await p.locator("#lookup-id").fill(str(UUID(int=999)))
         await p.locator("#job-lookup button").click()
         await expect(p.locator("#notice")).to_contain_text("未找到")
@@ -228,6 +259,7 @@ class Suite:
         # The browser's second pointer click must not submit another request.
         gate.set()
         await expect(p.locator("#job-detail")).to_be_visible()
+        await self.assert_detail_in_viewport()
         assert len(posts) == 1, "Double submit created more than one request"
         assert posts[0].post_data_json["mode"] == "simulation"
         await expect(p.locator("#creation-state")).to_contain_text("任务已创建")
@@ -261,14 +293,14 @@ class Suite:
         await p.route("**/api/v1/jobs", lose_response)
         await p.locator("#create-job").click()
         await expect(p.locator("#create-job")).to_have_text("用同一请求重试")
-        await expect(p.locator("#job-fields")).to_be_disabled()
+        await self.assert_fields_locked()
         await expect(p.locator("#import-job")).to_be_disabled()
         await p.locator("#create-job").click()
         await asyncio.wait_for(retry_started.wait(), 10)
         await expect(p.locator("#reset-creation")).to_be_disabled()
         await p.locator("#reset-creation").click(force=True)
         await expect(p.locator("#confirm-dialog")).to_be_hidden()
-        await expect(p.locator("#job-fields")).to_be_disabled()
+        await self.assert_fields_locked()
         retry_release.set()
         await expect(p.locator("#creation-state")).to_contain_text("任务已创建")
         assert len(seen) == 2 and seen[0] == seen[1] and seen[0][0]
@@ -293,7 +325,8 @@ class Suite:
         await p.route("**/api/v1/jobs", reject_first)
         await p.locator("#create-job").click()
         await expect(p.locator("#notice")).to_contain_text("输入不符合协议")
-        await expect(p.locator("#job-fields")).to_be_enabled()
+        assert not await p.locator("#job-fields").evaluate("node => node.disabled")
+        await expect(p.locator('#job-fields [name="profile_revision"]')).to_be_enabled()
         await expect(p.locator("#import-job")).to_be_enabled()
         await p.locator('#job-form [name="profile_revision"]').fill("c" * 64)
         await p.locator("#create-job").click()

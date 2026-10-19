@@ -6,7 +6,15 @@
 
 Dot 已承担主要实现与修复；本地 Codex 负责 Windows、真实设备与集成独立验收。此分工覆盖旧计划中的负责人，详见 [冲刺交接](handoffs/2026-10-18-dot-lead-sprint.md) 与 [Issue #16](https://github.com/Maximora-byte/swu-happyrun/issues/16)。本文不宣称全部 v1 已验收，也不把提交、局部测试、软件联调、设备观测和学校有效记录合并为同一种“完成”。
 
-### 本地管理控制台候选（2026-10-19）
+### 控制台第二轮修订（2026-10-19）
+
+首轮 [CI run 39184117989](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39184117989) 实际执行 Chromium，9组通过、3组失败；三处失败使用了不适用于 fieldset 的 Playwright disabled 判断，现改查原生属性与真实输入控件禁用状态。截图审阅还发现创建/详情入口位于长任务列表之后，现将入口前置，点击任务后滚动并聚焦详情；新增桌面/手机 viewport 断言。新浏览器结果以本轮同 HEAD Actions 为准，不能沿用首轮局部通过。
+
+同次 Windows/Python3.11 的取消后停止失败用例出现 start_count=0。独立真实TCP诊断用可控26秒偏移复现固定服务UTC与实时agent时钟混用，使开始前租约预算不足；测试现保持服务UTC随单调时钟推进，并保留显式租约过期注入。修复只涉及测试，不改变生产租约防线；该重现不证明历史CI只有这一种原因。
+
+本轮 Linux/Python3.12.14 完整 **557 passed**（97.91秒）；新wheel源码外 **35 HTTP passed**（43.32秒），包括新增0/26秒时钟回归。冻结依赖、Schema、lint/format和Node检查通过；同一wheel源码外 **7 daemon passed**（15.79秒），CLI smoke、console真实TCP、core/server/agent三extras隔离通过，Playwright不进入普通运行环境。下方556/34结果保留为首轮快照，不覆盖本轮修改。真实Chromium与Windows复验须查看本轮同HEAD Actions，不能用本地Linux结果代替。
+
+### 本地管理控制台首轮快照（2026-10-19）
 
 在准确基线 `585e1b0674022c8262109a7ea5e5720c0532eee9` 上增加同源控制台、ADMIN任务分页和显式 `server --open-browser`。内置HTML/JS/CSS随wheel分发，不引入服务器运行时前端下载；令牌只保留当前页面内存。操作与边界见[控制台](console.md)、[API](console-api.md)、[浏览器验收](console-browser-qa.md)。默认不打开浏览器，不启动agent，不解除真实设备限制。
 

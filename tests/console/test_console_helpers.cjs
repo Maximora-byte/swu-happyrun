@@ -3,6 +3,16 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const assert = require("node:assert/strict");
 const source = fs.readFileSync("src/swu_happyrun/server/web/app.js", "utf8");
+const html = fs.readFileSync("src/swu_happyrun/server/web/index.html", "utf8");
+assert(
+  html.indexOf('class="card create-panel"') < html.indexOf('id="jobs-list"'),
+);
+assert(html.indexOf('id="job-detail"') < html.indexOf('id="jobs-list"'));
+assert(
+  /target\.scrollIntoView\(\{\s*behavior: "auto",\s*block: "start"/.test(
+    source,
+  ),
+);
 const constants = source.slice(
   source.indexOf("  const uuidPattern"),
   source.indexOf("  const terminal"),

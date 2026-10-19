@@ -123,17 +123,6 @@
                 /><button type="submit" class="secondary">查询任务</button>
               </div>
             </form>
-            <div id="jobs-list" class="stack" aria-live="polite"></div>
-            <button id="load-more" class="secondary" hidden>
-              加载更早任务
-            </button>
-            <article
-              id="job-detail"
-              class="card"
-              hidden
-              tabindex="-1"
-              aria-label="任务详情"
-            ></article>
             <details class="card create-panel">
               <summary>创建任务<span>默认模拟模式</span></summary>
               <p class="hint">
@@ -225,6 +214,17 @@
                 </div>
               </form>
             </details>
+            <article
+              id="job-detail"
+              class="card"
+              hidden
+              tabindex="-1"
+              aria-label="任务详情"
+            ></article>
+            <div id="jobs-list" class="stack" aria-live="polite"></div>
+            <button id="load-more" class="secondary" hidden>
+              加载更早任务
+            </button>
           </section>
           <section id="devices">
             <div class="section-head">

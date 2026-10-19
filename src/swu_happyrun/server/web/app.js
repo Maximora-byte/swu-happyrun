@@ -532,6 +532,7 @@
       summary = el("summary", "查看协议数据");
     raw.append(summary, el("pre", JSON.stringify(job, null, 2)));
     target.append(raw);
+    target.scrollIntoView({ behavior: "auto", block: "start" });
     target.focus({ preventScroll: true });
   }
   function validateSpec(spec) {

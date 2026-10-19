@@ -637,3 +637,11 @@ footer {
     scroll-behavior: auto !important;
   }
 }
+
+#job-detail {
+  margin: 18px 0;
+  scroll-margin-top: 24px;
+}
+.create-panel {
+  margin-bottom: 18px;
+}
