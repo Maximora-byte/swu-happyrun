@@ -50,6 +50,19 @@ uv run --no-sync python deploy/smoke_fake.py
 
 完整50项原始设计映射见 [acceptance coverage](acceptance-coverage.md)。这些是软件和合成故障证据；无真实设备/登录/上传/学校有效记录结论。Docker不可用，容器构建与卷重启仍未执行。最终wheel/sdist SHA256和完整archive成员检查随集成PR报告和CI artifact提供；不存在凭据、数据库、日志、虚拟环境或原始截图入包。
 
+## 本轮控制台软件验证（2026-10-19）
+
+准确继承 `585e1b0674022c8262109a7ea5e5720c0532eee9`，按冻结清单组合API9文件、UI6文件、浏览器CI4文件及QA脚本1文件。入口异步打开器修复纳入最终组合：只在loopback成功监听后启动daemon线程，阻塞浏览器opener不拖住服务请求或退出；测试使用阻塞fake opener，不打开真实浏览器。
+
+- Linux x86_64/Python3.12.14：最终完整 **556 passed**（90.92秒），一条继承Starlette/httpx弃用提示。此前555项快照未含最终opener修复，仅作历史证据。
+- 新构建wheel在源码外、Python-I/清PYTHONPATH/独立pytest配置：**34真实HTTP passed**、**7 daemon passed**；CLI fake smoke包括route_finished、同job查询与服务重启持久化通过。
+- 新console安装包真实TCP检查通过：三asset响应逐字节等于wheel安装内容；no-store/CSP/nosniff/frame/referrer安全头、静态白名单、401/403权限、ADMIN两页无重复以及重启后cursor结果稳定。没有用TestClient替代这些TCP检查。
+- Node语法与生产JS helper/DOM-fetch harness通过，包括输入/UTC+8真实日期边界、无效成功响应保留同幂等键/请求、明确拒绝后编辑、重试与放弃操作互斥。Node harness不等于真实浏览器。
+- frozen全部extra依赖、Schema漂移、ruff check/format、wheel/sdist构建通过。core/server/agent独立wheel环境验证实际site-packages导入、CLI入口和依赖隔离；三者均无Playwright。browser-test单独锁定Playwright，官方Chromium安装仅在独立CI任务中执行。
+- README/安装页提供本地console入口和显式--open-browser，默认不变、无agent启动。README包元数据更新后，最终wheel重新安装复验；最终SHA256与archive清单随发布证据提供。
+
+本地没有启动Chromium，也没有绕过IPC隔离。真实交互、桌面/手机布局和截图结果以同一候选HEAD的Actions `console-browser-qa` 和PR记录为准；脚本存在、Node或HTTP通过都不能替代该结果。CI只上传合成截图和results.json，不包含临时数据库或账号凭据。既有设备、容器、真实登录/上传及学校有效记录限制保持不变。
+
 ## 本轮 CI 测试同步修正验证（2026-10-19）
 
 基线 `4d73f42ec15e0c2cc14371f8a4441ef2101e6e41`；只更新 `tests/agent/test_daemon_process.py`、`tests/server/test_scheduler.py` 和两份结果文档。42个生产Python模块与构建配置逐字节不变。

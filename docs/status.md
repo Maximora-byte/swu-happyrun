@@ -6,6 +6,14 @@
 
 Dot 已承担主要实现与修复；本地 Codex 负责 Windows、真实设备与集成独立验收。此分工覆盖旧计划中的负责人，详见 [冲刺交接](handoffs/2026-10-18-dot-lead-sprint.md) 与 [Issue #16](https://github.com/Maximora-byte/swu-happyrun/issues/16)。本文不宣称全部 v1 已验收，也不把提交、局部测试、软件联调、设备观测和学校有效记录合并为同一种“完成”。
 
+### 本地管理控制台候选（2026-10-19）
+
+在准确基线 `585e1b0674022c8262109a7ea5e5720c0532eee9` 上增加同源控制台、ADMIN任务分页和显式 `server --open-browser`。内置HTML/JS/CSS随wheel分发，不引入服务器运行时前端下载；令牌只保留当前页面内存。操作与边界见[控制台](console.md)、[API](console-api.md)、[浏览器验收](console-browser-qa.md)。默认不打开浏览器，不启动agent，不解除真实设备限制。
+
+本轮 Linux/Python3.12.14 完整 **556 passed**；新wheel源码外 **34 HTTP + 7 daemon**、CLI smoke与新增console真实TCP检查通过。新增检查核对三asset字节/安全头、静态白名单、ADMIN认证分页、重启cursor稳定。冻结依赖、Schema、lint/format、Node生产脚本harness、构建与三extras隔离通过；Playwright仅browser-test extra。
+
+本地未执行Chromium，受现有IPC隔离限制；页面交互、布局和截图验收结果以同一候选HEAD的Actions `console-browser-qa` 及PR记录为准。HTTP/Node检查不替代真实浏览器验收。MuMu/vivo、具体乐跑、学校记录与容器实测仍受已列环境/样本限制。
+
 ### CI 测试同步修正（2026-10-19）
 
 准确基线 `4d73f42ec15e0c2cc14371f8a4441ef2101e6e41` 的 [CI run 39179740749](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39179740749) 在 Windows/Python3.13 的 active-renewal 测试失败。独立延迟父进程检查后，确定性复现旧测试错过短暂 active 状态；这说明测试存在竞态，但未证明该次 CI 只有这一种原因。本轮只修测试同步：在启动前预设故障，由服务端处理首个已持久化 active 的 renew 时注入503；父进程退出后断言停止与不重试。

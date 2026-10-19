@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 from swu_happyrun.core.clock import Clock, SystemClock
+from swu_happyrun.server import web
 from swu_happyrun.server.auth import Authenticator
 from swu_happyrun.server.errors import ApiError
 from swu_happyrun.server.routes import agents, jobs, leases, schedules
@@ -63,10 +64,12 @@ def create_app(settings: ServerSettings, *, clock: Clock | None = None) -> FastA
     @app.middleware("http")
     async def safe_failures(request: Request, call_next):
         try:
-            return await call_next(request)
+            response = await call_next(request)
         except Exception:
             # Do not forward exception details to ASGI's logging layer.
-            return error_response(500, "internal_error", "Internal server error")
+            response = error_response(500, "internal_error", "Internal server error")
+        response.headers.update(web.SECURITY_HEADERS)
+        return response
 
     @app.exception_handler(ApiError)
     async def api_error(request: Request, exc: ApiError):
@@ -93,6 +96,7 @@ def create_app(settings: ServerSettings, *, clock: Clock | None = None) -> FastA
             db.execute("SELECT 1").fetchone()
         return {"status": "ready", "protocol_version": 1}
 
+    app.include_router(web.router)
     app.include_router(jobs.router, prefix="/api/v1")
     app.include_router(agents.router, prefix="/api/v1")
     app.include_router(leases.router, prefix="/api/v1")

@@ -52,6 +52,11 @@ def _parser():
     server.add_argument("--database", type=Path, default=Path("local/server.sqlite"))
     server.add_argument("--host", default="127.0.0.1")
     server.add_argument("--port", type=int, default=8080)
+    server.add_argument(
+        "--open-browser",
+        action="store_true",
+        help="Open the local console after a loopback server starts",
+    )
     agent = commands.add_parser("agent")
     agent.add_argument("--url", default="http://127.0.0.1:8080")
     agent.add_argument("--agent-id", required=True)
@@ -173,7 +178,10 @@ def _execute(args):
 
         from swu_happyrun.server.app import create_app
         from swu_happyrun.server.settings import ServerSettings
+        from swu_happyrun.server.web import browser_url, run_with_browser
 
+        if args.open_browser:
+            browser_url(args.host, args.port)
         args.database.parent.mkdir(parents=True, exist_ok=True)
         settings = ServerSettings(
             database_path=args.database,
@@ -182,9 +190,11 @@ def _execute(args):
             bind_host=args.host,
             port=args.port,
         )
-        uvicorn.run(
-            create_app(settings), host=args.host, port=args.port, access_log=False, log_level="info"
-        )
+        app = create_app(settings)
+        if args.open_browser:
+            run_with_browser(app, host=args.host, port=args.port)
+        else:
+            uvicorn.run(app, host=args.host, port=args.port, access_log=False, log_level="info")
         return 0
     if args.command == "agent":
         if args.backend != "fake":

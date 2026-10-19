@@ -12,12 +12,18 @@ Dot 负责主要实现、测试、依赖与交付；本地 Codex 负责 Windows�
 
 **安装时选择集成候选 PR 正文及对应 Actions `github.sha` 指定的完整提交。** 单独的堆叠 PR 只包含其自身与父分支范围：部署文档 PR 基于服务器分支时，并不独自包含 L1/L2；下述 CLI/fake 命令必须在同时集成服务器、驱动与代理的候选上运行。不要混用多个分支的最新文件代替固定候选。
 
+## 本地管理控制台
+
+服务器内置同源管理页面：启动后打开 `http://127.0.0.1:8080/console/`，或显式使用 `server --open-browser`。此选项仅在loopback绑定且成功监听后尝试打开浏览器，默认不打开，也不会启动执行代理。控制台不改变真实设备和学校记录的验收限制。
+
+见[安装与启动](docs/installation.md)、[控制台操作](docs/console.md)、[API与安全范围](docs/console-api.md)。真实Chromium交互/截图验收以对应提交的独立CI结果为准；页面和API检查不能替代浏览器验收。
+
 ## 安装和软件自检
 
 Python 3.11+；以下从完整候选仓库根目录执行，Windows PowerShell 与 Linux 均可使用：
 
 ```sh
-uv sync --all-extras --frozen
+uv sync --extra server --extra agent --extra dev --frozen
 uv run --no-sync python -m pytest -q
 uv run --no-sync python scripts/export_schema.py --check
 uv run --no-sync ruff check .
