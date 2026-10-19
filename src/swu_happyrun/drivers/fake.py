@@ -72,7 +72,11 @@ class FakeDriver:
             previous = self._bound_view
             if previous is not None:
                 if previous.job_id == view.job_id:
-                    if previous.run_session_id != view.run_session_id or previous.spec != view.spec:
+                    if (
+                        previous.run_session_id != view.run_session_id
+                        or previous.spec != view.spec
+                        or previous.agent_id != view.agent_id
+                    ):
                         raise DriverError("session_mismatch")
                     if view.fence < previous.fence:
                         raise DriverError("stale_fence")

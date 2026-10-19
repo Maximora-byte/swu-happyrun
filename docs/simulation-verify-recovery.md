@@ -7,3 +7,19 @@ Normal binding checks preserve the same session/spec and reject a lower fence be
 The files are local synthetic state, not tamper-proof evidence against a process that can rewrite its own private files. The owning agent's per-device lock remains required. This change makes no physical-device, school acceptance, upload or real credential claim.
 
 Regression evidence includes a real TCP server and child process that reaches the route endpoint, persists stop, then exits immediately before completion reporting. After lease expiry and explicit ADMIN verify_only approval, a new runner/driver completes with unchanged start/tick/stop counters and no upload intent. Negative recovery covers start_crash, incomplete route and upload uncertainty with reconstructed drivers. Driver-level checks cover missing/corrupt files, changed job/session/spec/fence, absent legacy completion flag, in-memory-only state and still-active state. The Android runner remains a separate implementation; this Python fix does not implement native completion recovery.
+
+## Historical agent binding (Codex follow-up)
+
+A same-job recovery must retain the historical `agent_id` before any new
+binding is saved. Comparing agents only after `bind_session` is insufficient:
+it would replace the historical value before verifying completion. The driver
+now rejects that mismatch together with session/spec mismatch before replacing
+or writing the binding. A legitimate same-agent recovery with a newer fence
+still succeeds. The emergency stop path may reserialize the unchanged state;
+it does not rewrite the mismatched historical identity or create completion.
+
+Regression tests reconstruct the driver from synthetic state *before* binding,
+cover missing/other historical agent, wrong session/spec/device/job and stale
+authorization fence, and retain the valid higher-fence completion path. These
+checks detect inconsistent local state; the JSON file is not a tamper-proof
+attestation against a writer with access to the application data directory.
