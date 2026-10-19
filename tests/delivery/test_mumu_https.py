@@ -169,7 +169,7 @@ def test_adapter_requires_exact_local_hash_and_declared_capability():
     )
     import hashlib
 
-    relative = str(path.relative_to(ROOT))
+    relative = path.relative_to(ROOT).as_posix()
     manifest = {
         "runtime_capabilities": ["mumu-own-simulation-v1"],
         "adapter": {
@@ -177,6 +177,10 @@ def test_adapter_requires_exact_local_hash_and_declared_capability():
         },
     }
     m.require_adapter(manifest)
+    manifest["adapter"]["files"][0]["path"] = relative.replace("/", "\\")
+    with unittest.TestCase().assertRaises(RuntimeError):
+        m.require_adapter(manifest)
+    manifest["adapter"]["files"][0]["path"] = relative
     manifest["adapter"]["files"][0]["sha256"] = "0" * 64
     with unittest.TestCase().assertRaises(RuntimeError):
         m.require_adapter(manifest)
@@ -201,9 +205,17 @@ def test_command_contains_only_explicit_serial_own_class_and_safe_values():
     command = m.instrument_command(
         args, binding, fixture, "completed", "00000000-0000-4000-8000-000000000004"
     )
-    assert command[:5] == ["/trusted/adb", "-s", args.serial, "shell", "am"]
+    assert command[:5] == [str(args.adb), "-s", args.serial, "shell", "am"]
     assert command[-1] == "org.happyrun.app.test/android.test.InstrumentationTestRunner"
     assert m.CLASS in command
+    from pathlib import PureWindowsPath
+
+    args.adb = PureWindowsPath("C:/trusted/adb.exe")
+    windows_command = m.instrument_command(
+        args, binding, fixture, "completed", "00000000-0000-4000-8000-000000000004"
+    )
+    assert windows_command[0] == str(args.adb)
+    assert windows_command[1:] == command[1:]
     fixture["agent_token"] = "x;id"
     with unittest.TestCase().assertRaises(ValueError):
         m.instrument_command(
@@ -275,7 +287,7 @@ def test_adb_query_and_stop_are_bound_to_exact_own_package(monkeypatch):
     adb = m.OwnAdb(Path("/trusted/adb"), "127.0.0.1:1234")
     assert adb.query("get-state") == "device"
     adb.stop()
-    assert calls[0][0] == ["/trusted/adb", "-s", "127.0.0.1:1234", "get-state"]
+    assert calls[0][0] == [str(Path("/trusted/adb")), "-s", "127.0.0.1:1234", "get-state"]
     assert calls[1][0][-4:] == ["shell", "am", "force-stop", "org.happyrun.app"]
     assert all(call[1].get("shell", False) is False for call in calls)
 
