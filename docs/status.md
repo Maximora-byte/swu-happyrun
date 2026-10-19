@@ -1,51 +1,46 @@
 # 协作状态
 
-更新日期：2026-10-18（Asia/Shanghai）。此文件记录证据，不由收到消息或计划勾选自动推断完成。
+更新：2026-10-19（Asia/Shanghai）。Dot 主导实现和修复；本地 Codex 负责独立测试、设备观测和集成审核。本轮只使用 GitHub，没有发送 Matrix 消息。
 
-## 最新分工与证据
+## 已合入 main
 
-- 用户最新要求：Dot 主导主要开发，本地 Codex 负责实测与集成审核；见[冲刺任务](handoffs/2026-10-18-dot-lead-sprint.md)。目标明早候选版、24 小时内一次 v1 验收，不承诺未经实测的完整兼容性。
-- 仓库已公开。当前 main 尚未合入业务代码；C0/L0 在 [PR #13](https://github.com/Maximora-byte/swu-happyrun/pull/13)，HEAD `3ff0a33a01c629432a2036f4e105bed52157bd9e`，109 tests 和四组 CI 已通过，但 Dot 报告的 verify_only 恢复路径问题仍是阻塞。
-- Dot 已在 [Issue #1](https://github.com/Maximora-byte/swu-happyrun/issues/1) 回报真实仓库/Python 能力，并提交 [PR #12](https://github.com/Maximora-byte/swu-happyrun/pull/12) 的 50 条待实现服务器测试设计；这不是 S0 产品实现。
-- Dot 现在负责接管 C0 修复与 [C1 #14](https://github.com/Maximora-byte/swu-happyrun/issues/14)，随后实现 S0-S2、L1-L3 和 CLI；本地不再负责主要产品编码。新角色覆盖原 Issue/计划中的旧负责人。
-- 本地 MuMu 6.8.4.0 / Android 15.0 实例查询通过，实例停止，ADB 无设备；定位/传感器、应用、vivo 与学校有效记录未验证。
-- 本轮冲刺消息的实际送达与接单回执以 Matrix / Issue 为证；不能由这份计划的存在推断 Dot 已开始夜间任务。
-
-## 初次建仓快照（历史记录）
-
-以下是本轮角色调整前的历史快照；状态和负责人以本页上方、最新 AGENTS.md 与冲刺任务为准。
-
-| 项目 | 当前状态 | 证据/下一步 |
+| 范围 | PR / 准确 HEAD | 独立验收 |
 | --- | --- | --- |
-| 初版设计 | 已提交 | `687d0be` |
-| 设计评估、v1 契约与双端计划 | 已发布，待 Dot 交叉评审 | [设计基线 015447d](https://github.com/Maximora-byte/swu-happyrun/commit/015447dc97637311874dda061cb5fe48babb21f5) |
-| GitHub 仓库 | 已创建并推送 | [Maximora-byte/swu-happyrun](https://github.com/Maximora-byte/swu-happyrun)，私有，默认分支 main |
-| Matrix Dot 入口 | 已识别，未派发 | 群名 `Matrix · ChatGPT Dot`；用户本次选择只准备交接任务 |
-| Dot 接单与仓库访问 | 未确认，云端开发未启动 | [交接 Issue #1](https://github.com/Maximora-byte/swu-happyrun/issues/1) 与[待发送说明](handoffs/dot-server.md)已准备 |
-| 服务器实现 | 未开始 | S0-S2 |
-| 本地代理实现 | 未开始 | C0、L0-L3 |
-| MuMu Android 15 兼容 | 未验证 | 已确认安装信息，无应用运行证据 |
-| vivo 无 Root 兼容 | 未验证 | 缺实际 Android/app 版本和测试连接 |
-| 西大学校规则与有效记录 | 未验证 | 需实际校区、规则、版本和本人会话 |
+| C0/L0与verify_only结构修复 | [#17](https://github.com/Maximora-byte/swu-happyrun/pull/17)，`6ed02c29924ccc3ab26c028fbf46d15477d84eb0` | Windows Python3.11.16：112 tests、Schema、Ruff、构建、core-only干净安装通过 |
+| C1恢复/归属/记录会话契约 | [#19](https://github.com/Maximora-byte/swu-happyrun/pull/19)，`a82e4d97a5a7e1de5112eabeecac6e97312089a7` | Windows Python3.11.16与3.13.15各163 tests通过；3.11的Schema、Ruff、构建、干净安装通过 |
+| 原始50项服务器验收设计 | [#12](https://github.com/Maximora-byte/swu-happyrun/pull/12)，`cd508ceb0e75b8615213e0f9054cfe848b6493cc` | 文档审核；[原始矩阵](server-test-matrix.md)保留当时基线，不是产品通过记录 |
 
-每次交接记录 Issue/PR URL、基线与 HEAD、运行的检查、未验证范围。旧 Workflow 连接器本轮返回内部错误；Matrix Dot 独立连接器能够列出群与连接状态，不把回调 HTTP 接收当作 Dot 接单。
+以上使用merge commit保留依赖祖先关系，合并后基线为 `aa1cced50dbe3356607067e90d127dc699ce58ea`。旧 #13 由修复后的 #17 替代关闭。接入 #1、共享模型 #2、只读探测 #3、契约 #14 已按上述有限范围完成。**main尚未合入服务器、执行代理、网页或Android产品实现。**
 
-## 任务清单
+## 候选和阻塞
 
-负责人是计划分工，非 GitHub 用户指派；Dot 尚未实际接单。ready 表示可进入实施，不表示已经开工。
+- [#25](https://github.com/Maximora-byte/swu-happyrun/pull/25) `77494e21756e514f53e51b3a2c72f22555f0aae6` 包含 #17–#34 的全部祖先提交，无需逐个重复集成；保持未合并。
+- [#35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 在其上增加Android单次远程fake代理。首次审查 `e5b3b973f9e055fc8bcb4a9e3261cf6320568787`；Dot的CI/TLS修订为 `28871b2d599a8ec8335570effb3207d2564639ab`。采用版本须重新核对实际HEAD。
+- [#36](https://github.com/Maximora-byte/swu-happyrun/issues/36)：完成并停止的模拟任务重启后，verify_only仍回needs_attention，阻塞L2恢复完整性。
+- [#37](https://github.com/Maximora-byte/swu-happyrun/issues/37)：hello批次内不同设备复用新probe_id被部分接受、相同重传409，阻塞S1原子性/重传。
+- #25准确HEAD的四项Android CI失败未获豁免；#35新push与PR事件必须分别核对，旧绿灯不覆盖新失败。
 
-| Issue | 负责人 | 前置条件 |
-| --- | --- | --- |
-| [#1 Dot 接入与协议评审](https://github.com/Maximora-byte/swu-happyrun/issues/1) | Dot | 待发送交接；实际仓库访问与执行能力确认 |
-| [#2 C0 共享模型与工具链](https://github.com/Maximora-byte/swu-happyrun/issues/2) | 本地 Codex | 设计基线已发布 |
-| [#3 L0 MuMu/ADB 探测](https://github.com/Maximora-byte/swu-happyrun/issues/3) | 本地 Codex | 只读勘察可先行；模型集成依赖 C0 |
-| [#4 S0 服务 API 与存储](https://github.com/Maximora-byte/swu-happyrun/issues/4) | Dot | #1、#2 |
-| [#5 S1 租约与恢复](https://github.com/Maximora-byte/swu-happyrun/issues/5) | Dot | #4 |
-| [#6 S2 日程与部署包](https://github.com/Maximora-byte/swu-happyrun/issues/6) | Dot | #5 |
-| [#7 L1 配置与设备驱动](https://github.com/Maximora-byte/swu-happyrun/issues/7) | 本地 Codex | #2、#3 |
-| [#8 L2 代理与 CLI](https://github.com/Maximora-byte/swu-happyrun/issues/8) | 本地 Codex | #7；真实 HTTP 验收依赖 #5 |
-| [#9 L3 应用适配与记录核验](https://github.com/Maximora-byte/swu-happyrun/issues/9) | 本地 Codex | #8、实际校区/规则/版本/本人会话 |
-| [#10 I0 双端联调](https://github.com/Maximora-byte/swu-happyrun/issues/10) | 本地 Codex，Dot 修复服务器 | #6、#8；设备验收依赖 #9 |
-| [#11 R0 vivo/纯接口研究](https://github.com/Maximora-byte/swu-happyrun/issues/11) | 本地 Codex，Dot 评审接口样本 | 实际设备版本、连接和脱敏样本 |
+## 最新独立证据
 
-本轮交付仅包含设计、协议草案、实施计划和协作任务。Markdown 相对链接、占位符扫描及 Git 空白检查通过；没有业务代码，因此未运行产品测试，也没有生成设备验收结论。
+命令、版本、结果与复现脚本见[本轮验收报告](qa/2026-10-19-overnight-review.md)。
+
+- e5b Windows/Python3.11全套：688 passed、7 skipped、2 failed；两项是本机symlink夹具的WinError1314，未改系统权限，未计为全绿。
+- 安装/Schema/Ruff/构建/分发隐私、真实TCP fake路线完成和服务重启通过。28871b2的Python3.13 TLS专项6项通过；本机浏览器实际12组通过。
+- MuMu6.8.4.0 / Android15 API35已启动并连接ADB；#25普通APK首次安装、中文首屏启动通过，只读探测exit0。执行能力仍为空，MuMu/ADB身份映射未验证。完整模拟自动化受多显示器输入和uiautomator异常阻塞，未验收。
+- 未修改Root/框架配置、系统位置/传感器或生产环境。实际步道乐跑、vivo、学校配置与最终有效记录均未验收。
+
+## 剩余任务
+
+| Issue | 下一步 |
+| --- | --- |
+| #4 S0 | 已有#18/候选实现；按C1兼容的最终组合验收，不任意拼装旧S0与新模型 |
+| #5 S1 | Dot修复#37，保留租约/fence/取消/记录绑定回归 |
+| #6 S2 | #25真实容器CI有成功证据；依赖S1修复与最终组合验收，本机Docker daemon未运行 |
+| #7 L1 | 合成profile/fake/离线转换有实现；MuMu写入/传感器/坐标校准未实现或未验收 |
+| #8 L2 | Dot修复#36，恢复不得新增start/tick/upload |
+| #9 L3 | 缺精确应用版本、校区正式规则、本人会话和脱敏页面；真实适配仍需实现 |
+| #10 I0 | #36/#37及准确HEAD的Android检查完成后再作集成决定 |
+| #11 R0 | vivo无Root/真实业务纯接口没有有效执行证据，不由fake或其他学校协议推断支持 |
+| #16 冲刺 | 保持开放；软件、设备与学校记录分别验收 |
+
+旧分工和阶段事实从Git历史、[冲刺交接](handoffs/2026-10-18-dot-lead-sprint.md)及原Issue/PR回执追溯；不以历史“未接单/无代码/实例停止”覆盖今日观测。
