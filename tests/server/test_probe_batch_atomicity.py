@@ -76,7 +76,9 @@ def batch(devices):
 def register(client, device, agent=AGENT_A):
     assert (
         client.post(
-            "/api/v1/devices", headers=ADMIN, json={"device_id": device, "agent_id": agent}
+            "/api/v1/devices",
+            headers=ADMIN,
+            json={"device_id": device, "agent_id": agent},
         ).status_code
         == 201
     )
@@ -157,3 +159,50 @@ def test_persisted_conflict_and_foreign_device_roll_back_complete_batch(settings
         after = snapshot(settings)
         assert after["probes"] == before["probes"]
         assert after["devices"] == before["devices"]
+
+
+@pytest.mark.parametrize("existing_agent", [False, True])
+def test_sqlite_abort_after_first_probe_write_rolls_back_entire_batch(settings, existing_agent):
+    from swu_happyrun.core.models import AgentHello, DeviceRegistration
+    from swu_happyrun.server.store import SqliteJobStore
+
+    clock = FakeClock()
+    store = SqliteJobStore(settings.database_path, clock)
+    devices = [str(uuid4()), str(uuid4())]
+    for device in devices:
+        store.register_device(DeviceRegistration(device_id=device, agent_id=AGENT_A))
+    if existing_agent:
+        store.observe_agent(AgentHello.model_validate(batch(devices)))
+    incoming = batch(devices)
+    first_probe, second_probe = (item["probe_id"] for item in incoming["devices"])
+    before = snapshot(settings)
+    with sqlite3.connect(settings.database_path) as db:
+        # IDs are generated UUID fixtures. The trigger proves the first insert AND device
+        # update happened inside this transaction before aborting the second insert.
+        db.execute(
+            f"""CREATE TRIGGER abort_second_probe BEFORE INSERT ON probes
+            WHEN NEW.probe_id = '{second_probe}'
+            BEGIN
+              SELECT CASE WHEN EXISTS(SELECT 1 FROM probes WHERE probe_id='{first_probe}')
+                AND EXISTS(SELECT 1 FROM devices WHERE device_id='{devices[0]}'
+                           AND current_probe='{first_probe}')
+                THEN RAISE(ABORT, 'synthetic_second_after_first_write')
+                ELSE RAISE(ABORT, 'synthetic_missing_first_write') END;
+            END"""
+        )
+    clock.advance(5)
+    with pytest.raises(sqlite3.IntegrityError, match="synthetic_second_after_first_write"):
+        store.observe_agent(AgentHello.model_validate(incoming))
+    assert snapshot(settings) == before
+    # Reopen the durable store before retry: no hidden partial observations survived.
+    store = SqliteJobStore(settings.database_path, clock)
+    assert snapshot(settings) == before
+    with sqlite3.connect(settings.database_path) as db:
+        db.execute("DROP TRIGGER abort_second_probe")
+    store.observe_agent(AgentHello.model_validate(incoming))
+    accepted = snapshot(settings)
+    clock.advance(10)
+    store.observe_agent(AgentHello.model_validate(incoming))
+    replayed = snapshot(settings)
+    assert replayed["probes"] == accepted["probes"]
+    assert replayed["devices"] == accepted["devices"]
