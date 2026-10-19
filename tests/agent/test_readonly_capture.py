@@ -230,3 +230,7 @@ def test_interrupted_cleanup_releases_lock_but_retains_live_child(monkeypatch):
         for process in processes:
             process.wait(timeout=5)
     assert child("print('recovered')") == "recovered\n"
+
+
+def test_real_stdout_preserves_universal_newline_contract():
+    assert child("import sys; sys.stdout.buffer.write(b'a\\r\\nb\\rc\\n')") == "a\nb\nc\n"

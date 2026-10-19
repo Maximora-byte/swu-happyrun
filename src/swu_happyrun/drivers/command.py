@@ -165,6 +165,8 @@ def _capture(path: Path, *args: str, timeout: float) -> str:
     if process.returncode != 0:
         raise ProbeError("command_failed")
     try:
-        return data["stdout"].decode("utf-8", errors="strict")
+        text = data["stdout"].decode("utf-8", errors="strict")
+        # Preserve the previous subprocess text=True universal-newline contract.
+        return text.replace("\r\n", "\n").replace("\r", "\n")
     except UnicodeDecodeError:
         raise ProbeError("command_encoding_invalid") from None

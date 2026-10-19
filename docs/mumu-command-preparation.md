@@ -91,3 +91,7 @@ UTF-8, literal argument passing, timeout, nonzero exit and inherited pipes; the
 known test descendant exits naturally. Parser fixture stubs use binary completed
 child pipes; they do not replace the actual-process acceptance cases. Windows
 behavior still requires exact-source CI and local independent acceptance.
+
+Read-only stdout retains the prior universal-newline return contract: after
+strict UTF-8 decoding, CRLF and lone CR become LF. Capture byte limits apply
+to the original bytes, before this normalization.
