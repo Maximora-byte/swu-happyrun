@@ -6,6 +6,7 @@ import android.app.Instrumentation;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageInfo;
 import android.content.pm.Signature;
 import android.hardware.display.DisplayManager;
 import android.graphics.Rect;
@@ -45,6 +46,7 @@ public final class DisplayObservationTest extends InstrumentationTestCase {
 
     /** Select this method explicitly; the default acceptance script must not run it. */
     public void testObserveOwnActivity() throws Exception {
+        phase("arguments");
         Bundle args = ((InstrumentationTestRunner) getInstrumentation()).getArguments();
         assertEquals("Requires a disposable instance with no personal data", "yes", args.getString("isolated"));
         assertTrue("API29+ is required for explicit task/display binding", Build.VERSION.SDK_INT >= 29);
@@ -56,19 +58,34 @@ public final class DisplayObservationTest extends InstrumentationTestCase {
         String expectedSignature = args.getString("signatureSha256", "");
         assertTrue(expectedSignature.matches("[0-9a-f]{64}"));
         Context context = getInstrumentation().getTargetContext();
+        phase("package");
         assertEquals("org.happyrun.app", context.getPackageName());
-        Signature[] signatures = context.getPackageManager().getPackageInfo(context.getPackageName(),
-            PackageManager.GET_SIGNING_CERTIFICATES).signingInfo.getApkContentsSigners();
+        phase("signing_info");
+        PackageInfo installed = context.getPackageManager().getPackageInfo(context.getPackageName(),
+            PackageManager.GET_SIGNING_CERTIFICATES);
+        phase("signing_info", "installed_version_code", installed.versionCode);
+        Signature[] signatures = installed.signingInfo.getApkContentsSigners();
+        phase("signing_info", "signer_count", signatures.length);
         assertEquals(1, signatures.length);
         StringBuilder signature = new StringBuilder();
         for (byte b : MessageDigest.getInstance("SHA-256").digest(signatures[0].toByteArray()))
             signature.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
+        Bundle identity = new Bundle();
+        identity.putString("observation_phase", "signature");
+        identity.putString("installed_package", context.getPackageName());
+        identity.putString("installed_signature_sha256", signature.toString());
+        getInstrumentation().sendStatus(2, identity);
+        phase("signature", "signature_matches", expectedSignature.equals(signature.toString()) ? 1 : 0);
         assertEquals("Installed signing identity must match the verified paired artifact", expectedSignature, signature.toString());
+        phase("display");
         assertNotNull("No such display", ((DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE)).getDisplay(display));
         ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
         List<ActivityManager.AppTask> tasks = manager.getAppTasks();
+        phase("tasks", "observed_task_count", tasks.size());
         assertEquals("Do not guess among same-package tasks", 1, tasks.size());
+        phase("task_id", "observed_task_id", tasks.get(0).getTaskInfo().taskId);
         assertEquals("Task must be selected by independent observation", task, tasks.get(0).getTaskInfo().taskId);
+        phase("base_activity");
         assertNotNull(tasks.get(0).getTaskInfo().baseActivity);
         assertEquals(MainActivity.class.getName(), tasks.get(0).getTaskInfo().baseActivity.getClassName());
         long started = SystemClock.elapsedRealtime();
@@ -77,12 +94,15 @@ public final class DisplayObservationTest extends InstrumentationTestCase {
         try {
             // No CLEAR_TASK, reset, coordinates, shell input or simulated movement.
             // Preserve the observed task/display; never move it to make an expectation pass.
+            phase("launch");
             tasks.get(0).startActivity(context, new Intent(context, MainActivity.class), null);
+            phase("activity");
             activity = monitor.waitForActivityWithTimeout(5000);
             assertNotNull("Own Activity not observed within the bounded window", activity);
             Activity observed = activity;
             DisplayObservationGate.Snapshot s = new DisplayObservationGate.Snapshot();
             s.started = started; s.observationId = id; s.signature = signature.toString();
+            phase("viewport");
             do {
                 getInstrumentation().runOnMainSync(() -> {
                     s.packageName = observed.getPackageName(); s.activity = observed.getClass().getName();
@@ -99,7 +119,13 @@ public final class DisplayObservationTest extends InstrumentationTestCase {
                 // ActivityMonitor may return before layout/focus. Wait read-only, never click.
                 SystemClock.sleep(50);
             } while (true);
+            phase("binding", "observed_task_count", s.taskCount);
+            phase("binding", "observed_task_id", s.task);
+            phase("binding", "observed_display_id", s.display);
+            phase("binding", "window_visible", s.window ? 1 : 0);
+            phase("binding", "controls_visible", s.controls ? 1 : 0);
             assertTrue("Observation rejected; writes=0", DisplayObservationGate.accepts(s, id, display, task, expectedSignature, started + 10000));
+            phase("success");
             Bundle result = new Bundle();
             result.putString("observation_id", id); result.putInt("display_id", s.display);
             result.putInt("task_id", s.task); result.putString("activity", s.activity);
@@ -110,6 +136,17 @@ public final class DisplayObservationTest extends InstrumentationTestCase {
             getInstrumentation().removeMonitor(monitor);
             // Leave the observed task and its data intact; no finish(), clear or reset.
         }
+    }
+    private void phase(String name) {
+        Bundle status = new Bundle();
+        status.putString("observation_phase", name);
+        getInstrumentation().sendStatus(2, status);
+    }
+    private void phase(String name, String metric, int value) {
+        Bundle status = new Bundle();
+        status.putString("observation_phase", name);
+        status.putInt(metric, value);
+        getInstrumentation().sendStatus(2, status);
     }
     private boolean shown(Activity activity, String name) {
         View view = activity.findViewById(activity.getResources().getIdentifier(name, "id", activity.getPackageName()));

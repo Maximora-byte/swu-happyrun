@@ -131,3 +131,59 @@ def test_ci_runs_only_bound_observation_and_six_selected_cases(monkeypatch, tmp_
     assert not {"clear", "uninstall", "input", "tap", "su", "force-stop"} & {
         value for command in commands for value in command
     }
+
+
+def test_failed_child_safe_diagnostics_are_kept_in_artifact_report(monkeypatch, tmp_path):
+    import json
+    import subprocess
+
+    helper = module()
+    delivery = tmp_path / "delivery.json"
+    delivery.write_text(
+        json.dumps(
+            {
+                "certificate_sha256": "a" * 64,
+                "app_package": "org.happyrun.app",
+                "test_package": "org.happyrun.app.test",
+                "instrumentation_runner": "android.test.InstrumentationTestRunner",
+            }
+        )
+    )
+    output = tmp_path / "out"
+    monkeypatch.setenv("ANDROID_SERIAL", "emulator-5556")
+    monkeypatch.setenv("HAPPYRUN_DISPOSABLE_EMULATOR", "1")
+    monkeypatch.setattr(
+        "sys.argv", ["display", "--delivery", str(delivery), "--output", str(output)]
+    )
+
+    def run(command, **kwargs):
+        code, text = 0, ""
+        if "getprop" in command:
+            text = "1\n"
+        elif "start" in command:
+            text = "Status: ok\n"
+        elif "dumpsys" in command:
+            text = GOOD
+        else:
+            code = 1
+            (output / "observation.json").write_text(
+                json.dumps(
+                    {
+                        "result": "failed",
+                        "writes": 0,
+                        "reason": "observation_rejected",
+                        "diagnostics": {
+                            "last_phase": "tasks",
+                            "observed_task_count": 0,
+                            "assertion_code": "task_count_mismatch",
+                        },
+                    }
+                )
+            )
+        return subprocess.CompletedProcess(command, code, text, "")
+
+    monkeypatch.setattr(helper.subprocess, "run", run)
+    assert helper.main() == 1
+    report = json.loads((output / "report.json").read_text())
+    assert report["observation_diagnostics"]["assertion_code"] == "task_count_mismatch"
+    assert report["tests"] == 0 and report["result"] == "failed"

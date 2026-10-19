@@ -54,3 +54,11 @@ Actions artifact 保留 7 天。到期后应由有权限人员对准确源版本
 PR40 8aef 的合成PR事件在API31实际执行native-debug时，四项AndroidAcceptanceTest因找不到start_simulation/refresh_checks失败；测试前仅有320×640向导首屏证据，缺失败瞬间状态。旧辅助查找的内层1秒预算短路已确定性复现，并纳入独立导航修订：共享原5秒预算、真实目标滚入视窗、同包可见节点才点击，recreate跟随当前Activity。正常pytest入口实际编译并执行5项预算及8项源码提取adapter检查，另保留旧方法RED；组合定向11项通过，完整885在此纯测试修订前完成，产品源码未变化。Android实际失败根因尚未完全确认，必须用新候选真实AVD复验，不能归为无KVM启动失败或用本地Python通过代替Android验证。
 
 QA44的原始复现脚本在当前受控源码独立本地Git快照运行：两个恢复期望模式和probe --expect-fixed均exit0。第一次直接使用非Git目录因脚本要求rev-parse失败，保留该执行错误；本地快照commit仅用于溯源，不等于已发布GitHub HEAD。
+
+## 481 精确 HEAD 的首轮 hosted CI 与后续诊断候选
+
+发布 PR46 HEAD `481098f124f0fb5ea054180d1ecb845008348003` 的[HTTPS run39205241706](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39205241706)在API31/35均真实通过：各15 HTTP +3远程UI、14前台Activity、1持久完成恢复、1存活旧进程新fence观察。最后一项使用明确5200ms受控调度延迟，真实renew4故障/租约过期后，旧PID仍活且停止、尝试/接受tick均不再增长；不外推任意设备链路。
+
+同HEAD的push/PR container与Linux Python/浏览器通过；checks整体失败。Windows新增测试的长参数ID超过系统环境变量长度，以及默认字符编码读取源码失败，已在独立后续候选修正为短ID/显式UTF8，65537字节负例未缩小。普通/optional四Android作业构建/静态/配对通过，但新增display观察首项返回泛化ValueError（tests0），后续native/导航等没有执行。后续仅新增白名单phase/数字/布尔诊断以定位真实失败，接受条件不变；尚不能宣称观察入口已修复。未授权PR事件的runtime明确not_run，不当作通过。
+
+本轮修复重试门禁只接受foreground分支、准确before481的下一push；旧before288拒绝。原481成功与失败均保留，[完整回执](https://github.com/Maximora-byte/swu-happyrun/pull/46#issuecomment-6260574805)。新修订仍需准确HEAD的Windows与AVD实际验证；既往JVM顺序HTTPS间歇和历史Windows HTTP超时根因保持未决。

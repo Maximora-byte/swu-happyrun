@@ -10,7 +10,7 @@ from pathlib import Path
 REPOSITORY = "Maximora-byte/swu-happyrun"
 BRANCH = "refs/heads/dot/android-foreground-agent"
 # Explicitly approved foreground round; exact one-transition grant.
-BEFORE = "28871b2d599a8ec8335570effb3207d2564639ab"
+BEFORE = "481098f124f0fb5ea054180d1ecb845008348003"
 
 
 def authorized(env, event):

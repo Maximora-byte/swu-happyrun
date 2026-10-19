@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "android/app/src/androidTest/java/org/happyrun/app/AndroidAcceptanceTest.java"
-source = SOURCE.read_text()
+source = SOURCE.read_text(encoding="utf-8")
 methods = source[
     source.index("    private Activity currentMain()") : source.index(
         "    private AccessibilityNodeInfo awaitNative"
@@ -95,7 +95,7 @@ checks = r"""
 with tempfile.TemporaryDirectory(prefix="happyrun-navigation-check-") as directory:
     temporary = Path(directory)
     extracted = temporary / "NavigationAdapterCheck.java"
-    extracted.write_text(stubs + methods + checks)
+    extracted.write_text(stubs + methods + checks, encoding="utf-8")
     sources = [
         extracted,
         ROOT / "tests/java/LegacyDeadlineRepro.java",
@@ -106,6 +106,8 @@ with tempfile.TemporaryDirectory(prefix="happyrun-navigation-check-") as directo
         [
             "java",
             "com.sun.tools.javac.Main",
+            "-encoding",
+            "UTF-8",
             "-source",
             "17",
             "-target",

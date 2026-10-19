@@ -100,6 +100,11 @@ def main():
             or not re.fullmatch("[0-9a-f]{64}", cert)
         ):
             raise ValueError("Invalid paired delivery manifest")
+        report["expected_package"] = PACKAGE
+        report["expected_signature_sha256"] = cert
+        version = str(delivery.get("version_code", ""))
+        if re.fullmatch(r"\d{1,10}", version) and int(version) <= 2147483647:
+            report["expected_version_code"] = int(version)
         report["delivery_sha256"] = hashlib.sha256(args.delivery.read_bytes()).hexdigest()
         report["phase"] = "disposable_avd_guard"
         probe = adb("shell", "getprop", "ro.kernel.qemu")
@@ -137,9 +142,15 @@ def main():
             text=True,
             timeout=40,
         )
+        own = json.loads(output.read_text(encoding="utf-8"))
+        # Child writes only fixed enums, bounded numbers and booleans, never raw instrument output.
+        observation_id = own.get("observation_id", "")
+        if re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", observation_id):
+            report["observation_id"] = observation_id
+        report["observation_diagnostics"] = own.get("diagnostics", {})
+        report["observation_reason"] = own.get("reason")
         if result.returncode:
             raise ValueError("Bound own Activity observation failed")
-        own = json.loads(output.read_text(encoding="utf-8"))
         if own["result"] != "observed" or own["writes"] != 0:
             raise ValueError("Missing successful bound observation")
         report["cases"].append("testObserveOwnActivity")

@@ -12,7 +12,7 @@
 
 PR39 `5d52d78acf6d0f7e7064e1209810746dd05b93d7` 与 PR40 `8aef593dd89ca47d63a702ee1cf6952382169bbd` 的已审修复已显式纳入，Issue37 已由 Codex 限定接受后关闭；Issue36 的新 pre-bind 修订仍待独立接受。持续前台连接、原生持久完成恢复、CI 构建/运行分阶段正组成同一候选；新 Android 用例尚待实际执行。Windows 夹具与 MuMu 显示器观察入口正在按计划接入，不借旧 APK 的通过结论。
 
-原生恢复正负双进程 HTTPS 有实际通过，顺序host复跑仍出现过读取超时/子进程非零，状态为 intermittent_unresolved；保留成功与失败证据，不宣布稳定全绿。Python pre-bind身份覆盖缺口的独立最小修订已纳入，修后组合最终885项通过（186.89秒）；Java105项通过。AVD脚本管道SIGPIPE已确定性修复；PR40新实际Android控件查找失败已纳独立受控导航修订，实际AVD复验仍待执行，未称现场根因已完全确认。完整结果和未验收环境见[统一验收记录](acceptance.md)。
+原生恢复正负双进程 HTTPS 有实际通过，顺序host复跑仍出现过读取超时/子进程非零，状态为 intermittent_unresolved；保留成功与失败证据，不宣布稳定全绿。Python pre-bind身份覆盖缺口的独立最小修订已纳入，修后组合最终885项通过（186.89秒）；Java105项通过。AVD脚本管道SIGPIPE已确定性修复。PR46准确481的API31/35 HTTPS、前台Activity与两项恢复/旧fence实测通过；普通display观察首项失败，使后续native/导航尚未执行。当前后续候选只修Windows测试编码/ID并补严格安全诊断，仍待同HEAD复验，未称display根因已确认。完整结果和未验收环境见[统一验收记录](acceptance.md)。
 
 
 ## 已合入 main

@@ -31,7 +31,7 @@ def main() -> int:
         and event.get("after") == os.environ.get("GITHUB_SHA")
     )
     if (
-        event.get("before") != "28871b2d599a8ec8335570effb3207d2564639ab"
+        event.get("before") != "481098f124f0fb5ea054180d1ecb845008348003"
         or event.get("repository", {}).get("full_name") != repository
         or not isinstance(event.get("after"), str)
         or len(event["after"]) != 40

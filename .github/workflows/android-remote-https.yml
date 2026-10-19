@@ -58,7 +58,7 @@ jobs:
           steps.runtime_gate.outputs.authorized == 'true' &&
           github.repository == 'Maximora-byte/swu-happyrun' &&
           github.event_name == 'push' && github.ref == 'refs/heads/dot/android-foreground-agent' &&
-          github.event.before == '28871b2d599a8ec8335570effb3207d2564639ab' &&
+          github.event.before == '481098f124f0fb5ea054180d1ecb845008348003' &&
           github.event.after == github.sha
         env:
           HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'

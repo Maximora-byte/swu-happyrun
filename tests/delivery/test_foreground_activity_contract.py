@@ -16,7 +16,7 @@ JAVA = (
 
 
 def validator():
-    tree = ast.parse(SCRIPT.read_text())
+    tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
     function = next(
         node
         for node in tree.body
@@ -75,7 +75,7 @@ def test_rejects_partial_failed_or_ambiguous_output(returncode, lines):
 
 
 def test_exact_fourteen_cases_and_no_original_runner_write():
-    tree = ast.parse(SCRIPT.read_text())
+    tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
     cases = next(
         ast.literal_eval(node.value)
         for node in tree.body
@@ -96,7 +96,7 @@ def test_exact_fourteen_cases_and_no_original_runner_write():
 
 
 def test_ui_uses_actual_platform_navigation_and_real_client_owner():
-    source = JAVA.read_text()
+    source = JAVA.read_text(encoding="utf-8")
     for forbidden in (
         "callActivityOnStop",
         "callActivityOnStart",

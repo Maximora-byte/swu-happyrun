@@ -35,7 +35,7 @@ def setup(monkeypatch, tmp_path):
     event.write_text(
         json.dumps(
             {
-                "before": "28871b2d599a8ec8335570effb3207d2564639ab",
+                "before": "481098f124f0fb5ea054180d1ecb845008348003",
                 "after": "a" * 40,
                 "ref": "refs/heads/dot/android-foreground-agent",
                 "repository": {"full_name": "Maximora-byte/swu-happyrun"},
@@ -119,7 +119,7 @@ def test_missing_device_or_failed_verification_blocks(setup, monkeypatch, kind):
 
 def test_workflow_gate_binds_exact_single_transition():
     workflow = (ROOT / ".github/workflows/checks.yml").read_text(encoding="utf-8")
-    assert "github.event.before == '28871b2d599a8ec8335570effb3207d2564639ab'" in workflow
+    assert "github.event.before == '481098f124f0fb5ea054180d1ecb845008348003'" in workflow
     assert "github.ref == 'refs/heads/dot/android-foreground-agent'" in workflow
     assert "github.event_name == 'push'" in workflow
     assert "workflow_dispatch:" not in workflow
@@ -213,6 +213,18 @@ def test_untrusted_or_incomplete_pr_payload_never_grants(setup, monkeypatch, cha
     else:
         monkeypatch.setenv("GITHUB_REF", "refs/pull/34/merge")
     path.write_text(json.dumps(event), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        PROBE.main()
+    assert setup[1] == []
+
+
+def test_previous_288_transition_cannot_reuse_acl(setup, monkeypatch):
+    import os
+
+    path = Path(os.environ["GITHUB_EVENT_PATH"])
+    event = json.loads(path.read_text())
+    event["before"] = "28871b2d599a8ec8335570effb3207d2564639ab"
+    path.write_text(json.dumps(event))
     with pytest.raises(SystemExit):
         PROBE.main()
     assert setup[1] == []

@@ -56,6 +56,7 @@ def test_other_context_is_not_authorized(key, value):
     "key,value",
     [
         ("before", "b" * 40),
+        ("before", "28871b2d599a8ec8335570effb3207d2564639ab"),
         ("after", None),
         ("after", "z" * 40),
         ("ref", "refs/heads/main"),
