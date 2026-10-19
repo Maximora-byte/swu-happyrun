@@ -130,6 +130,13 @@ jobs:
             qa/android/signature.txt
             qa/android/emulator.log
             qa/android/launch.txt
+            qa/android/launch-activity.txt
+            qa/android/launch-window.txt
+            qa/android/launch-logcat.txt
+            qa/android/launch-pid.txt
+            qa/android/launch-ui.xml
+            qa/android/launch-screen.png
+            qa/android/launch-verification.txt
             qa/android/launched.png
             qa/android/native_ui.txt
             qa/android/prepare_completed.txt

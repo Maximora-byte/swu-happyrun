@@ -69,8 +69,7 @@ while [[ "$(timeout 5 adb -s "$ANDROID_SERIAL" shell getprop sys.boot_completed 
 done
 check_emulator_alive
 adb install -r "$root/android/app/build/outputs/apk/debug/app-debug.apk"
-adb shell am start -W -n org.happyrun.app/.MainActivity | tee "$root/qa/android/launch.txt"
-grep -q 'Status: ok' "$root/qa/android/launch.txt"
+HAPPYRUN_DISPOSABLE_EMULATOR=1 python "$root/scripts/check_android_launch.py" "$root/qa/android"
 adb install -r "$root/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 HAPPYRUN_DISPOSABLE_EMULATOR=1 bash "$root/scripts/android_acceptance.sh"
 adb exec-out screencap -p > "$root/qa/android/launched.png"

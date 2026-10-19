@@ -48,3 +48,7 @@ APK、合成测试输出和截图只保留 7 天；本地数据库、SDK local.p
 Default 镜像没有 Google 服务；HappyRun 本地原生应用不依赖 GMS，因此该镜像可验证本应用安装、界面、持久化与故障流程，不能验证 Google 服务集成、视频改版 MuMu 或真实乐跑兼容性。真正安装/测试结果以新提交 CI 为准。
 
 API35 的同轮日志显示 `Unknown AVD name`：创建工具和模拟器未看到同一 AVD 元数据，并非已证实软件加速不支持或 APK 崩溃。依据[官方 Android 环境变量说明](https://developer.android.com/tools/variables)，CI脚本现把 ANDROID_USER_HOME/ANDROID_EMULATOR_HOME/ANDROID_AVD_HOME 统一到runner临时私有目录，创建后检查ini和list-avds；等待ADB/boot时检查模拟器进程，早退立即打印日志而不空等600秒。保持KVM权限不变及有界软件模式；实际修复后启动与11项测试仍以新HEAD Actions为准。
+
+### 首次显示诊断
+
+后续 cf3cfee 候选的官方 API31/35 AVD 已实际启动并安装 APK；`am start -W` 返回 timeout，尚未进入11项仪器测试。当前没有应用 logcat，不能把原因认定为应用死锁或仅软件模式慢。启动探针单次启动，保留原状态，并在有界窗口核对 MainActivity resumed、精确包名和普通版 app_scroll/task_state/start_simulation 的非零 UI 区域；ANR、崩溃、无 UI 或超界均失败。timeout 后即使界面核验通过，也不表示启动性能已经验收。诊断只针对无账号的临时官方模拟器，保存 activity/window、logcat、pid、UI XML、截图与判定，按精确白名单上传；不自动运行模拟或 Root，不改变锁屏设置。后续带向导版需要独立调整首屏标识并复测，不能直接沿用普通版控件假设。
