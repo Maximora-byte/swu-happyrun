@@ -4,13 +4,21 @@
 
 已核官方版本、明确未知及组合限制见[支持矩阵](android-support-matrix.md)。
 
+## 当前首阶段验收（2026-10-19）
+
+准确候选为 [PR #35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 的 `28871b2d599a8ec8335570effb3207d2564639ab`。准确 push 的 [checks](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39199236415) 九个 jobs 通过；[真实 HTTPS 验收](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39199236452) 在 API31/35 各通过15场景和3项远程UI测试。普通安装包与仅用于临时测试CA的 remoteQa APK 严格区分；不要安装/分发 remoteQa 作为用户候选。普通包下载、SHA256与签名以 PR35 的准确 artifact 记录为准。
+
+288首阶段一次连接最多领取一个服务器已排队的 simulation 任务；空队列或任务结束后需用户重新连接。它不是后台常驻代理。本轮候选叠加持续前台多任务实现；只有用户显式连接且页面保持前台时才继续领取后续任务。空队列有界等待，断开/离开页面请求停止，故障锁存不自动重连。14项新增 Activity 验收待准确新HEAD的CI，当前本地JVM/HTTPS通过不等于Android通过。
+
+[Issue #37](https://github.com/Maximora-byte/swu-happyrun/issues/37) 的 probe 批次原子性修复已由 Codex 限定接受并关闭；额外 midwrite/精确列映射测试见 PR43。Issue36 的 Python 恢复已叠加 PR40 `8aef593` pre-bind 历史身份修订，软件组合通过，仍待独立接受。MuMu旧774普通包已实测本地20米完成、完成后重启、中断不重跑和attention停止持久；运行中直接stop、当前新候选及远程路径未据此验收，见[现场QA报告](qa/2026-10-19-fix-retest-mumu.md)。
+
 ## 安装与能力边界
 
 只有对应提交的 `android-apk` Actions 全部通过，才可将其 `android-debug-candidate-api31-<SHA>` / `android-debug-candidate-api35-<SHA>` artifact 中的 `app-debug.apk` 作为已构建软件候选。下载后校验 SHA256，并查看 `signature.txt` 中 apksigner 验证结果和签名证书 SHA256，再由用户通过 MuMu 自带 APK 安装入口安装并打开 HappyRun。不自动更改模拟器安全设置；若系统要求安装来源授权，由用户审阅决定。
 
-原生界面、本地任务、诊断和模拟体验不等于真实乐跑适配。模拟任务不会提交学校记录。MuMu Android 15、目标应用版本、账号会话及有效记录仍须各自实际验收；官方 Android 15 emulator 通过也不能替代 MuMu 实测。当前没有实际设备通过证据。
+原生界面、本地任务、诊断和模拟体验不等于真实乐跑适配。模拟任务不会提交学校记录。MuMu Android 15、目标应用版本、账号会话及有效记录仍须各自实际验收；官方 Android 15 emulator 通过也不能替代 MuMu 实测。本地曾报告旧 #25 APK 首屏可见，此证据不覆盖当前 288 候选或远程流程；当前没有 288 的 MuMu/实机验收。
 
-本候选不请求网络、定位、无障碍或 Root 权限，不打包第三方模块。Root/LSPosed 等未来能力必须独立诊断和显式选择；发现模块不等于能执行任务。APK 安装本身不会授予 mock-location app-op、跨应用私有数据读取或运动传感器注入能力。
+当前首阶段 APK 声明 INTERNET 权限，用于用户显式连接可信 HTTPS 服务的单次合成任务。token 仅保留会话内存；离开远程页面会请求停止，不自动重连。无定位或无障碍权限。可选自身作用域模块只诊断 HappyRun，自身回执不代表可控制学校应用；固定只读 Root 诊断须另经用户明确确认，打开 APK 或远程连接不会自动调用 su。APK 安装本身不会授予 mock-location app-op、跨应用私有数据读取或运动传感器注入能力。
 
 候选使用 CI 自动生成的临时 **debug 签名**，不用于生产或 Play 发布。不同 CI 构建（包括同一提交的不同 API job）可能使用不同签名；只有签名相同且版本条件满足时才可覆盖升级。签名不匹配时不要自动卸载重装：卸载会删除应用本地任务，应保留现有安装和记录，待明确的数据保留/迁移方案。长期签名/迁移方案尚未建立。没有创建签名账号、保存生产密钥或发布 Release。
 
@@ -28,7 +36,7 @@ HAPPYRUN_ANDROID_API=35 bash scripts/android_emulator_test.sh
 
 Gradle bootstrap 只下载官方 ZIP，并校验固定 SHA256；它不是伪造的 wrapper。依赖从 Google Maven/Maven Central/Gradle Plugin Portal 获取。CI 使用 GitHub Ubuntu runner 预装 JDK/SDK，不执行 `sdkmanager --licenses` 或 `yes` 自动接受新协议；缺少许可即失败并报告。SDK 自动下载由 Gradle 禁用。
 
-Android QA 优先使用 runner 现有 KVM 权限启动官方 API 31（Android 12）和 API 35（Android 15）x86_64 emulator；没有现成权限时使用有界等待的 `-accel off` 软件模式，安装 app/test APK、实际启动并执行专用 instrumentation；不修改 KVM 权限或系统安全策略，超时明确失败并输出诊断。精确场景见 Android QA 文档。失败/未执行的 Actions 不能标为通过。构建、安装、软件流程、MuMu 观测、学校记录为不同证据层级。
+Android QA 优先使用 runner 现有 KVM 权限启动官方 API 31（Android 12）和 API 35（Android 15）x86_64 emulator；没有现成权限时使用有界等待的 `-accel off` 软件模式，安装 app/test APK、实际启动并执行专用 instrumentation；默认不修改 KVM 权限；只有用户明确批准的精确一次性 hosted 事件，才由门禁给当前测试 UID 设置最小 ACL 并核验加速，未来事件不继承授权。超时明确失败并输出诊断。精确场景见 Android QA 文档。失败/未执行的 Actions 不能标为通过。构建、安装、软件流程、MuMu 观测、学校记录为不同证据层级。
 
 APK、合成测试输出和截图只保留 7 天；本地数据库、SDK local.properties、Gradle 缓存、签名密钥不进入 artifact 或 Python sdist。普通 Python extras 不引入 Android/Java/PyInstaller 依赖。
 
@@ -42,6 +50,8 @@ APK、合成测试输出和截图只保留 7 天；本地数据库、SDK local.p
 - [LocationManager mock-location 权限](https://developer.android.com/reference/android/location/LocationManager)
 
 ### API31 官方镜像许可兼容修正
+
+以下追加记录是早期候选历史，具体旧 HEAD/门禁/未验收状态只适用于当时；当前结论以上方 288 首阶段为准。
 
 首次 Actions 中 API31 Google APIs 镜像要求新 Preview License，stdin EOF 正确拒绝，不能将其称为安装通过。现仅 API31 改为官方稳定 `system-images;android-31;default;x86_64`，API35 保持原 Google APIs 镜像。2026-10-19 只读核对[Google 官方镜像元数据](https://dl.google.com/android/repository/sys-img/android/sys-img2-1.xml)：default API31 revision5 属于 channel-0，使用 `android-sdk-license` 标准 SDK 协议。仍由 `sdkmanager </dev/null` 验证 runner 既有接受状态，缺许可即失败，不自动接受条款或复制许可文件。
 

@@ -18,13 +18,17 @@ remain available with `getTask(id)`. This is a local-only DTO, not a server JobV
 Keep the app foreground during the example. There is no foreground-service or
 background-execution permission. Android can kill the process; recovery remains
 uncertain. Activity recreation must not call runtime.close(): that method is for
-process-level shutdown, not view lifecycle events. No INTERNET, location, sensor
-injection, accessibility or Root permissions are requested.
+process-level shutdown, not view lifecycle events. The APK now declares INTERNET
+for the separate explicit one-task HTTPS remote mode; this local runtime itself
+does not require a server. No location, sensor-injection or accessibility capability
+is granted. See [remote UI](android-remote-ui.md) and [current APK evidence](android-apk.md).
 
 Diagnostics enumerate OS and accelerometer availability only. They do not imply
 live sensor quality. Public `su` path existence is an unverified Root hint; absence
-is inconclusive. No `su` is run. LSPosed version, activation, module scope and write
-capabilities are unknown. `ExecutionAdapter.Unsupported` is an extension boundary
+is inconclusive. Local simulation does not run `su`. The separate wizard can run
+a fixed read-only Root diagnostic only after explicit confirmation. The optional
+self-scope probe observes only HappyRun; it does not prove the LSPosed distribution
+version, another app’s scope, or school-app execution capability. `ExecutionAdapter.Unsupported` is an extension boundary
 for Android/MuMu/Root/LSPosed; its start always fails with adapter_not_verified.
 There is no hook implementation in this deliverable.
 

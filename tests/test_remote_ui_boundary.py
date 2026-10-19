@@ -34,7 +34,7 @@ def test_no_automatic_connect_and_no_token_preferences():
     assert '.putString("token"' not in source
     assert '.putString("endpoint"' in source
     assert 'gate.leave();\n        token.setText("");' in source
-    assert "driver.stop();\n            client.close();" in source
+    assert "if (current != null) current.requestStop();\n            client.close();" in source
     assert "SystemClock.elapsedRealtimeNanos()" in source
     assert "worker.shutdownNow" not in source  # do not interrupt bounded stop report
     assert "getMessage()" not in source
@@ -44,4 +44,19 @@ def test_storage_initialization_and_wire_clock_fail_closed():
     source = (MAIN / "java/org/happyrun/app/RemoteAgentActivity.java").read_text()
     assert "catch (java.io.IOException storageFailure)" in source
     assert source.count("gate.block();") == 2
-    assert source.count("Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS)") == 2
+    assert source.count("Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS)") == 1
+
+
+def test_session_loop_is_core_owned_and_ui_poll_is_read_only():
+    source = (MAIN / "java/org/happyrun/app/RemoteAgentActivity.java").read_text()
+    poll = source.split("private final Runnable poll", 1)[1].split("private boolean destroyed", 1)[
+        0
+    ]
+    assert "!foreground || destroyed || !gate.busy()" in poll
+    assert "current.status()" in poll and "current.currentJob()" in poll
+    assert "client." not in poll and "hello(" not in poll and "claim(" not in poll
+    assert "main.postDelayed(this, 500)" in poll
+    assert source.count("running.run();") == 1
+    assert "runOnce()" not in source
+    assert "gate.attach(running::requestStop)" in source
+    assert source.count("main.removeCallbacks(poll)") >= 4

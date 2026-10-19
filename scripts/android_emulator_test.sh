@@ -21,6 +21,10 @@ export PATH="$sdk/platform-tools:$sdk/emulator:$sdk/cmdline-tools/latest/bin:$PA
 # Never auto-accept licenses or change KVM/system security permissions.
 acceleration=on
 if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+  if [ "${HAPPYRUN_REQUIRE_KVM:-0}" = 1 ]; then
+    echo "Authorized runtime blocked: effective KVM access required; no software fallback." >&2
+    exit 1
+  fi
   acceleration=off
   echo 'KVM not available; using bounded official emulator software acceleration mode.'
 fi
@@ -31,8 +35,7 @@ sdkmanager "$system_image" </dev/null || {
 test -d "$sdk/system-images/android-$api/$image_tag/x86_64" || {
   echo 'Required official system image missing; inspect SDK/license output.' >&2; exit 1;
 }
-printf 'no
-' | avdmanager create avd --force -n "$avd" -k "$system_image" --path "$ANDROID_AVD_HOME/$avd.avd"
+avdmanager create avd --force -n "$avd" -k "$system_image" --path "$ANDROID_AVD_HOME/$avd.avd" <<< "no"
 test -f "$ANDROID_AVD_HOME/$avd.ini" || { echo "AVD metadata missing after creation" >&2; exit 1; }
 emulator -list-avds | grep -Fx "$avd" >/dev/null || { echo "Created AVD not visible to emulator" >&2; exit 1; }
 mkdir -p "$root/qa/android"

@@ -34,3 +34,7 @@ D的3项界面输入/生命周期测试单独计数。原native15、wizard4、in
 ## 首次 CI 发现与同轮修复
 
 e5b3b973 的普通 Android 构建已通过；新增 HTTPS workflow 被 GitHub 拒绝 job 级 runner.temp 表达式，未执行该两个 job。Python 3.13 严格 TLS 检查发现测试 CA 缺 keyUsage。修订将临时路径在 runner 步骤内写 GITHUB_ENV，给 CA 添加 critical keyCertSign/cRLSign、叶证书 critical digitalSignature/keyEncipherment，保留 serverAuth/SAN 和严格证书验证。两个新回归均对旧文件失败、修订通过；真实 CI 重试结果尚待确认。
+
+## 持续前台轮候选
+
+本轮显式继承288已通过的15场景，随后独立执行14项真实Activity/HTTPS场景，报告分别保存，不混计数。用户批准新一轮API31/35临时KVM，精确branch为dot/android-foreground-agent、before为28871b2d599a8ec8335570effb3207d2564639ab；只读gate与ACL gate同步，未授权事件明确not_run，授权后失败不可跳过。阶段/同run APK证据约束见[CI阶段](android-ci-phases.md)。本轮持续前台Android结果尚待准确HEAD CI。

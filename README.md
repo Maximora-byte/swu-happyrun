@@ -1,6 +1,6 @@
 # SWU HappyRun
 
-原生 APK 新阶段：按最新需求新增无需 PC 服务的 Android 本地模式，见[APK 安装与能力边界](docs/android-apk.md)。候选构建与 emulator 验证以对应 Actions 为准，尚不代表 MuMu/学校有效记录验收。
+已交付原生 APK 的首阶段构建来自 [PR #35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 的 `28871b2d599a8ec8335570effb3207d2564639ab`：本地模式无需 PC 服务；远程模式由用户显式连接可信 HTTPS 服务，一次连接最多领取一个合成模拟任务。官方 API31/35 的准确 push 验收已通过，范围与未解决问题见[当前状态](docs/status.md)和[APK 安装边界](docs/android-apk.md)。本轮按 [七任务计划](docs/superpowers/plans/2026-10-19-next-stage.md) 纳入最新 main QA、PR39/40 修复、持续前台多任务与原生持久完成恢复。新增 Android 验收待同 HEAD CI；精确结果与阻塞见[统一候选验收记录](docs/acceptance.md)，MuMu完整闭环/学校记录不在已通过范围。
 
 西南大学步道乐跑适配项目：共享控制协议、Python 调度服务器、可恢复执行代理和可替换设备驱动。
 
@@ -45,7 +45,7 @@ smoke 启动临时回环服务器，通过实际 HTTP 注册 fake 设备、创�
 - [vivo 无 Root 证据与后续路径](docs/research/vivo-noroot.md)
 - [纯接口证据与后续路径](docs/research/direct-protocol.md)
 
-核心、服务器、代理依赖分别安装；server extra 不依赖 Windows/MuMu。CI 候选 artifact 仅包含 wheel、sdist 和 SHA256SUMS，实际下载是否可用以对应提交的 Actions 结果为准。未创建 Release。
+核心、服务器、代理依赖分别安装；server extra 不依赖 Windows/MuMu。Python CI 候选 artifact 仅包含 wheel、sdist 和 SHA256SUMS；Android 另交普通 APK、匹配 instrumentation APK、签名及合成测试白名单证据。实际下载是否可用以对应提交的 Actions 结果为准。未创建 Release。
 
 ## CLI 与只读诊断
 

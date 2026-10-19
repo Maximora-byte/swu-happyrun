@@ -94,11 +94,13 @@ def main() -> int:
             "*:S",
         )
         pid = read("shell", "pidof", PACKAGE)
-        read("shell", "rm", "-f", "/sdcard/happyrun-launch.xml")
+        removed = read("shell", "rm", "-f", "/sdcard/happyrun-launch.xml")
         dumped = read("shell", "uiautomator", "dump", "/sdcard/happyrun-launch.xml")
         xml = (
             read("shell", "cat", "/sdcard/happyrun-launch.xml")
-            if "dumped to: /sdcard/happyrun-launch.xml" in dumped
+            if not removed.startswith(("ADB_COMMAND_FAILED", "HOST_COMMAND_TIMEOUT"))
+            and not dumped.startswith(("ADB_COMMAND_FAILED", "HOST_COMMAND_TIMEOUT"))
+            and "dumped to: /sdcard/happyrun-launch.xml" in dumped
             else ""
         )
         for name, text in (

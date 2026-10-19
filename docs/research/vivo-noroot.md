@@ -27,3 +27,15 @@
 4. 只有本次记录最终有效才升级到 `record_verified`。
 
 不自动安装 Root、LSPosed、来源未知 APK，不关闭系统保护，不将参考项目或他人设备成功当作本机证据。用户本人完成登录/必要授权；不把密码、token 或原始设备数据提交 Git。无法使用某一通道仅说明该组合的验证结果，不能写成 vivo 或无 Root 永久不支持。
+
+## Task 7 输入交接（2026-10-19）
+
+统一最小清单、CRS 与脱敏要求见 [实际接入](../onboarding.md)。另须本地确认
+vivo X200 Pro 的完整系统构建/Android/API、目标 package/versionName/versionCode、
+授权方式及每项只读能力的实际观测。不得从 MuMu 或其他 vivo 型号继承能力结果。
+无 Root 是持续约束；不改变 Root、系统保护、网络安全设置或权限来填平输入缺口。
+
+当前未取得该版本实际页面，未实现选择器；真实执行仍为
+`unsupported_by_this_candidate`，现场能力与最终学校记录均为 `not_tested`。
+离线 metadata 校验通过只说明清单结构，不代表无 Root 能力可用。
+下一最小证据是本人的精确版本及已脱敏页面结构，不是账号、token、原截图或路线。

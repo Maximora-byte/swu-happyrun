@@ -1,6 +1,9 @@
 package org.happyrun.app;
 
 import android.app.Activity;
+import android.app.Instrumentation;
+import android.graphics.Rect;
+import android.view.View;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.test.InstrumentationTestCase;
@@ -18,12 +21,15 @@ import org.happyrun.app.diagnostics.CheckItem;
 public final class AndroidAcceptanceTest extends InstrumentationTestCase {
     private Activity activity;
     private LocalRuntime runtime;
+    private Instrumentation.ActivityMonitor mainMonitor;
+    private String navigationObservation = "not_observed";
 
     @Override protected void setUp() throws Exception {
         super.setUp();
         AccessibilityServiceInfo info = getInstrumentation().getUiAutomation().getServiceInfo();
         info.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
         getInstrumentation().getUiAutomation().setServiceInfo(info);
+        mainMonitor = getInstrumentation().addMonitor(MainActivity.class.getName(), null, false);
         Intent intent = new Intent(getInstrumentation().getTargetContext(), MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         activity = getInstrumentation().startActivitySync(intent);
@@ -34,7 +40,11 @@ public final class AndroidAcceptanceTest extends InstrumentationTestCase {
     }
 
     @Override protected void tearDown() throws Exception {
-        if (activity != null) getInstrumentation().runOnMainSync(() -> activity.finish());
+        if (activity != null) getInstrumentation().runOnMainSync(() -> {
+            Activity current = currentMain();
+            if (current != null && !current.isDestroyed()) current.finish();
+        });
+        if (mainMonitor != null) getInstrumentation().removeMonitor(mainMonitor);
         super.tearDown();
     }
 
@@ -121,49 +131,100 @@ public final class AndroidAcceptanceTest extends InstrumentationTestCase {
         return null;
     }
 
-    private AccessibilityNodeInfo waitId(String id, long timeout) {
-        boolean forward = false;
-        long deadline = SystemClock.elapsedRealtime() + timeout;
-        do {
-            AccessibilityNodeInfo root = getInstrumentation().getUiAutomation().getRootInActiveWindow();
-            if (root != null) {
-                List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId("org.happyrun.app:id/" + id);
-                if (!nodes.isEmpty()) return nodes.get(0);
-                List<AccessibilityNodeInfo> scrolls = root.findAccessibilityNodeInfosByViewId("org.happyrun.app:id/app_scroll");
-                if (!scrolls.isEmpty()) {
-                    AccessibilityNodeInfo scroll = scrolls.get(0);
-                    int direction = forward ? AccessibilityNodeInfo.ACTION_SCROLL_FORWARD : AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD;
-                    if (!scroll.performAction(direction)) forward = !forward;
-                }
+    private Activity currentMain() {
+        Activity latest = mainMonitor == null ? null : mainMonitor.getLastActivity();
+        return latest == null ? activity : latest;
+    }
+
+    /** Reveal only the real target View; clicks still use visible accessibility nodes. */
+    private AccessibilityNodeInfo revealAndObserve(String id) {
+        final boolean[] focused = {false};
+        final boolean[] targetReady = {false};
+        getInstrumentation().runOnMainSync(() -> {
+            Activity current = currentMain();
+            if (current == null || current.isDestroyed() || current.isFinishing()) {
+                navigationObservation = "activity_missing_or_destroyed";
+                return;
             }
-            SystemClock.sleep(50);
-        } while (SystemClock.elapsedRealtime() < deadline);
-        fail("Missing native view: " + id);
+            int resource = current.getResources().getIdentifier(id, "id", current.getPackageName());
+            View target = resource == 0 ? null : current.findViewById(resource);
+            View container = current.findViewById(current.getResources().getIdentifier(
+                    "app_scroll", "id", current.getPackageName()));
+            focused[0] = current.hasWindowFocus();
+            if (target == null) {
+                navigationObservation = "resource=" + resource + " target=false focus=" + focused[0];
+                return;
+            }
+            targetReady[0] = target.isAttachedToWindow() && target.isShown();
+            Rect bounds = new Rect();
+            boolean visible = target.getGlobalVisibleRect(bounds);
+            boolean reveal = false;
+            if (focused[0] && target.isAttachedToWindow() && target.isShown()
+                    && (!visible || bounds.height() < target.getHeight())) {
+                Rect local = new Rect();
+                target.getDrawingRect(local);
+                reveal = target.requestRectangleOnScreen(local, true);
+            }
+            target.getGlobalVisibleRect(bounds);
+            navigationObservation = "resource=" + resource + " target=true attached="
+                    + target.isAttachedToWindow() + " shown=" + target.isShown()
+                    + " focus=" + focused[0] + " rect=" + bounds.toShortString()
+                    + " scrollY=" + (container == null ? -1 : container.getScrollY())
+                    + " reveal=" + reveal;
+        });
+        AccessibilityNodeInfo root = getInstrumentation().getUiAutomation().getRootInActiveWindow();
+        String windowPackage = root == null ? "null" : String.valueOf(root.getPackageName());
+        navigationObservation += " windowPackage=" + windowPackage;
+        if (!focused[0] || !targetReady[0] || root == null || !"org.happyrun.app".equals(windowPackage)) return null;
+        List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId(
+                "org.happyrun.app:id/" + id);
+        for (AccessibilityNodeInfo node : nodes) {
+            Rect bounds = new Rect();
+            node.getBoundsInScreen(bounds);
+            Rect window = new Rect();
+            root.getBoundsInScreen(window);
+            if ("org.happyrun.app".equals(String.valueOf(node.getPackageName()))
+                    && node.isVisibleToUser() && !bounds.isEmpty()
+                    && Rect.intersects(bounds, window)) return node;
+        }
         return null;
+    }
+
+    private AccessibilityNodeInfo awaitNative(String id, Boolean enabled, long timeout) {
+        return new NativeViewDeadline<AccessibilityNodeInfo>(
+                new NativeViewDeadline.Port<AccessibilityNodeInfo>() {
+            public long now() { return SystemClock.elapsedRealtime(); }
+            public void pause(long millis) { SystemClock.sleep(millis); }
+            public AccessibilityNodeInfo revealAndObserve(String target) {
+                return AndroidAcceptanceTest.this.revealAndObserve(target);
+            }
+            public boolean enabled(AccessibilityNodeInfo node) { return node.isEnabled(); }
+            public void failure(String target, Boolean expected) {
+                // Own local MainActivity geometry only: no UI text, tokens or remote-page dump.
+                System.out.println("NATIVE_NAV_FAIL target=" + target + " enabled=" + expected
+                        + " " + navigationObservation);
+                fail("Native view unavailable or wrong enabled state: " + target);
+            }
+        }).await(id, enabled, timeout);
+    }
+
+    private AccessibilityNodeInfo waitId(String id, long timeout) {
+        return awaitNative(id, null, timeout);
     }
 
     private AccessibilityNodeInfo waitEnabled(String id, boolean enabled) {
-        long deadline = SystemClock.elapsedRealtime() + 5000;
-        do {
-            AccessibilityNodeInfo node = waitId(id, 1000);
-            if (node.isEnabled() == enabled) return node;
-            SystemClock.sleep(50);
-        } while (SystemClock.elapsedRealtime() < deadline);
-        fail("Expected enabled=" + enabled + " for " + id);
-        return null;
+        return awaitNative(id, enabled, 5000);
     }
 
     private void showId(String id) {
-        waitId(id, 5000).performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.getId());
+        assertTrue(waitId(id, 5000).isVisibleToUser());
         getInstrumentation().waitForIdleSync();
-        SystemClock.sleep(250);
     }
 
     private void clickId(String id) {
         AccessibilityNodeInfo node = waitEnabled(id, true);
-        node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.getId());
-        getInstrumentation().waitForIdleSync();
-        node = waitId(id, 5000);
+        assertTrue("Target is not visible: " + id, node.isVisibleToUser());
+        assertTrue("Target is not clickable: " + id, node.isClickable());
         assertTrue("Click failed: " + id, node.performAction(AccessibilityNodeInfo.ACTION_CLICK));
         getInstrumentation().waitForIdleSync();
     }

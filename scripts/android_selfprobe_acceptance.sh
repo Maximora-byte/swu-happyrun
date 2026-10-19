@@ -30,7 +30,7 @@ adb install -r "$root/android/app/build/outputs/apk/selfProbe/app-selfProbe.apk"
 adb install -r "$root/android/app/build/outputs/apk/androidTest/selfProbe/app-selfProbe-androidTest.apk"
 HAPPYRUN_ANDROID_LAUNCH_PROFILE=wizard python "$root/scripts/check_android_launch.py" "$root/qa/android/optional-launch"
 run_inactive optional
-bash "$root/scripts/android_acceptance.sh" "$root/qa/android/native-optional"
+HAPPYRUN_DELIVERY_PAIR="$root/qa/android/delivery-optional.json" bash "$root/scripts/android_acceptance.sh" "$root/qa/android/native-optional"
 run_wizard optional
 printf '%s\n' '{"no_framework_tests":2,"result":"passed","art_activation_verified":false}' > "$root/qa/android/selfprobe-report.json"
 printf '%s\n' '{"wizard_tests_per_variant":4,"variants":2,"result":"passed","root_command_executed":false}' > "$root/qa/android/wizard-report.json"

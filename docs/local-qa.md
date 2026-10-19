@@ -30,3 +30,11 @@
 ## 缺陷交接模板
 
 候选 HEAD / 系统与版本 / 精确命令（删除凭证） / 预期与实际 / 退出码 / job ID / 最后状态 / 是否可能已经开始或上传 / 脱敏复现附件 / 修复后复测 HEAD。
+
+## MuMu 自身应用：保留数据与隔离验收分开
+
+任务5的逐步命令、签名核对和失败边界见 [Android验收](android-qa.md#mumu-task-5-explicit-displaytask-observation-not-yet-device-accepted)。
+存量安装只读观察，不运行 instrumentation、清库、卸载或Root操作；签名不符时保留原数据并使用独立无个人数据的新实例。
+新观察入口必须指定已核实的serial/task/display和同构建签名，返回`observed`仅证明自身窗口/控件观测，不代表模拟完成。
+MuMu6.8.4.0/API35 的8秒20米模拟完成、显式停止、完成后重启及中断后needs_attention/no-replay仍由本地Codex逐项实测。
+原`android_acceptance.sh`含`pm clear`，只用于明确的一次性官方AVD，禁止复制到用户MuMu运行。

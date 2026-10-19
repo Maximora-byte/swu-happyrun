@@ -1,0 +1,120 @@
+package org.happyrun.app;
+
+import android.app.Activity;
+import android.app.ActivityManager;
+import android.app.Instrumentation;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.hardware.display.DisplayManager;
+import android.graphics.Rect;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.SystemClock;
+import android.test.InstrumentationTestCase;
+import android.test.InstrumentationTestRunner;
+import android.view.View;
+import java.security.MessageDigest;
+import java.util.List;
+import java.util.UUID;
+
+/** Opt-in isolated-instance observation. Never touches other apps or calls simulation controls. */
+public final class DisplayObservationTest extends InstrumentationTestCase {
+    private DisplayObservationGate.Snapshot fixture() {
+        DisplayObservationGate.Snapshot s = new DisplayObservationGate.Snapshot();
+        s.observationId = "fresh"; s.packageName = "org.happyrun.app";
+        s.activity = MainActivity.class.getName(); s.signature = "synthetic";
+        s.display = 7; s.task = 42; s.taskCount = 1; s.window = true; s.controls = true;
+        s.started = 100; s.captured = 101; s.finished = 102;
+        return s;
+    }
+    private void rejected(DisplayObservationGate.Snapshot s) {
+        int writes = 0;
+        boolean accepted = DisplayObservationGate.accepts(s, "fresh", 7, 42, "synthetic", 200);
+        if (accepted) writes++;
+        assertFalse("An ambiguous observation must not authorize an action", accepted);
+        assertEquals(0, writes);
+    }
+    public void testWrongDisplayNeverClicks() { DisplayObservationGate.Snapshot s = fixture(); s.display = 0; rejected(s); }
+    public void testStaleObservationNeverCompletes() { DisplayObservationGate.Snapshot s = fixture(); s.observationId = "old"; rejected(s); }
+    public void testFailedDumpNeverUsesOldXml() { DisplayObservationGate.Snapshot s = fixture(); s.dumpExit = 139; rejected(s); }
+    public void testMultipleTasksNeverClicks() { DisplayObservationGate.Snapshot s = fixture(); s.taskCount = 2; rejected(s); }
+    public void testMissingWindowNeverClicks() { DisplayObservationGate.Snapshot s = fixture(); s.window = false; rejected(s); }
+    public void testTimeoutNeverCompletes() { DisplayObservationGate.Snapshot s = fixture(); s.finished = 200; rejected(s); }
+
+    /** Select this method explicitly; the default acceptance script must not run it. */
+    public void testObserveOwnActivity() throws Exception {
+        Bundle args = ((InstrumentationTestRunner) getInstrumentation()).getArguments();
+        assertEquals("Requires a disposable instance with no personal data", "yes", args.getString("isolated"));
+        assertTrue("API29+ is required for explicit task/display binding", Build.VERSION.SDK_INT >= 29);
+        String id = args.getString("observationId");
+        assertNotNull(id);
+        assertEquals("Use a fresh UUID for each invocation", id, UUID.fromString(id).toString());
+        int display = Integer.parseInt(args.getString("displayId", "-1"));
+        int task = Integer.parseInt(args.getString("taskId", "-1"));
+        String expectedSignature = args.getString("signatureSha256", "");
+        assertTrue(expectedSignature.matches("[0-9a-f]{64}"));
+        Context context = getInstrumentation().getTargetContext();
+        assertEquals("org.happyrun.app", context.getPackageName());
+        Signature[] signatures = context.getPackageManager().getPackageInfo(context.getPackageName(),
+            PackageManager.GET_SIGNING_CERTIFICATES).signingInfo.getApkContentsSigners();
+        assertEquals(1, signatures.length);
+        StringBuilder signature = new StringBuilder();
+        for (byte b : MessageDigest.getInstance("SHA-256").digest(signatures[0].toByteArray()))
+            signature.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
+        assertEquals("Installed signing identity must match the verified paired artifact", expectedSignature, signature.toString());
+        assertNotNull("No such display", ((DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE)).getDisplay(display));
+        ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        List<ActivityManager.AppTask> tasks = manager.getAppTasks();
+        assertEquals("Do not guess among same-package tasks", 1, tasks.size());
+        assertEquals("Task must be selected by independent observation", task, tasks.get(0).getTaskInfo().taskId);
+        assertNotNull(tasks.get(0).getTaskInfo().baseActivity);
+        assertEquals(MainActivity.class.getName(), tasks.get(0).getTaskInfo().baseActivity.getClassName());
+        long started = SystemClock.elapsedRealtime();
+        Instrumentation.ActivityMonitor monitor = getInstrumentation().addMonitor(MainActivity.class.getName(), null, false);
+        Activity activity = null;
+        try {
+            // No CLEAR_TASK, reset, coordinates, shell input or simulated movement.
+            // Preserve the observed task/display; never move it to make an expectation pass.
+            tasks.get(0).startActivity(context, new Intent(context, MainActivity.class), null);
+            activity = monitor.waitForActivityWithTimeout(5000);
+            assertNotNull("Own Activity not observed within the bounded window", activity);
+            Activity observed = activity;
+            DisplayObservationGate.Snapshot s = new DisplayObservationGate.Snapshot();
+            s.started = started; s.observationId = id; s.signature = signature.toString();
+            do {
+                getInstrumentation().runOnMainSync(() -> {
+                    s.packageName = observed.getPackageName(); s.activity = observed.getClass().getName();
+                    s.task = observed.getTaskId();
+                    s.display = observed.getWindow().getDecorView().getDisplay() == null ? -1
+                        : observed.getWindow().getDecorView().getDisplay().getDisplayId();
+                    s.window = observed.hasWindowFocus() && observed.getWindow().getDecorView().isShown();
+                    s.controls = shown(observed, "app_scroll") && shown(observed, "framework_probe") && shown(observed, "wizard_refresh");
+                    s.captured = SystemClock.elapsedRealtime();
+                });
+                s.taskCount = manager.getAppTasks().size(); s.finished = SystemClock.elapsedRealtime();
+                if (s.task != task || s.display != display || s.taskCount != 1
+                    || (s.window && s.controls) || s.finished >= started + 10000) break;
+                // ActivityMonitor may return before layout/focus. Wait read-only, never click.
+                SystemClock.sleep(50);
+            } while (true);
+            assertTrue("Observation rejected; writes=0", DisplayObservationGate.accepts(s, id, display, task, expectedSignature, started + 10000));
+            Bundle result = new Bundle();
+            result.putString("observation_id", id); result.putInt("display_id", s.display);
+            result.putInt("task_id", s.task); result.putString("activity", s.activity);
+            result.putString("signature_sha256", s.signature); result.putString("state", "observed");
+            result.putString("visible_controls", "app_scroll,framework_probe,wizard_refresh");
+            result.putInt("writes", 0); getInstrumentation().sendStatus(0, result);
+        } finally {
+            getInstrumentation().removeMonitor(monitor);
+            // Leave the observed task and its data intact; no finish(), clear or reset.
+        }
+    }
+    private boolean shown(Activity activity, String name) {
+        View view = activity.findViewById(activity.getResources().getIdentifier(name, "id", activity.getPackageName()));
+        Rect visible = new Rect();
+        return view != null && view.isShown() && view.getWidth() > 0 && view.getHeight() > 0
+            && view.getGlobalVisibleRect(visible) && visible.width() > 0 && visible.height() > 0;
+    }
+}

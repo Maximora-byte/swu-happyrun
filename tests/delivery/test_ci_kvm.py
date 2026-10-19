@@ -22,7 +22,7 @@ def setup(monkeypatch, tmp_path):
         "HAPPYRUN_KVM_APPROVED_THIS_RUN": "true",
         "GITHUB_ACTIONS": "true",
         "GITHUB_EVENT_NAME": "push",
-        "GITHUB_REF": "refs/heads/dot/android-remote-agent",
+        "GITHUB_REF": "refs/heads/dot/android-foreground-agent",
         "GITHUB_SHA": "a" * 40,
         "GITHUB_REPOSITORY": "Maximora-byte/swu-happyrun",
         "RUNNER_ENVIRONMENT": "github-hosted",
@@ -35,9 +35,9 @@ def setup(monkeypatch, tmp_path):
     event.write_text(
         json.dumps(
             {
-                "before": "e5b3b973f9e055fc8bcb4a9e3261cf6320568787",
+                "before": "28871b2d599a8ec8335570effb3207d2564639ab",
                 "after": "a" * 40,
-                "ref": "refs/heads/dot/android-remote-agent",
+                "ref": "refs/heads/dot/android-foreground-agent",
                 "repository": {"full_name": "Maximora-byte/swu-happyrun"},
             }
         )
@@ -119,8 +119,8 @@ def test_missing_device_or_failed_verification_blocks(setup, monkeypatch, kind):
 
 def test_workflow_gate_binds_exact_single_transition():
     workflow = (ROOT / ".github/workflows/checks.yml").read_text(encoding="utf-8")
-    assert "github.event.before == 'e5b3b973f9e055fc8bcb4a9e3261cf6320568787'" in workflow
-    assert "github.ref == 'refs/heads/dot/android-remote-agent'" in workflow
+    assert "github.event.before == '28871b2d599a8ec8335570effb3207d2564639ab'" in workflow
+    assert "github.ref == 'refs/heads/dot/android-foreground-agent'" in workflow
     assert "github.event_name == 'push'" in workflow
     assert "workflow_dispatch:" not in workflow
     assert "sudo chmod" not in workflow
@@ -130,6 +130,7 @@ def test_workflow_gate_binds_exact_single_transition():
     "field,value",
     [
         ("before", "b" * 40),
+        ("before", "e5b3b973f9e055fc8bcb4a9e3261cf6320568787"),
         ("before", "77494e21756e514f53e51b3a2c72f22555f0aae6"),
         ("before", "491019d0b68802fdcf0c67fbe4bd3b846a9eae82"),
         ("before", "6427e91b7099cdf2233983ff55a5bcf9718e6b61"),
@@ -161,7 +162,7 @@ def synchronize_event(monkeypatch):
             "pull_request": {
                 "head": {
                     "sha": "a" * 40,
-                    "ref": "dot/android-remote-agent",
+                    "ref": "dot/android-foreground-agent",
                     "repo": {"full_name": "Maximora-byte/swu-happyrun"},
                 },
                 "base": {"repo": {"full_name": "Maximora-byte/swu-happyrun"}},

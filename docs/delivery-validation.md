@@ -150,3 +150,12 @@ Rebased onto629f2e9b86d7a72502f528abd1c1edf999d6a842 / tree c061531110495f669195
 本轮基于 6427e91b7099cdf2233983ff55a5bcf9718e6b61：24 项 Java JUnit、101 项 delivery fixtures、Ruff 与 140 文件格式检查、Schema、frozen lock、wheel/sdist 构建与 Android 分发隐私检查通过。Java 使用本地 JDK compiler 模块的 source/target 17；这不是 Android SDK 编译。完整 Python 612 项是上一精确组合的历史证据，本轮未重复宣称全套重跑。
 
 新增四项轮询仪器测试与原十一项合计十五项；普通及可选模块变体各使用匹配的测试 APK，分别保留四项向导及一项无框架 inactive 检查。测试接线、独立进程清理和精确产物白名单已审阅；实际 Android 测试、KVM ACL 和加速结果待新提交 CI。此前 SystemUI ANR 与下载/启动失败仍是失败证据，轮询优化未被认定为其根因修复。
+
+
+## Issue41 统一候选本地复验（发布前）
+
+本轮已纳main 5377（包含f295）的两轮QA/七任务及资源细化计划、探测批次与midwrite修复测试、Python恢复含pre-bind修订、持续前台与原生恢复、Windows夹具、MuMu观察入口及离线输入门槛。修后Linux/Python3.12.14最终完整885 passed / 186.89秒 / exit0，1条继承Starlette warning；修前854项保留为不同输入。纯Java组合105 JUnit / 5.913秒 / exit0。Schema、frozen锁、Ruff、Node helper与shell语法通过。详见[统一验收记录](acceptance.md)。
+
+旧wheel源码外74项通过（113.88秒）；README元数据更新后的新wheel683fde1也重新安装并实际74项通过（129.00秒），同wheel fake smoke真实回环HTTP和重启持久化通过；最终同HEAD浏览器/容器runtime/Android证据须另填；原生恢复顺序host TLS间歇诊断仍open。普通APK+匹配instrumentation的配对检查与设备执行分开记录，不能以host源测试或构建成功代替7项显示观察、3项命名空间与真实HTTPS仪器结果。
+
+同安装wheel的 scheduler15项先通过（5.74秒）；后台ticker竞态的独立夹具修订后另15项通过（3.59秒），无生产改动。后续882通过/1失败定位AVD printf管道SIGPIPE，确定性RED后here-string修复及10专项通过；修后最终全套885 passed / 186.89秒 / exit0，保留中间失败。PR40 API31新实际仪器四项Missing native view失败单独诊断，已纳7文件纯测试导航修订，另11专项通过（原4仪器数量不变），不能用此软件回归声称实际Android修复通过。

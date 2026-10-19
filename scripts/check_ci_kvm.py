@@ -22,7 +22,7 @@ def main() -> int:
         raise SystemExit("KVM grant refused: only this API31/35 acceptance matrix")
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
     repository = "Maximora-byte/swu-happyrun"
-    branch = "dot/android-remote-agent"
+    branch = "dot/android-foreground-agent"
     event_name = os.environ.get("GITHUB_EVENT_NAME")
     push = (
         event_name == "push"
@@ -31,7 +31,7 @@ def main() -> int:
         and event.get("after") == os.environ.get("GITHUB_SHA")
     )
     if (
-        event.get("before") != "e5b3b973f9e055fc8bcb4a9e3261cf6320568787"
+        event.get("before") != "28871b2d599a8ec8335570effb3207d2564639ab"
         or event.get("repository", {}).get("full_name") != repository
         or not isinstance(event.get("after"), str)
         or len(event["after"]) != 40

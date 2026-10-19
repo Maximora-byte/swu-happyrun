@@ -15,6 +15,7 @@ public final class RemoteJournal implements AutoCloseable {
  private boolean failed,closed;
  private long highestFence;private String highestFenceJob;
  private final Map<String,String> bindings=new HashMap<>();
+ private final Map<String,Long> bindingFences=new HashMap<>(),startFences=new HashMap<>(),stopFences=new HashMap<>();
  private final Map<String,String> starts=new HashMap<>(),stops=new HashMap<>(),acks=new HashMap<>();
  public RemoteJournal(Path directory) throws IOException {
   Files.createDirectories(directory);
@@ -49,15 +50,28 @@ public final class RemoteJournal implements AutoCloseable {
   if(bindings.containsKey(job)&&!bindings.get(job).equals(expected))throw new IllegalStateException("session_or_spec_changed");
   append("bind|"+job+"|"+session+"|"+fence+"|0|"+specDigest);
  }
+ private void requireBinding(String job,String session,long fence){
+  String binding=bindings.get(job);
+  if(binding==null||!binding.startsWith(session+"|")||!Objects.equals(bindingFences.get(job),fence)||fence!=highestFence||!job.equals(highestFenceJob))throw new IllegalStateException("invalid_record_binding");
+ }
+ public synchronized boolean completedForRecovery(String job,String session,long fence,String specDigest){
+  healthy();uuid(job);uuid(session);requireBinding(job,session,fence);
+  if(!Objects.equals(bindings.get(job),session+"|"+specDigest))return false;
+  Long started=startFences.get(job),finished=stopFences.get(job);
+  return session.equals(starts.get(job))&&(session+"|finished").equals(stops.get(job))
+      &&started!=null&&started.equals(finished)&&finished<fence;
+ }
  public synchronized boolean hasStart(String job){healthy();uuid(job);return starts.containsKey(job);}
  public synchronized void startIntent(String job,String session,long fence)throws IOException {
   healthy();uuid(job);uuid(session);if(fence<1)throw new IllegalArgumentException("invalid_fence");
+  requireBinding(job,session,fence);
   if(starts.containsKey(job))throw new IllegalStateException("start_already_attempted");
   append("start|"+job+"|"+session+"|"+fence+"|0|intent");
  }
  public synchronized void stopped(String job,String session,long fence,boolean finished)throws IOException {
   healthy();uuid(job);uuid(session);if(fence<1)throw new IllegalArgumentException("invalid_fence");
-  if(finished&&!session.equals(starts.get(job)))throw new IllegalStateException("missing_start_intent");
+  requireBinding(job,session,fence);
+  if(finished&&(!session.equals(starts.get(job))||!Objects.equals(startFences.get(job),fence)))throw new IllegalStateException("missing_start_intent");
   append("stop|"+job+"|"+session+"|"+fence+"|0|"+(finished?"finished":"incomplete"));
  }
  public synchronized boolean finished(String job,String session){healthy();return (session+"|finished").equals(stops.get(job));}
@@ -80,9 +94,9 @@ public final class RemoteJournal implements AutoCloseable {
    String[] v=s.split("\\|",-1);if(v.length!=6)throw new IllegalArgumentException();uuid(v[1]);uuid(v[2]);
    if(Long.parseLong(v[3])<1||Long.parseLong(v[4])<0)throw new IllegalArgumentException();
    switch(v[0]) {
-    case "bind": if(!v[5].matches("[0-9a-f]{64}")||(Long.parseLong(v[3])<highestFence||(Long.parseLong(v[3])==highestFence&&!v[1].equals(highestFenceJob))))throw new IllegalArgumentException();String binding=v[2]+"|"+v[5];if(bindings.containsKey(v[1])&&!bindings.get(v[1]).equals(binding))throw new IllegalArgumentException();bindings.put(v[1],binding);highestFence=Long.parseLong(v[3]);highestFenceJob=v[1];break;
-    case "start": if(!v[5].equals("intent")||starts.putIfAbsent(v[1],v[2])!=null)throw new IllegalArgumentException();break;
-    case "stop": if(!v[5].equals("finished")&&!v[5].equals("incomplete"))throw new IllegalArgumentException();if(v[5].equals("finished")&&!v[2].equals(starts.get(v[1])))throw new IllegalArgumentException();stops.put(v[1],v[2]+"|"+v[5]);break;
+    case "bind": if(!v[5].matches("[0-9a-f]{64}")||(Long.parseLong(v[3])<highestFence||(Long.parseLong(v[3])==highestFence&&!v[1].equals(highestFenceJob))))throw new IllegalArgumentException();String binding=v[2]+"|"+v[5];if(bindings.containsKey(v[1])&&!bindings.get(v[1]).equals(binding))throw new IllegalArgumentException();bindings.put(v[1],binding);bindingFences.put(v[1],Long.parseLong(v[3]));highestFence=Long.parseLong(v[3]);highestFenceJob=v[1];break;
+    case "start": requireBinding(v[1],v[2],Long.parseLong(v[3]));if(!v[5].equals("intent")||starts.putIfAbsent(v[1],v[2])!=null)throw new IllegalArgumentException();startFences.put(v[1],Long.parseLong(v[3]));break;
+    case "stop": requireBinding(v[1],v[2],Long.parseLong(v[3]));if(!v[5].equals("finished")&&!v[5].equals("incomplete"))throw new IllegalArgumentException();if(v[5].equals("finished")&&(!v[2].equals(starts.get(v[1]))||!Objects.equals(startFences.get(v[1]),Long.parseLong(v[3]))))throw new IllegalArgumentException();stops.put(v[1],v[2]+"|"+v[5]);stopFences.put(v[1],Long.parseLong(v[3]));break;
     case "ack": uuid(v[5]);String key=String.join("|",Arrays.copyOfRange(v,1,5));if(acks.putIfAbsent(key,v[5])!=null)throw new IllegalArgumentException();break;
     default: throw new IllegalArgumentException();
    }

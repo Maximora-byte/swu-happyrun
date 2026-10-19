@@ -213,6 +213,8 @@ def test_verify_only_never_starts_ticks_or_prepares(rig):
     assert "start" not in driver.calls and "tick" not in driver.calls
     assert "prepare" not in driver.calls
     assert "running" not in client.states
+    assert runner.job.state == "needs_attention"
+    assert runner.job.reason_code == "verification_pending"
 
 
 def test_start_response_uncertain_is_not_repeated(rig):

@@ -133,14 +133,19 @@ class LeaseOperations:
 
     def observe_agent(self, hello, *, heartbeat=False):
         with self.connection(write=True) as db:
-            # Preflight the complete batch so unknown devices never partly update a report.
+            # Preflight DB and in-batch identities before writing any observation.
+            batch_probes: dict[str, str] = {}
             for report in hello.devices:
                 self._device(db, report.device_id, hello.agent_id)
                 if not heartbeat:
+                    payload = canonical(report)
+                    if report.probe_id in batch_probes and batch_probes[report.probe_id] != payload:
+                        conflict("Probe identifier already used")
+                    batch_probes[report.probe_id] = payload
                     old = db.execute(
                         "SELECT payload FROM probes WHERE probe_id=?", (report.probe_id,)
                     ).fetchone()
-                    if old and old[0] != canonical(report):
+                    if old and old[0] != payload:
                         conflict("Probe identifier already used")
             now = self.clock.utcnow().isoformat()
             if not heartbeat:
@@ -151,7 +156,7 @@ class LeaseOperations:
                     if not exists:
                         db.execute(
                             "INSERT INTO probes VALUES (?,?,?,?)",
-                            (report.probe_id, report.device_id, canonical(report), now),
+                            (report.probe_id, report.device_id, batch_probes[report.probe_id], now),
                         )
                         db.execute(
                             "UPDATE devices SET current_probe=? WHERE device_id=?",

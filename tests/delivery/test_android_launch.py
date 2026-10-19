@@ -36,6 +36,8 @@ XML = (
         ("timeout", ACTIVITY, XML, "ANR in org.happyrun.app", 1),
         ("ok", ACTIVITY, XML, "FATAL EXCEPTION: main\nProcess: org.happyrun.app, PID: 123", 1),
         ("error", ACTIVITY, XML, "", 1),
+        ("dump_failed", ACTIVITY, XML, "", 1),
+        ("rm_failed", ACTIVITY, XML, "", 1),
         ("late_timeout", ACTIVITY, XML, "", 1),
         ("timeout", "ADB_COMMAND_FAILED\n" + ACTIVITY, XML, "", 1),
         ("timeout", ACTIVITY.replace("MainActivity", "MainActivityOther"), XML, "", 1),
@@ -58,6 +60,7 @@ def test_single_launch_requires_visible_resumed_app_without_crash(
     monkeypatch.setattr(PROBE.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(PROBE.time, "sleep", lambda _: clock.__setitem__(0, clock[0] + 61))
     commands = []
+    launch_status = "ok" if status in ("dump_failed", "rm_failed") else status.removeprefix("late_")
 
     def run(cmd, **kwargs):
         commands.append(cmd)
@@ -68,7 +71,7 @@ def test_single_launch_requires_visible_resumed_app_without_crash(
         elif "pm path" in joined:
             value = "package:/data/app/app.apk"
         elif "am start" in joined:
-            value = f"Status: {status.removeprefix('late_')}\n"
+            value = f"Status: {launch_status}\n"
         elif "dumpsys activity" in joined:
             value = activity
         elif "logcat" in joined:
@@ -81,12 +84,20 @@ def test_single_launch_requires_visible_resumed_app_without_crash(
                 clock[0] = 121
         elif "pidof" in joined:
             value = "123"
-        return subprocess.CompletedProcess(cmd, 0, value.encode(), b"")
+        return subprocess.CompletedProcess(
+            cmd,
+            139
+            if (status == "dump_failed" and "uiautomator dump" in joined)
+            or (status == "rm_failed" and "shell rm" in joined)
+            else 0,
+            value.encode(),
+            b"",
+        )
 
     monkeypatch.setattr(PROBE.subprocess, "run", run)
     assert PROBE.main() == expected
     assert sum("am" in cmd and "start" in cmd for cmd in commands) == 1
-    assert (tmp_path / "launch.txt").read_text() == f"Status: {status.removeprefix('late_')}\n"
+    assert (tmp_path / "launch.txt").read_text() == f"Status: {launch_status}\n"
     for name in (
         "activity.txt",
         "window.txt",
