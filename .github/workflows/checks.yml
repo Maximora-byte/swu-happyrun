@@ -40,7 +40,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: candidate-${{ github.sha }}
+          name: candidate-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: |
             dist/*.whl
             dist/*.tar.gz
@@ -76,7 +76,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: console-browser-qa-${{ github.sha }}
+          name: console-browser-qa-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: |
             qa/console-browser/desktop-1440.png
             qa/console-browser/mobile-390.png
@@ -116,7 +116,7 @@ jobs:
       - name: Enable explicitly approved one-transition KVM access
         if: >-
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == '6427e91b7099cdf2233983ff55a5bcf9718e6b61' &&
+          github.event.before == '491019d0b68802fdcf0c67fbe4bd3b846a9eae82' &&
           ((github.event_name == 'push' && github.ref == 'refs/heads/dot/android-onboarding') ||
           (github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
           github.event.number == 33 && github.ref == 'refs/pull/33/merge' &&
@@ -137,7 +137,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: android-debug-candidate-api${{ matrix.api }}-${{ github.sha }}
+          name: android-debug-candidate-api${{ matrix.api }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             android/app/build/reports/lint-results-debug.html
@@ -208,7 +208,7 @@ jobs:
       - name: Enable explicitly approved one-transition KVM access
         if: >-
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == '6427e91b7099cdf2233983ff55a5bcf9718e6b61' &&
+          github.event.before == '491019d0b68802fdcf0c67fbe4bd3b846a9eae82' &&
           ((github.event_name == 'push' && github.ref == 'refs/heads/dot/android-onboarding') ||
           (github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
           github.event.number == 33 && github.ref == 'refs/pull/33/merge' &&
@@ -230,7 +230,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: android-self-probe-api${{ matrix.api }}-${{ github.sha }}
+          name: android-self-probe-api${{ matrix.api }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             android/app/build/outputs/apk/selfProbe/app-selfProbe.apk

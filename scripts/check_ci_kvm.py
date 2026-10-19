@@ -42,7 +42,7 @@ def main() -> int:
         and event.get("after") == pr.get("head", {}).get("sha")
     )
     if (
-        event.get("before") != "6427e91b7099cdf2233983ff55a5bcf9718e6b61"
+        event.get("before") != "491019d0b68802fdcf0c67fbe4bd3b846a9eae82"
         or event.get("repository", {}).get("full_name") != repository
         or not isinstance(event.get("after"), str)
         or len(event["after"]) != 40

@@ -35,7 +35,7 @@ def setup(monkeypatch, tmp_path):
     event.write_text(
         json.dumps(
             {
-                "before": "6427e91b7099cdf2233983ff55a5bcf9718e6b61",
+                "before": "491019d0b68802fdcf0c67fbe4bd3b846a9eae82",
                 "after": "a" * 40,
                 "ref": "refs/heads/dot/android-onboarding",
                 "repository": {"full_name": "Maximora-byte/swu-happyrun"},
@@ -88,7 +88,7 @@ def test_only_current_named_user_acl_and_accel_check(setup):
     assert setup[1] == [
         ["sudo", "-n", "setfacl", "-n", "-m", "u:1001:rw", "/dev/kvm"],
         ["getfacl", "-n", "/dev/kvm"],
-        ["/synthetic-sdk/emulator/emulator", "-accel-check"],
+        [str(Path("/synthetic-sdk") / "emulator/emulator"), "-accel-check"],
     ]
 
 
@@ -119,7 +119,7 @@ def test_missing_device_or_failed_verification_blocks(setup, monkeypatch, kind):
 
 def test_workflow_gate_binds_exact_single_transition():
     workflow = (ROOT / ".github/workflows/checks.yml").read_text(encoding="utf-8")
-    assert "github.event.before == '6427e91b7099cdf2233983ff55a5bcf9718e6b61'" in workflow
+    assert "github.event.before == '491019d0b68802fdcf0c67fbe4bd3b846a9eae82'" in workflow
     assert "github.ref == 'refs/heads/dot/android-onboarding'" in workflow
     assert "github.event_name == 'push'" in workflow
     assert "workflow_dispatch:" not in workflow
@@ -130,6 +130,7 @@ def test_workflow_gate_binds_exact_single_transition():
     "field,value",
     [
         ("before", "b" * 40),
+        ("before", "6427e91b7099cdf2233983ff55a5bcf9718e6b61"),
         ("before", None),
         ("ref", "refs/heads/main"),
         ("after", "c" * 40),

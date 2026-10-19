@@ -7,7 +7,7 @@ import android.os.SystemClock;
 import android.test.InstrumentationTestCase;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.view.KeyEvent;
+import android.os.Bundle;
 import android.widget.TextView;
 import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -85,8 +85,18 @@ public final class PollingAcceptanceTest extends InstrumentationTestCase {
         }
         awaitIdle();
         getInstrumentation().runOnMainSync(() -> assertEquals(Boolean.FALSE, field("refreshQueued")));
-        getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_HOME);
+        // Ask ActivityTaskManager to background this real task. HOME key injection is
+        // not proof of a task transition on every emulator system image.
+        boolean[] moved = {false};
+        getInstrumentation().runOnMainSync(() -> moved[0] = activity.moveTaskToBack(true));
+        emitLifecycle("moveTaskToBack=" + moved[0]);
+        assertTrue("ActivityTaskManager refused to move the test task to background", moved[0]);
         awaitForeground(false);
+        getInstrumentation().runOnMainSync(() -> {
+            assertFalse("Background task must lose window focus", activity.hasWindowFocus());
+            assertFalse("Backgrounding must not finish the Activity", activity.isFinishing());
+        });
+        emitLifecycle("background_verified");
         awaitIdle();
         long backgroundSerial = serial();
         SystemClock.sleep(1100);
@@ -96,6 +106,7 @@ public final class PollingAcceptanceTest extends InstrumentationTestCase {
         getInstrumentation().getTargetContext().startActivity(intent);
         awaitForeground(true);
         awaitIdle();
+        emitLifecycle("foreground_restored");
         assertTrue(serial() > backgroundSerial);
         assertEquals(task.id, runtime.currentTask().id);
         runtime.stop(task.id);
@@ -170,7 +181,18 @@ public final class PollingAcceptanceTest extends InstrumentationTestCase {
             if (matches[0]) return;
             SystemClock.sleep(25);
         } while (SystemClock.elapsedRealtime() < deadline);
+        emitLifecycle("timeout_" + name + "=" + expected);
         fail("Timed out waiting for " + name + "=" + expected);
+    }
+    private void emitLifecycle(String stage) {
+        String[] state = {""};
+        getInstrumentation().runOnMainSync(() -> state[0] = " task=" + activity.getTaskId()
+            + " foreground=" + field("foreground") + " windowFocus=" + activity.hasWindowFocus()
+            + " finishing=" + activity.isFinishing() + " destroyed=" + activity.isDestroyed()
+            + " reading=" + field("reading") + " serial=" + field("serial"));
+        Bundle report = new Bundle();
+        report.putString("stream", "\nPOLLING_LIFECYCLE " + stage + state[0] + "\n");
+        getInstrumentation().sendStatus(0, report);
     }
     private long serial() {
         long[] value = {0};
