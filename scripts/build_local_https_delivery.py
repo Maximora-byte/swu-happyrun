@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import zipfile
 from pathlib import Path
 
 from check_local_https_delivery import (
@@ -43,6 +44,10 @@ def source_identity(source):
 
 
 def build(args):
+    if getattr(args, "expected_source_commit", None) or getattr(args, "expected_source_tree", None):
+        from local_delivery_v2 import build as build_v2
+
+        return build_v2(args)
     source, output = Path(args.source_root).resolve(), Path(args.output).resolve()
     identity = source_identity(source)
     if output.exists() or output == source or source in output.parents:
@@ -192,14 +197,20 @@ def main():
         type=Path,
         help="New local-only directory outside source/bundle for raw Gradle bytes",
     )
+    parser.add_argument("--expected-source-commit")
+    parser.add_argument("--expected-source-tree")
     parser.add_argument("--adapter")
     parser.add_argument("--adapter-commit")
     args = parser.parse_args()
     try:
-        build(args)
-    except (ValueError, OSError, subprocess.SubprocessError):
+        report = build(args)
+    except (ValueError, OSError, subprocess.SubprocessError, AssertionError, zipfile.BadZipFile):
         parser.exit(2, "Build rejected or failed; partial output is not a verified delivery.\n")
-    print("Four APKs verified. Device execution: not_run.")
+    print(
+        "Six APKs and wheel verified. Device execution: not_run."
+        if report["schema_version"] == 2
+        else "Four APKs verified. Device execution: not_run."
+    )
 
 
 if __name__ == "__main__":

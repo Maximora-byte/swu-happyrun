@@ -12,6 +12,7 @@ import subprocess
 import threading
 import time
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 from check_android_delivery_pair import ANDROID, certificate, manifests
@@ -313,23 +314,21 @@ def qa_manifest(app_xml, test_xml, table, config_xml):
     return identity
 
 
-def inspect_pairs(bundle, ca, *, apksigner, apkanalyzer, aapt2):
+def inspect_pairs(bundle, ca, *, apksigner, apkanalyzer, aapt2, file_groups=None):
     pairs = {}
-    for variant, names in FILES.items():
+    for variant, names in (FILES if file_groups is None else file_groups).items():
         app, test = (Path(bundle) / name for name in names)
         if any(not p.is_file() or p.is_symlink() for p in (app, test)):
             raise ValueError("missing_regular_apk")
         app_xml, test_xml = [run([apkanalyzer, "manifest", "print", str(p)]) for p in (app, test)]
         check(app, app_xml, qa=variant == "remoteQa", ca=Path(ca))
         # Test APK must not embed keys or additional trust, in either group.
-        import zipfile
-
         with zipfile.ZipFile(test) as archive:
             for name in archive.namelist():
                 data = archive.read(name)
                 if b"-----BEGIN " in data or "remote_qa" in name:
                     raise ValueError("test_apk_contains_trust_material")
-        if variant == "ordinary":
+        if variant != "remoteQa":
             identity = manifests(app_xml, test_xml)
         else:
             identity = qa_manifest(
@@ -359,14 +358,51 @@ def inspect_pairs(bundle, ca, *, apksigner, apkanalyzer, aapt2):
             app={"filename": names[0], "sha256": digest(app)},
             test={"filename": names[1], "sha256": digest(test)},
         )
-    if pairs["ordinary"]["certificate_sha256"] != pairs["remoteQa"]["certificate_sha256"]:
+    if len({pair["certificate_sha256"] for pair in pairs.values()}) != 1:
         raise ValueError("build_group_signature_mismatch")
     return pairs
 
 
 def verify_bundle(
-    bundle_dir, ca_cert, server_cert, host, *, openssl, apksigner, apkanalyzer, aapt2
+    bundle_dir,
+    ca_cert,
+    server_cert,
+    host,
+    *,
+    openssl,
+    apksigner,
+    apkanalyzer,
+    aapt2,
+    source_root=None,
+    expected_source_commit=None,
+    expected_source_tree=None,
 ):
+    manifest_path = Path(bundle_dir) / "delivery.json"
+    incoming = (
+        json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest_path.is_file() and not manifest_path.is_symlink()
+        else None
+    )
+    if isinstance(incoming, dict) and incoming.get("schema_version") == 2:
+        from local_delivery_v2 import verify_bundle as verify_v2
+
+        return verify_v2(
+            bundle_dir,
+            ca_cert,
+            server_cert,
+            host,
+            source_root=source_root,
+            expected_source_commit=expected_source_commit,
+            expected_source_tree=expected_source_tree,
+            openssl=openssl,
+            apksigner=apksigner,
+            apkanalyzer=apkanalyzer,
+            aapt2=aapt2,
+        )
+    if any(
+        value is not None for value in (source_root, expected_source_commit, expected_source_tree)
+    ):
+        raise ValueError("schema1_does_not_accept_source_override")
     bundle = Path(bundle_dir)
     allowed = {
         "ordinary.apk",
@@ -464,6 +500,9 @@ def main():
         "aapt2",
     ):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--source-root")
+    parser.add_argument("--expected-source-commit")
+    parser.add_argument("--expected-source-tree")
     args = parser.parse_args()
     try:
         verify_bundle(
@@ -475,8 +514,18 @@ def main():
             apksigner=args.apksigner,
             apkanalyzer=args.apkanalyzer,
             aapt2=args.aapt2,
+            source_root=args.source_root,
+            expected_source_commit=args.expected_source_commit,
+            expected_source_tree=args.expected_source_tree,
         )
-    except (ValueError, OSError, subprocess.SubprocessError, ET.ParseError):
+    except (
+        ValueError,
+        OSError,
+        subprocess.SubprocessError,
+        ET.ParseError,
+        AssertionError,
+        zipfile.BadZipFile,
+    ):
         parser.exit(2, "Local delivery verification rejected; no runtime was executed.\n")
     print("Local delivery verified; runtime not_run")
 
