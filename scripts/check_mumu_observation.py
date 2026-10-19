@@ -332,6 +332,7 @@ def diagnostics(text: str, code: int):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--adb", default="adb", help="Exact trusted local ADB executable")
     parser.add_argument("--serial", required=True)
     parser.add_argument("--display", required=True, type=int)
     parser.add_argument("--task", required=True, type=int)
@@ -343,7 +344,7 @@ def main():
         parser.error("Require observed nonnegative task/display and lowercase signing SHA256")
     observation = str(uuid.uuid4())
     command = [
-        "adb",
+        args.adb,
         "-s",
         args.serial,
         "shell",
