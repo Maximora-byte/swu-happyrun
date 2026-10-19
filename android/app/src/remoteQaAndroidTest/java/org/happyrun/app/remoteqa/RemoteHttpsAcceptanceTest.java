@@ -34,6 +34,7 @@ public final class RemoteHttpsAcceptanceTest extends InstrumentationTestCase {
         getInstrumentation().sendStatus(0, result);
     }
     private String diagnosticPhase = "arguments";
+    private long diagnosticPhaseStartedNanos = System.nanoTime();
     private void diagnostic(String value) {
         try {
             Bundle result = new Bundle();
@@ -41,13 +42,32 @@ public final class RemoteHttpsAcceptanceTest extends InstrumentationTestCase {
             getInstrumentation().sendStatus(0, result);
         } catch (RuntimeException unavailable) { /* Never replace a primary failure. */ }
     }
-    private void phase(String value) { diagnosticPhase = value; diagnostic("PHASE " + value); }
+    private void phase(String value) {
+        diagnosticPhase = value;diagnosticPhaseStartedNanos = System.nanoTime();
+        diagnostic("PHASE " + value);
+    }
     private void diagnosticError(Throwable failure, String phase) {
         String kind = failure.getClass().getSimpleName();
         if (!java.util.Arrays.asList("AssertionFailedError", "AssertionError", "SecurityException",
                 "IOException", "IllegalStateException", "RuntimeException", "NullPointerException",
                 "ControlException", "InterruptedException").contains(kind)) kind = "other";
         diagnostic("ERROR kind=" + kind + " phase=" + phase);
+        if (failure instanceof ControlException) {
+            ControlException control = (ControlException) failure;
+            // Only this final exception's already-sanitized code is eligible, never generic messages.
+            String code = control.getMessage();
+            if (!java.util.Arrays.asList("transport_failed", "request_timeout", "http_rejected",
+                    "invalid_response", "closed", "busy", "control_failure").contains(code)) code = "other";
+            String status = control.httpStatus == 0 || (control.httpStatus >= 100 && control.httpStatus <= 599)
+                    ? Integer.toString(control.httpStatus) : "other";
+            long elapsed = phase.equals(diagnosticPhase)
+                    ? Math.max(0, (System.nanoTime() - diagnosticPhaseStartedNanos) / 1000000) : -1;
+            diagnostic("CONTROL code=" + code + " status=" + status
+                    + " retryable=" + control.retryable + " ambiguous=" + control.ambiguous
+                    + " phase=" + phase + " elapsed_ms=" + Math.min(60000, elapsed)
+                    + " elapsed_capped=" + (elapsed > 60000));
+        }
+
     }
     public void testScenario() throws Exception {
         try { exercise(); }

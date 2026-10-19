@@ -16,6 +16,7 @@ from pathlib import Path
 from remote_https_fixture import (
     error_type,
     failure_evidence,
+    hello_evidence,
     issue_certificates,
     remaining_not_run,
     server_fixture,
@@ -105,8 +106,10 @@ def instrumentation(fixture, scenario, diagnostics=None):
     except subprocess.TimeoutExpired as failure:
         diagnostics["instrumentation"] = summarize(failure.stdout, None)
         diagnostics["instrumentation_timeout"] = True
+        diagnostics["hello_server"] = hello_evidence(fixture["evidence"])
         raise
     diagnostics["instrumentation"] = summarize(result.stdout, result.returncode)
+    diagnostics["hello_server"] = hello_evidence(fixture["evidence"])
     output = result.stdout
     if (
         result.returncode
