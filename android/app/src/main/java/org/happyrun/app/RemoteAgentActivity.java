@@ -3,6 +3,8 @@ package org.happyrun.app;
 import android.app.Activity;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -12,19 +14,16 @@ import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
-import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import org.happyrun.app.remote.protocol.AgentHello;
 import org.happyrun.app.remote.protocol.Checks;
 import org.happyrun.app.remote.protocol.JobView;
 import org.happyrun.app.remote.transport.HttpsAgentClient;
 import org.happyrun.app.remote.journal.RemoteJournal;
-import org.happyrun.app.remote.runtime.RemoteAgentRunner;
+import org.happyrun.app.remote.runtime.RemoteForegroundSession;
 import org.happyrun.app.remote.runtime.RemoteClock;
-import org.happyrun.app.remote.simulation.RemoteFakeDriver;
 import org.happyrun.app.remote.ui.RemoteSessionGate;
-import org.happyrun.app.remote.ui.RemoteOutcome;
+import org.happyrun.app.remote.ui.RemoteSessionPresentation;
 
 /** Explicit foreground-only synthetic agent. No network in lifecycle initialization. */
 public final class RemoteAgentActivity extends Activity {
@@ -33,6 +32,16 @@ public final class RemoteAgentActivity extends Activity {
     private EditText endpoint, agentId, deviceId, token;
     private Button connect, stop;
     private TextView status;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private volatile RemoteForegroundSession session;
+    private final Runnable poll = new Runnable() {
+        @Override public void run() {
+            if (!foreground || destroyed || !gate.busy()) return;
+            RemoteForegroundSession current = session;
+            if (current != null && !gate.stopping()) render(current.status(), current.currentJob(), true);
+            main.postDelayed(this, 500);
+        }
+    };
     private boolean destroyed;
     private boolean foreground;
 
@@ -67,6 +76,8 @@ public final class RemoteAgentActivity extends Activity {
         gate.enter();
         if (gate.blocked()) status.setText(R.string.remote_storage_failed);
         updateButtons();
+        main.removeCallbacks(poll);
+        if (gate.busy()) main.post(poll);
     }
 
     private void updateButtons() {
@@ -96,6 +107,8 @@ public final class RemoteAgentActivity extends Activity {
             status.setText(R.string.remote_connecting);
             updateButtons();
             worker.execute(() -> runSession(ownedClient, directory, aid, did));
+            main.removeCallbacks(poll);
+            main.post(poll);
         } catch (RuntimeException error) {
             if (client != null) client.close();
             gate.finish();
@@ -107,50 +120,58 @@ public final class RemoteAgentActivity extends Activity {
 
     private void runSession(HttpsAgentClient client, File directory, String aid, String did) {
         JobView result = null;
-        String localStatus = "unknown";
-        RemoteFakeDriver driver = new RemoteFakeDriver();
+        String localStatus = "connection_failed";
         try (HttpsAgentClient owned = client; RemoteJournal journal = new RemoteJournal(directory.toPath())) {
             RemoteClock clock = new RemoteClock() {
                 @Override public double monotonicSeconds() { return SystemClock.elapsedRealtimeNanos() / 1e9; }
                 @Override public Instant utcNow() { return Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS); }
                 @Override public void sleepMillis(long millis) throws InterruptedException { Thread.sleep(millis); }
             };
-            RemoteAgentRunner runner = new RemoteAgentRunner(owned, journal, driver, clock, aid, did, 10);
-            gate.attach(runner::requestStop);
-            if (!gate.stopping()) {
-                AgentHello observation = new AgentHello(aid, did, UUID.randomUUID().toString(), Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
-                runner.setHeartbeatObservation(observation);
-                owned.hello(observation);
-                result = runner.runOnce();
-                localStatus = runner.localStatus();
-                if ("storage_failed_not_persisted".equals(localStatus)) gate.block();
-            }
+            RemoteForegroundSession running = new RemoteForegroundSession(owned, journal, clock, aid, did, 10);
+            session = running;
+            gate.attach(running::requestStop);
+            running.run();
+            result = running.currentJob();
+            localStatus = running.status();
+            if ("storage_failed_not_persisted".equals(localStatus)) gate.block();
         } catch (java.io.IOException storageFailure) {
             localStatus = "storage_failed_not_persisted";
             gate.block();
         } catch (Exception ignored) {
             // Never show exception text, request URLs, credentials or raw response data.
         } finally {
-            driver.stop();
+            RemoteForegroundSession current = session;
+            if (current != null) current.requestStop();
             client.close();
+            session = null;
         }
         final String finalLocalStatus = localStatus;
         final JobView finalResult = result;
         runOnUiThread(() -> {
+            main.removeCallbacks(poll);
             gate.finish();
+            token.setText("");
             if (destroyed) return;
-            RemoteOutcome outcome = RemoteOutcome.classify(finalLocalStatus, finalResult != null);
-            if (outcome == RemoteOutcome.STORAGE_BLOCKED) {
-                status.setText(R.string.remote_storage_failed);
-            } else if (outcome == RemoteOutcome.UNCONFIRMED) {
-                status.setText(R.string.remote_failed);
-            } else if (outcome == RemoteOutcome.CONFIRMED) {
-                status.setText(getString(R.string.remote_result, finalResult.state, finalResult.jobId));
-            } else {
-                status.setText(R.string.remote_idle);
-            }
+            render(finalLocalStatus, finalResult, false);
             updateButtons();
         });
+    }
+
+    private void render(String localStatus, JobView job, boolean active) {
+        RemoteSessionPresentation presentation = RemoteSessionPresentation.classify(
+            localStatus, job == null ? null : job.state, active);
+        int message;
+        switch (presentation) {
+            case CONNECTING: message = R.string.remote_connecting; break;
+            case WAITING: message = R.string.remote_waiting; break;
+            case CLAIMING: message = R.string.remote_claiming; break;
+            case RUNNING: message = R.string.remote_running; break;
+            case ATTENTION: message = R.string.remote_attention; break;
+            case STORAGE: message = R.string.remote_storage_failed; break;
+            default: message = R.string.remote_failed;
+        }
+        String value = getString(message);
+        if (!value.contentEquals(status.getText())) status.setText(value);
     }
 
     private static String namespace(String origin, String aid, String did) {
@@ -165,6 +186,7 @@ public final class RemoteAgentActivity extends Activity {
 
     @Override protected void onStop() {
         foreground = false;
+        main.removeCallbacks(poll);
         gate.leave();
         token.setText("");
         status.setText(gate.blocked() ? R.string.remote_storage_failed : R.string.remote_left);
@@ -174,9 +196,10 @@ public final class RemoteAgentActivity extends Activity {
 
     @Override protected void onDestroy() {
         destroyed = true;
+        main.removeCallbacks(poll);
         gate.leave();
         token.setText("");
-        worker.shutdown(); // Existing bounded stop/attention may finish; no new work is submitted.
+        worker.shutdown(); // Only existing session cleanup may finish; no new work is submitted.
         super.onDestroy();
     }
 }

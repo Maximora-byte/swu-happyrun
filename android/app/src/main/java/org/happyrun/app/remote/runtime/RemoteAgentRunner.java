@@ -14,7 +14,7 @@ public final class RemoteAgentRunner {
  private final RemoteClock clock;private final String agentId,deviceId;private final double budget;
  private final AtomicBoolean stop=new AtomicBoolean(),used=new AtomicBoolean();
  private volatile JobView job;private volatile String status="idle";
- private AgentHello observation;private double heartbeatAt;
+ private AgentHello observation;private double heartbeatAt;private boolean heartbeatInitialized;private double nextRenewAt;
  private LeaseCommand lease;private double leaseDeadline,jobDeadline,jobNotBefore;
  private static final Set<String> SETTLED=new HashSet<>(Arrays.asList("completed","cancelled","failed","needs_attention"));
  public RemoteAgentRunner(AgentClient client,RemoteJournal journal,RemoteFakeDriver driver,RemoteClock clock,String agentId,String deviceId,double runSeconds){
@@ -22,6 +22,8 @@ public final class RemoteAgentRunner {
   this.client=client;this.journal=journal;this.driver=driver;this.clock=clock;this.agentId=agentId;this.deviceId=deviceId;budget=runSeconds;
  }
  public void setHeartbeatObservation(AgentHello hello){if(used.get()||hello==null||!agentId.equals(hello.agentId)||!deviceId.equals(hello.deviceId))throw new IllegalArgumentException("invalid_observation");observation=hello;}
+ public void setHeartbeatObservation(AgentHello hello,double lastHeartbeatSeconds){setHeartbeatObservation(hello);if(!Double.isFinite(lastHeartbeatSeconds)||lastHeartbeatSeconds>clock.monotonicSeconds())throw new IllegalArgumentException("invalid_heartbeat_clock");heartbeatAt=lastHeartbeatSeconds;heartbeatInitialized=true;}
+ public double lastHeartbeatSeconds(){return heartbeatAt;}
  public void requestStop(){stop.set(true);driver.stop();}
  public JobView currentJob(){return job;}
  public String localStatus(){return status;}
@@ -29,9 +31,12 @@ public final class RemoteAgentRunner {
  private void checkLease(){if(clock.monotonicSeconds()>=leaseDeadline)throw new IllegalStateException("lease_expired");}
  private void check(){checkLease();if(stop.get()||Thread.currentThread().isInterrupted())throw new IllegalStateException("local_stop_requested");if("cancel".equals(job.desiredState))throw new Cancellation();if(!recovery()&&(clock.monotonicSeconds()<jobNotBefore||clock.monotonicSeconds()>=jobDeadline))throw new IllegalStateException("execution_window_expired");}
  private void guard(){check();if(Math.min(leaseDeadline,jobDeadline)-clock.monotonicSeconds()<=5.1)throw new IllegalStateException("insufficient_action_budget");}
- private void expiry(Instant expires,double before,Instant wall){double seconds=Duration.between(wall,expires).toNanos()/1e9;leaseDeadline=before+Math.min(30,seconds);}
+ private void expiry(Instant expires,double before,Instant wall){double seconds=Duration.between(wall,expires).toNanos()/1e9;leaseDeadline=before+Math.min(30,seconds);double now=clock.monotonicSeconds();nextRenewAt=now+Math.min(5,Math.max(0,(leaseDeadline-now-5.1)/2));}
  private void accept(JobView v){if(v==null||!v.jobId.equals(job.jobId)||!v.spec.equals(job.spec)||v.fence!=lease.fence||!Objects.equals(v.runSessionId,job.runSessionId)||!Objects.equals(v.agentId,agentId))throw new IllegalStateException("response_identity_changed");job=v;}
- private void renew(){check();if(observation!=null&&clock.monotonicSeconds()-heartbeatAt>=10){client.heartbeat(observation);check();heartbeatAt=clock.monotonicSeconds();}double before=clock.monotonicSeconds();Instant wall=clock.utcNow();RenewResult r=client.renew(job.jobId,lease);check();expiry(r.expiresAt,before,wall);if("cancel".equals(r.desiredState))throw new Cancellation();check();}
+ private void leaseCallBudget(){check();if(leaseDeadline-clock.monotonicSeconds()<=5.1)throw new IllegalStateException("insufficient_lease_request_budget");}
+ private void heartbeat(){if(observation!=null&&clock.monotonicSeconds()-heartbeatAt>=10){leaseCallBudget();client.heartbeat(observation);check();heartbeatAt=clock.monotonicSeconds();}}
+ private void maintain(){check();heartbeat();if(clock.monotonicSeconds()>=nextRenewAt)renew();}
+ private void renew(){check();heartbeat();leaseCallBudget();double before=clock.monotonicSeconds();Instant wall=clock.utcNow();RenewResult r=client.renew(job.jobId,lease);check();expiry(r.expiresAt,before,wall);if("cancel".equals(r.desiredState))throw new Cancellation();check();}
  private void event(String state,String reason,String phase){if(state.equals("needs_attention"))checkLease();else check();JobEvent e=new JobEvent(UUID.randomUUID().toString(),job.revision,state,reason,phase);JobView updated=client.events(job.jobId,lease,e);requireTransitionReply(updated,state,e.expectedRevision);accept(updated);if(state.equals("needs_attention"))checkLease();else check();}
  private static void requireTransitionReply(JobView view,String state,long previousRevision){if(view==null||!state.equals(view.state)||previousRevision==Long.MAX_VALUE||view.revision!=previousRevision+1)throw new IllegalStateException("unexpected_transition_response");}
  private void attention(String reason){
@@ -53,7 +58,7 @@ public final class RemoteAgentRunner {
  public JobView runOnce(){
   if(!used.compareAndSet(false,true))throw new IllegalStateException("runner_already_used");
   if(stop.get()||Thread.currentThread().isInterrupted()){status="stopped";return null;}
-  status="claiming";heartbeatAt=clock.monotonicSeconds();
+  status="claiming";if(!heartbeatInitialized)heartbeatAt=clock.monotonicSeconds();
   try {
    double before=clock.monotonicSeconds();Instant wall=clock.utcNow();LeaseGrant grant=client.claim(deviceId);
    if(grant==null){status="idle";return null;}
@@ -67,7 +72,12 @@ public final class RemoteAgentRunner {
    renew();
    if("verify_only".equals(job.recoveryAction)){
     // Deliberately conservative parity with Python: never reconstruct/replay motion.
-    driver.stop();event("verifying",null,null);attention("verification_pending");return job;
+    driver.stop();event("verifying",null,null);
+    if(journal.completedForRecovery(job.jobId,job.runSessionId,lease.fence,specDigest(job.spec))){
+     renew();if(!driver.stopped())throw new IllegalStateException("stop_unconfirmed");
+     event("completed",null,null);status="completed";
+    }else attention("verification_pending");
+    return job;
    }
    if(journal.hasStart(job.jobId))throw new IllegalStateException("start_already_attempted");
    event("preflight",null,null);
@@ -78,7 +88,7 @@ public final class RemoteAgentRunner {
    journal.startIntent(job.jobId,job.runSessionId,lease.fence);renew();guard();driver.start(this::guard);status="running";
    double started=clock.monotonicSeconds();
    while(clock.monotonicSeconds()-started<budget){
-    renew();guard();driver.tick(Math.min(budget,clock.monotonicSeconds()-started),this::guard);check();
+    maintain();guard();driver.tick(Math.min(budget,clock.monotonicSeconds()-started),this::guard);check();
     if(driver.finished())break;
     clock.sleepMillis(Math.max(1,(long)(Math.min(.1,Math.max(0,budget-(clock.monotonicSeconds()-started)))*1000)));
    }

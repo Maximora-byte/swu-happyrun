@@ -20,6 +20,8 @@ run_case() {
 adb -s "$ANDROID_SERIAL" wait-for-device
 [[ "$(adb -s "$ANDROID_SERIAL" shell getprop ro.kernel.qemu | tr -d '\r')" == 1 ]] || { echo 'Selected target is not an Android emulator' >&2; exit 1; }
 # No grant-all flag, permission elevation, Root, module install, or personal data.
+root=$(cd "$(dirname "$0")/.." && pwd)
+python "$root/scripts/check_android_display_ci.py" --delivery "${HAPPYRUN_DELIVERY_PAIR:-$root/qa/android/delivery-debug.json}" --output "$OUTPUT_DIR/display"
 adb -s "$ANDROID_SERIAL" shell pm clear "$PACKAGE" | grep -qx 'Success'
 run_case native_ui org.happyrun.app.AndroidAcceptanceTest 4
 run_case prepare_completed org.happyrun.app.ProcessRecoveryTest\#testPrepareCompletedTask 1
@@ -39,5 +41,9 @@ for method in EmptyUiStaysIdle TerminalUiStaysIdle ActiveProgressBackgroundRetur
   adb -s "$ANDROID_SERIAL" shell pm clear "$PACKAGE" | grep -qx 'Success'
   run_case "polling_$method" "org.happyrun.app.PollingAcceptanceTest#test$method" 1
 done
+adb -s "$ANDROID_SERIAL" shell am force-stop "$PACKAGE"
+adb -s "$ANDROID_SERIAL" shell pm clear "$PACKAGE" | grep -qx 'Success'
+run_case namespace_proof org.happyrun.app.RemoteNamespaceProofTest 3
+printf '%s\n' '{"suite":"android-namespace-proof","tests":3,"result":"passed","simulation_only":true}' > "$OUTPUT_DIR/namespace-report.json"
 printf '%s\n' '{"suite":"android-native","tests":15,"result":"passed","simulation_only":true,"mumu_verified":false,"record_verified":false}' > "$OUTPUT_DIR/report.json"
 echo 'ANDROID_QA_RESULT 15 passed / 0 failed'

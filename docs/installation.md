@@ -1,6 +1,6 @@
 # 安装与启动候选版本
 
-先取得经审核的候选 commit SHA，在独立目录检出该提交。不要把 main、PR 最新页面或旧测试结果当作候选版本的证据。Python 3.11+；开发检查使用仓库锁定依赖。Python/uv 从其官方渠道安装；不需要 Root、LSPosed、APK 或系统安全设置修改。
+先取得经审核的候选 commit SHA，在独立目录检出该提交。不要把 main、PR 最新页面或旧测试结果当作候选版本的证据。本页说明 Python 3.11+ 软件安装，开发检查使用仓库锁定依赖。Python/uv 从其官方渠道安装；这些 Python 入口不需要 Root、LSPosed、APK 或系统安全设置修改。Android 用户直接按 [APK 安装说明](android-apk.md) 选择同一候选的普通包，无需安装 Python；最终版本与验收范围见[统一候选记录](acceptance.md)。
 
 ## 从旧候选替换安装
 

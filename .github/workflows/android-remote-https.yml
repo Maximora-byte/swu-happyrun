@@ -1,11 +1,12 @@
 name: android-remote-https
 on:
   push:
-    branches: [dot/android-remote-agent]
+    branches: [dot/android-foreground-agent]
 permissions:
   contents: read
 jobs:
   remote-https:
+    name: HTTPS build/static + conditional runtime (${{ matrix.api }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -43,22 +44,43 @@ jobs:
           bash scripts/android_gradle.sh verifySelfProbeApi lintDebug lintSelfProbe testDebugUnitTest testSelfProbeUnitTest assembleDebug assembleSelfProbe assembleRelease
           bash scripts/android_gradle.sh -PremoteQaInstrumentation lintRemoteQa assembleRemoteQa assembleRemoteQaAndroidTest
           python scripts/check_remote_qa_packaging.py --analyzer "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" --ca "$HAPPYRUN_REMOTE_PRIVATE_DIR/certificates/ca.pem" --qa android/app/build/outputs/apk/remoteQa/app-remoteQa.apk android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/selfProbe/app-selfProbe.apk android/app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Seal this run APK provenance
+        env:
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: python scripts/check_android_ci_phase.py seal --variant remoteQa
+      - name: Decide runtime authorization without changing permissions
+        id: runtime_gate
+        env:
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: python scripts/check_android_ci_phase.py gate --variant remoteQa
       - name: Enable this explicitly approved temporary KVM transition
         if: >-
+          steps.runtime_gate.outputs.authorized == 'true' &&
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event_name == 'push' && github.ref == 'refs/heads/dot/android-remote-agent' &&
-          github.event.before == 'e5b3b973f9e055fc8bcb4a9e3261cf6320568787' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/dot/android-foreground-agent' &&
+          github.event.before == '73af56fd3f92a87d782fa33b80bdde480c75b6d9' &&
           github.event.after == github.sha
         env:
           HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
         run: python scripts/check_ci_kvm.py
       - name: Actual Android HTTPS and journal recovery acceptance
+        id: runtime
+        if: steps.runtime_gate.outputs.authorized == 'true'
         env:
+          HAPPYRUN_REQUIRE_KVM: '1'
           HAPPYRUN_ANDROID_LAUNCH_PROFILE: wizard
           HAPPYRUN_ANDROID_APK: ${{ github.workspace }}/android/app/build/outputs/apk/remoteQa/app-remoteQa.apk
           HAPPYRUN_ANDROID_TEST_APK: ${{ github.workspace }}/android/app/build/outputs/apk/androidTest/remoteQa/app-remoteQa-androidTest.apk
           HAPPYRUN_ANDROID_ACCEPTANCE_SCRIPT: ${{ github.workspace }}/scripts/android_remote_https_test.sh
-        run: bash scripts/android_emulator_test.sh
+        run: |
+          python scripts/check_android_ci_phase.py verify --variant remoteQa
+          bash scripts/android_emulator_test.sh
+      - name: Record runtime result separately from build
+        if: always()
+        env:
+          HAPPYRUN_RUNTIME_AUTHORIZED: ${{ steps.runtime_gate.outputs.authorized }}
+          HAPPYRUN_RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
+        run: python scripts/check_android_ci_phase.py report --variant remoteQa
       - name: Upload bounded synthetic remote HTTPS evidence only
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -66,6 +88,11 @@ jobs:
           name: android-remote-https-api${{ matrix.api }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: |
             qa/android-remote/report.json
+            qa/android-foreground/report.json
+            qa/android-recovery/report.json
+            qa/android-live-fence/report.json
+            qa/android/build-provenance.json
+            qa/android/runtime-status.json
             qa/android/emulator.log
             qa/android/launch-report.json
             qa/android/launch-screen.png

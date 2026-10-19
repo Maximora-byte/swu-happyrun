@@ -42,7 +42,7 @@ def test_resolve_exact_local_profiles(tmp_path):
 
 
 @pytest.mark.parametrize("change", ["missing", "digest", "app", "id", "traversal", "symlink"])
-def test_profile_resolution_fail_closed(tmp_path, change):
+def test_profile_resolution_fail_closed(tmp_path, change, symlink_or_skip):
     from swu_happyrun.core.profiles import LocalProfileStore, ProfileError
 
     root = tmp_path / "profiles"
@@ -67,7 +67,7 @@ def test_profile_resolution_fail_closed(tmp_path, change):
         target = tmp_path / "outside.json"
         target.write_text(path.read_text())
         path.unlink()
-        path.symlink_to(target)
+        symlink_or_skip(path, target)
     with pytest.raises(ProfileError):
         LocalProfileStore(root).resolve(job, app_version=app)
 

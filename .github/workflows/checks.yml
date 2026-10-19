@@ -86,6 +86,7 @@ jobs:
           retention-days: 7
 
   android-apk:
+    name: Android build/static + conditional runtime (${{ matrix.api }})
     strategy:
       fail-fast: false
       matrix:
@@ -113,21 +114,44 @@ jobs:
           mkdir -p qa/android
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee qa/android/signature.txt
           sha256sum android/app/build/outputs/apk/debug/app-debug.apk > qa/android/SHA256SUMS
+      - name: Verify matching ordinary app and instrumentation delivery pair
+        run: python scripts/check_android_delivery_pair.py --app android/app/build/outputs/apk/debug/app-debug.apk --test android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" --apkanalyzer "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" --output qa/android/delivery-debug.json
+      - name: Seal this run APK provenance
+        env:
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: python scripts/check_android_ci_phase.py seal --variant debug
+      - name: Decide runtime authorization without changing permissions
+        id: runtime_gate
+        env:
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: python scripts/check_android_ci_phase.py gate --variant debug
       - name: Enable explicitly approved one-transition KVM access
         if: >-
+          steps.runtime_gate.outputs.authorized == 'true' &&
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == 'e5b3b973f9e055fc8bcb4a9e3261cf6320568787' &&
-          github.event_name == 'push' && github.ref == 'refs/heads/dot/android-remote-agent' &&
+          github.event.before == '73af56fd3f92a87d782fa33b80bdde480c75b6d9' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/dot/android-foreground-agent' &&
           github.event.after == github.sha
         env:
           HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
           HAPPYRUN_ANDROID_API: ${{ matrix.api }}
         run: python scripts/check_ci_kvm.py
       - name: Install and exercise APK on official Android emulator
+        id: runtime
+        if: steps.runtime_gate.outputs.authorized == 'true'
         env:
+          HAPPYRUN_REQUIRE_KVM: '1'
           HAPPYRUN_ANDROID_LAUNCH_PROFILE: wizard
           HAPPYRUN_ANDROID_API: ${{ matrix.api }}
-        run: bash scripts/android_emulator_test.sh
+        run: |
+          python scripts/check_android_ci_phase.py verify --variant debug
+          bash scripts/android_emulator_test.sh
+      - name: Record runtime result separately from build
+        if: always()
+        env:
+          HAPPYRUN_RUNTIME_AUTHORIZED: ${{ steps.runtime_gate.outputs.authorized }}
+          HAPPYRUN_RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
+        run: python scripts/check_android_ci_phase.py report --variant debug
       - name: Upload native APK and synthetic QA evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -135,11 +159,18 @@ jobs:
           name: android-debug-candidate-api${{ matrix.api }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            qa/android/delivery-debug.json
+            qa/android/delivery-debug.signatures.txt
+            qa/android/delivery-debug.SHA256SUMS
             android/app/build/reports/lint-results-debug.html
             android/app/build/test-results/testDebugUnitTest/*.xml
             qa/android/SHA256SUMS
             qa/android/signature.txt
+            qa/android/build-provenance.json
+            qa/android/runtime-status.json
             qa/android/emulator.log
+            qa/android/emulator-build.json
             qa/android/launch.txt
             qa/android/launch-activity.txt
             qa/android/launch-window.txt
@@ -158,6 +189,9 @@ jobs:
             qa/android/storage_NewIntentFailurePreservesPreviousCompletion.txt
             qa/android/storage_TickAndAttentionWriteFailureNeverClaimsSavedOrStopped.txt
             qa/android/report.json
+            qa/android/display/report.json
+            qa/android/namespace-report.json
+            qa/android/namespace_proof.txt
             qa/android/polling_EmptyUiStaysIdle.txt
             qa/android/polling_TerminalUiStaysIdle.txt
             qa/android/polling_ActiveProgressBackgroundReturnAndStop.txt
@@ -168,6 +202,7 @@ jobs:
           retention-days: 7
 
   android-self-probe:
+    name: Optional build/static + conditional runtime (${{ matrix.api }})
     strategy:
       fail-fast: false
       matrix:
@@ -200,22 +235,47 @@ jobs:
           grep -q 'certificate SHA-256 digest:' qa/android/selfprobe-optional-signature.txt
           diff <(grep 'certificate SHA-256 digest:' qa/android/selfprobe-debug-signature.txt) <(grep 'certificate SHA-256 digest:' qa/android/selfprobe-optional-signature.txt)
           sha256sum android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/selfProbe/app-selfProbe.apk > qa/android/selfprobe-SHA256SUMS
+      - name: Verify internal debug app and instrumentation delivery pair
+        run: python scripts/check_android_delivery_pair.py --app android/app/build/outputs/apk/debug/app-debug.apk --test android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" --apkanalyzer "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" --output qa/android/delivery-debug.json
+      - name: Verify matching ordinary app and instrumentation delivery pair
+        run: python scripts/check_android_delivery_pair.py --app android/app/build/outputs/apk/selfProbe/app-selfProbe.apk --test android/app/build/outputs/apk/androidTest/selfProbe/app-selfProbe-androidTest.apk --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" --apkanalyzer "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" --output qa/android/delivery-optional.json
+      - name: Seal this run APK provenance
+        env:
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: python scripts/check_android_ci_phase.py seal --variant selfProbe
+      - name: Decide runtime authorization without changing permissions
+        id: runtime_gate
+        env:
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: python scripts/check_android_ci_phase.py gate --variant selfProbe
       - name: Enable explicitly approved one-transition KVM access
         if: >-
+          steps.runtime_gate.outputs.authorized == 'true' &&
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == 'e5b3b973f9e055fc8bcb4a9e3261cf6320568787' &&
-          github.event_name == 'push' && github.ref == 'refs/heads/dot/android-remote-agent' &&
+          github.event.before == '73af56fd3f92a87d782fa33b80bdde480c75b6d9' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/dot/android-foreground-agent' &&
           github.event.after == github.sha
         env:
           HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
           HAPPYRUN_ANDROID_API: ${{ matrix.api }}
         run: python scripts/check_ci_kvm.py
       - name: Verify both variants remain inactive without a framework
+        id: runtime
+        if: steps.runtime_gate.outputs.authorized == 'true'
         env:
+          HAPPYRUN_REQUIRE_KVM: '1'
           HAPPYRUN_ANDROID_LAUNCH_PROFILE: wizard
           HAPPYRUN_ANDROID_API: ${{ matrix.api }}
           HAPPYRUN_ANDROID_ACCEPTANCE_SCRIPT: scripts/android_selfprobe_acceptance.sh
-        run: bash scripts/android_emulator_test.sh
+        run: |
+          python scripts/check_android_ci_phase.py verify --variant selfProbe
+          bash scripts/android_emulator_test.sh
+      - name: Record runtime result separately from build
+        if: always()
+        env:
+          HAPPYRUN_RUNTIME_AUTHORIZED: ${{ steps.runtime_gate.outputs.authorized }}
+          HAPPYRUN_RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
+        run: python scripts/check_android_ci_phase.py report --variant selfProbe
       - name: Upload optional candidate and bounded synthetic evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -223,7 +283,15 @@ jobs:
           name: android-self-probe-api${{ matrix.api }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            qa/android/delivery-debug.json
+            qa/android/delivery-debug.signatures.txt
+            qa/android/delivery-debug.SHA256SUMS
             android/app/build/outputs/apk/selfProbe/app-selfProbe.apk
+            android/app/build/outputs/apk/androidTest/selfProbe/app-selfProbe-androidTest.apk
+            qa/android/delivery-optional.json
+            qa/android/delivery-optional.signatures.txt
+            qa/android/delivery-optional.SHA256SUMS
             qa/android/selfprobe-static.json
             qa/android/selfprobe-debug-signature.txt
             qa/android/selfprobe-optional-signature.txt
@@ -240,6 +308,9 @@ jobs:
             qa/android/native-debug/storage_NewIntentFailurePreservesPreviousCompletion.txt
             qa/android/native-debug/storage_TickAndAttentionWriteFailureNeverClaimsSavedOrStopped.txt
             qa/android/native-debug/report.json
+            qa/android/native-debug/display/report.json
+            qa/android/native-debug/namespace-report.json
+            qa/android/native-debug/namespace_proof.txt
             qa/android/native-debug/android-onboarding.png
             qa/android/native-debug/android-completed.png
             qa/android/native-debug/polling_EmptyUiStaysIdle.txt
@@ -255,6 +326,9 @@ jobs:
             qa/android/native-optional/storage_NewIntentFailurePreservesPreviousCompletion.txt
             qa/android/native-optional/storage_TickAndAttentionWriteFailureNeverClaimsSavedOrStopped.txt
             qa/android/native-optional/report.json
+            qa/android/native-optional/display/report.json
+            qa/android/native-optional/namespace-report.json
+            qa/android/native-optional/namespace_proof.txt
             qa/android/native-optional/android-onboarding.png
             qa/android/native-optional/android-completed.png
             qa/android/native-optional/polling_EmptyUiStaysIdle.txt
@@ -279,7 +353,10 @@ jobs:
             qa/android/wizard-debug.txt
             qa/android/wizard-optional.txt
             qa/android/wizard-report.json
+            qa/android/build-provenance.json
+            qa/android/runtime-status.json
             qa/android/emulator.log
+            qa/android/emulator-build.json
             qa/android/launch.txt
             qa/android/launched.png
           retention-days: 7

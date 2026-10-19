@@ -1,6 +1,83 @@
 # 协作状态
 
-更新日期：2026-10-18（Asia/Shanghai）。当前结论以下方“当前交付候选”为准；末尾保存旧快照用于追溯，不能将旧“未接单/未开始”作为本轮状态。
+更新：2026-10-19（Asia/Shanghai）。Dot 主导实现和修复；本地 Codex 负责独立测试、设备观测和集成审核。本轮只使用 GitHub，没有发送 Matrix 消息。
+
+## 下一轮执行入口
+
+[下一轮开发与验收计划](superpowers/plans/2026-10-19-next-stage.md)继续作为 Dot 执行入口。#39 已独立接受并合入候选，#37 已关闭；#40 正常恢复通过，但 pre-bind agent mismatch 负例失败，#36 保持开放。新回执、命令和 MuMu 观测见[修复复测报告](qa/2026-10-19-fix-retest-mumu.md)。历史归属覆盖已由后续 PR40 `8aef593` 最小修订，候选软件组合通过，仍等待 Codex 独立复测；Dot 继续推进 Android 恢复、CI/Windows 可复现性、MuMu 测试入口及统一候选。
+
+## 本轮统一候选接续（尚未发布）
+
+本候选以 PR35 `28871b2d599a8ec8335570effb3207d2564639ab` 产品为基础，纳入 main `5377c70b3af02dd954b8e2f81666ccab78b330ce` 的最新 QA、复现脚本和七任务计划。main 的历史验收范围与下方候选软件进展分别保留；最终 HEAD/tree 由发布 PR 绑定。
+
+PR39 `5d52d78acf6d0f7e7064e1209810746dd05b93d7` 与 PR40 `8aef593dd89ca47d63a702ee1cf6952382169bbd` 的已审修复已显式纳入，Issue37 已由 Codex 限定接受后关闭；Issue36 的新 pre-bind 修订仍待独立接受。持续前台连接、原生持久完成恢复、CI 构建/运行分阶段正组成同一候选；新 Android 用例尚待实际执行。Windows 夹具与 MuMu 显示器观察入口正在按计划接入，不借旧 APK 的通过结论。
+
+原生恢复正负双进程 HTTPS 有实际通过，顺序host复跑仍出现过读取超时/子进程非零，状态为 intermittent_unresolved；保留成功与失败证据，不宣布稳定全绿。Python pre-bind身份覆盖缺口的独立最小修订已纳入，修后组合最终885项通过（186.89秒）；Java105项通过。AVD脚本管道SIGPIPE已确定性修复。PR46准确481的API31/35 HTTPS、前台Activity与两项恢复/旧fence实测通过；普通display观察首项失败，使后续native/导航尚未执行。当前后续候选只修Windows测试编码/ID并补严格安全诊断，仍待同HEAD复验，未称display根因已确认。完整结果和未验收环境见[统一验收记录](acceptance.md)。
+
+
+## 已合入 main
+
+| 范围 | PR / 准确 HEAD | 独立验收 |
+| --- | --- | --- |
+| C0/L0与verify_only结构修复 | [#17](https://github.com/Maximora-byte/swu-happyrun/pull/17)，`6ed02c29924ccc3ab26c028fbf46d15477d84eb0` | Windows Python3.11.16：112 tests、Schema、Ruff、构建、core-only干净安装通过 |
+| C1恢复/归属/记录会话契约 | [#19](https://github.com/Maximora-byte/swu-happyrun/pull/19)，`a82e4d97a5a7e1de5112eabeecac6e97312089a7` | Windows Python3.11.16与3.13.15各163 tests通过；3.11的Schema、Ruff、构建、干净安装通过 |
+| 原始50项服务器验收设计 | [#12](https://github.com/Maximora-byte/swu-happyrun/pull/12)，`cd508ceb0e75b8615213e0f9054cfe848b6493cc` | 文档审核；[原始矩阵](server-test-matrix.md)保留当时基线，不是产品通过记录 |
+
+以上使用merge commit保留依赖祖先关系，合并后基线为 `aa1cced50dbe3356607067e90d127dc699ce58ea`。旧 #13 由修复后的 #17 替代关闭。接入 #1、共享模型 #2、只读探测 #3、契约 #14 已按上述有限范围完成。**main尚未合入服务器、执行代理、网页或Android产品实现。**
+
+## 候选和阻塞（独立 QA 时点与后续修订）
+
+- [#25](https://github.com/Maximora-byte/swu-happyrun/pull/25) `77494e21756e514f53e51b3a2c72f22555f0aae6` 包含 #17–#34 的全部祖先提交，无需逐个重复集成；保持未合并。
+- [#35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 增加 Android 单次远程 fake 代理；原 CI/TLS 修订为 `28871b2d599a8ec8335570effb3207d2564639ab`。本轮 #39 合入其分支后为 `0bb9344ddefe8054177101583282c57f27f5b38a`，整个产品仍待接受。采用版本须重新核对实际 HEAD。
+- [#39](https://github.com/Maximora-byte/swu-happyrun/pull/39) `5d52d78acf6d0f7e7064e1209810746dd05b93d7`：独立接受，merge `0bb9344ddefe8054177101583282c57f27f5b38a` 到原候选分支；[#37](https://github.com/Maximora-byte/swu-happyrun/issues/37) 已关闭。冲突整批回滚、合法精确映射与重传通过；非阻塞错误列断言已交 Dot 改进。
+- [#40](https://github.com/Maximora-byte/swu-happyrun/pull/40) `69182c7128941feb0d6d9e0b512c988b024c1b03`：正常 verify_only→completed 通过；损坏历史 agent 在 bind 时被覆盖后仍获 completed，负例失败，暂缓合并。[#36](https://github.com/Maximora-byte/swu-happyrun/issues/36) 保持开放；新复现为 `repro_finished_recovery.py --expect-persisted-agent-rejected`。后续 `8aef593dd89ca47d63a702ee1cf6952382169bbd` 已修此缺口并纳入本候选；以上失败保留为修前独立证据，不自动关闭 #36。
+- #25准确HEAD的四项Android CI失败未获豁免；#35新push与PR事件必须分别核对，旧绿灯不覆盖新失败。
+
+## 最新独立证据
+
+修复复测与现场证据见[最新验收报告](qa/2026-10-19-fix-retest-mumu.md)；之前版本的命令与失败记录保留在[夜间成果报告](qa/2026-10-19-overnight-review.md)。
+
+- e5b Windows/Python3.11全套：688 passed、7 skipped、2 failed；两项是本机symlink夹具的WinError1314，未改系统权限，未计为全绿。
+- 安装/Schema/Ruff/构建/分发隐私、真实TCP fake路线完成和服务重启通过。28871b2的Python3.13 TLS专项6项通过；本机浏览器实际12组通过。
+- #39 Windows/Python3.11 的 contracts/server/HTTP 协议 269 项通过；初版 #40 聚焦 Python3.13 为 211 passed / 1 deselected。本地组合 e62c1af 为 709 passed / 7 skipped / 2 deselected；不将已知权限夹具排除视作其断言通过。新 #40 的四项补充测试通过，但不覆盖失败的完整重绑定路径。
+- MuMu6.8.4.0 / Android15 API35、#25 普通 APK：8 秒 20 米本地模拟完成、完成后重启、进程中断后 needs_attention、不自动重跑、待处理任务确认停止及持久化均已现场核对。运行中直接停止仍待稳定测试入口验收；uiautomator 非零退出保留为工具异常。本机 apksigner 独立 v2/证书核验通过。执行能力仍为空，MuMu/ADB身份映射未验证。
+- 未修改Root/框架配置、系统位置/传感器或生产环境。实际步道乐跑、vivo、学校配置与最终有效记录均未验收。
+
+## 剩余任务
+
+| Issue | 下一步 |
+| --- | --- |
+| #4 S0 | 已有#18/候选实现；按C1兼容的最终组合验收，不任意拼装旧S0与新模型 |
+| #5 S1 | #37 已在候选修复并关闭；最终组合继续保留租约/fence/取消/记录绑定回归 |
+| #6 S2 | #25真实容器CI有成功证据；依赖S1修复与最终组合验收，本机Docker daemon未运行 |
+| #7 L1 | 合成profile/fake/离线转换有实现；MuMu写入/传感器/坐标校准未实现或未验收 |
+| #8 L2 | PR40 8aef 已补 pre-bind 历史 agent 校验，待 Codex 复测，#36 继续开放；恢复不得新增 start/tick/upload |
+| #9 L3 | 缺精确应用版本、校区正式规则、本人会话和脱敏页面；真实适配仍需实现 |
+| #10 I0 | #36、MuMu 测试入口及准确 HEAD 的 Android 检查完成后再作产品集成决定 |
+| #11 R0 | vivo无Root/真实业务纯接口没有有效执行证据，不由fake或其他学校协议推断支持 |
+| #16 冲刺 | 保持开放；软件、设备与学校记录分别验收 |
+
+旧分工和阶段事实从Git历史、[冲刺交接](handoffs/2026-10-18-dot-lead-sprint.md)及原Issue/PR回执追溯；不以历史“未接单/无代码/实例停止”覆盖今日观测。
+
+---
+
+## 候选开发与交付历史
+
+以下按原交付时点保存；当前结论以上方统一候选和最终 PR 证据为准。
+
+更新日期：2026-10-19（Asia/Shanghai）。当前结论以下方“当前首阶段远程候选”为准；末尾保存旧快照用于追溯，不能将旧“未接单/未开始”作为本轮状态。
+
+## 当前首阶段远程候选（2026-10-19）
+
+[PR #35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 准确 HEAD `28871b2d599a8ec8335570effb3207d2564639ab`，tree `5bd5c563bd98000ae263faaf3ec1a189e3562704`，273文件逐blob核对。它继承集成 #25 的 `77494e2`，新增用户显式发起的单次 HTTPS simulation 代理；INTERNET 是该模式所需权限，token 只在内存。该288基线空队列或一次任务结束后不会持续领取，后台不常驻；本轮前台接续变化见下文。
+
+准确 push [checks 39199236415](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39199236415) 九个 jobs 成功；[HTTPS 39199236452](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39199236452) API31/API35 各15场景+3远程UI测试成功，[container smoke 39199236390](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39199236390) 亦通过。证据详见[PR35验收记录](https://github.com/Maximora-byte/swu-happyrun/pull/35#issuecomment-6259724906)。PR临时合并 [checks 39199240147](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39199240147) 已终态：四个Android jobs失败（API31系统ANR、API35启动超时）；不能借用push结论。旧774集成Android软件模式曾因系统ANR/启动超时未验收，历史事实保留。
+
+[Issue #36](https://github.com/Maximora-byte/swu-happyrun/issues/36) 的Python verify_only恢复、[Issue #37](https://github.com/Maximora-byte/swu-happyrun/issues/37) 的hello冲突批次原子性对应修复已纳入本轮候选，集成与独立验收仍开放，不能用测试总数代替逐项复测。当前候选未合并 main。MuMu本地仅有旧 #25 APK首屏报告，不是288设备或远程流程通过；学校记录未验收。
+
+本轮叠加持续前台连接、多任务接续实现、14项新增Activity用例，以及原生持久完成恢复修订、1项独立两阶段恢复和1项存活旧进程跨新fence用例；准确新HEAD未生成，Android连续任务/Activity生命周期及持久完成恢复尚待CI验收。原生恢复已有独立52项JUnit和实际双进程HTTPS正反例，但不能代替Android执行；修订说明见[原生恢复](android-verify-recovery.md)。288的原15项HTTPS与3项UI成功仅为基线证据，不可借用为本轮通过。下方按时间保留的阶段快照均为历史，不是当前能力或长期KVM授权。
+
+本地 Codex 独立审计见 [PR #38](https://github.com/Maximora-byte/swu-happyrun/pull/38)（cedd2d4254f446d85935d674ab442ed9b68abce1）的 [审计记录](https://github.com/Maximora-byte/swu-happyrun/blob/cedd2d4254f446d85935d674ab442ed9b68abce1/docs/qa/2026-10-19-overnight-review.md)；其main基线163项结果不属于此候选。Issue37修复见 [PR #39](https://github.com/Maximora-byte/swu-happyrun/pull/39)（5d52d78），Issue36修复见 [PR #40](https://github.com/Maximora-byte/swu-happyrun/pull/40)（28f8116）；本轮已按这两个独立已审 PR 的精确文件显式纳入组合，待本轮完整集成回归与 Codex 独立复测后更新验收；Issue 尚未关闭。后续组合必须保留本地审计历史文件和复现脚本。
 
 ## 向导 CI 修复与空闲轮询优化（2026-10-19）
 
@@ -161,3 +238,103 @@ Dot 已承担主要实现与修复；本地 Codex 负责 Windows、真实设备�
 最后追加仅Android持久化故障锁存及UI/真实SQLite trigger回归：存储失败停止模拟、显示未保存状态并禁止继续开始/停止；不能把旧持久running当成仍在执行。另增加已核包名的只读PackageInfo诊断。Android CI分别运行API31/35官方AVD，记录debug签名指纹；这些均不能代替MuMu或目标应用执行验收。此前完整Python结果按原快照保留，最后变更另做目标测试/静态/分发检查。
 
 最终五路更新后的Python目标检查（Android契约与delivery）**14 passed**，Schema/边界防漂移、Ruff、旧web Node、脚本/XML/接口静态检查和分发隐私检查通过；Python生产模块仍与f3d相同。APK构建与11项Android测试尚未在本地运行，须取同HEAD的API31/35 Actions证据。
+
+### af3 后的单机显示诊断候选
+
+`af3f2a089da594941bc752c88734fedd660de739` 的 Windows 3.11/3.13 push
+均实际通过（各 888 passed、9 skipped）；普通 Android API31/35 的 debug 和
+optional job 均在首次 display observation 失败。安全报告显示安装包、版本、
+签名及唯一 task 匹配，随后停在 `base_activity` 的断言，尚不能区分空组件与
+非预期组件；未到后续 native / wizard 验收，不把构建成功当运行通过。
+
+本次仅增加两个布尔诊断和精确断言分类，保留原严格条件。临时诊断权限仅限
+同分支、精确 before `af3f2a089da594941bc752c88734fedd660de739` 的下一次
+可信 push、`android-apk` job、API31。其余 Android job 仍构建和静态检查，
+runtime 显式 `not_run`。本次单机采证不能替代最终完整矩阵，也不表示已修复
+显示问题。实际运行结果以新提交的 Actions 为准。
+
+### b364 单机诊断与任务身份修订
+
+`b3642f7215135fb90230b13ff1bdcfb5930ae227` 普通 API31 的实际报告明确
+`base_activity_missing`，`base_activity_present=0`；安装身份及唯一 task 匹配。
+其余 Android runtime 按计划未执行；Windows/Linux、浏览器、容器及 Android
+构建/静态检查通过。此结果定位了失败断言，没有证明替代实现已通过。
+
+修订先严格校验持久 `baseIntent` 的组件包名和类名；若 `baseActivity` 非空，
+同样必须精确匹配。仅在原 `AppTask` 中启动本应用，启动后的同 task/display、
+窗口焦点、可见控件、签名与时效门槛全部保留。候选继续只授权精确 before
+`b3642f7215135fb90230b13ff1bdcfb5930ae227` 的普通 API31 验证，后续完整矩阵
+仍待修订实际运行结果。资源 R1–R5 的独立候选未加入本次修订。
+
+### 2107 启动阶段诊断
+
+`2107bf7d10c6318652622bde0e35fc60efb920ea` 普通 API31 实际通过持久
+baseIntent 精确身份校验，随后停在 `launch` / `NullPointerException`。
+现有报告不足以定位框架调用栈，不推定 context 或 options 是根因。
+本次仅增加固定白名单栈帧标签及有界行号，拒绝异常消息、任意类名与对象值；
+Android 行为及接受条件未变。继续只在精确 before2107 的普通 API31 采证，
+其他 Android runtime 明确 not_run。修复及最终全矩阵仍待实际结果。
+
+### 09b 远端栈诊断
+
+09b67d1f839d4b17d5b06114698cb18ec9fa0d7d 的普通 API31 安全栈确认异常经 Parcel/Binder 返回，仍未定位服务端精确行。本轮只补固定服务端栈帧标签、去重与 remote marker 布尔，最多 12 帧；不含异常消息或对象值，Android 行为与接受条件不变。精确 before09b 的单普通31用于最后一次纯结构化栈采证，其他 runtime 未执行。若服务端栈缺失，不将猜测写成根因。
+
+### b4 后的默认显示 recent-task 恢复验证候选
+
+b4 单机安全栈出现 `server_task_add_child:1725`，说明异常经服务端返回，
+但现有 guest 源码版本未确定，不能把别的 AOSP tag 行号直接当空对象证明。
+本次仅测试入口改用同一个已严格核验的 `AppTask.moveToFront()` 恢复 recent task；
+必须先由系统查询确认默认 display 与独立期望相等，非默认或查询缺失在恢复前拒绝。
+恢复后同 task/display、焦点、可见控件及其余身份/时效条件继续严格检查。
+
+精确 before `b4ca97743f64a52b4981fbcf338899de008b52bc` 的普通 API31
+用于实际验证；其他 runtime 明确未执行，完整矩阵仍待后续验收。隔离官方 AVD
+额外保存限定公开 guest build 字段和镜像 revision，缺失写 unknown；不采集设备
+序列号、账户或全量 getprop，不将此入口用于用户设备自动采集。
+
+### 最终资源统一候选（源与软件验证阶段）
+
+以 `005bb79058d434d9897a266868a1fbd5bae566b4` 为准确基线，保留已通过的
+普通 API31 display7/native15/namespace3 修订，叠加以下独立受审资源来源的
+21 个 owned 路径：
+
+- R1 `3694b340d10776193d9b36822cf82fdabf211890`
+- R2 / PR49 `6b66c2e20da808d920bc34a2f773d4888468e33b`
+- R3 / PR48 `7ead96e12839d4baadd864cae8e397c918844809`
+- R4 / PR51 `a341d214ea18b259c443aa9ff7d603e3233eddc3`
+- R5 / PR50 `4dbc9ec1e1e034f9633930f9c6aae889a069039a`
+
+旧 onboarding/vivo/direct 文档按全文前缀核验追加，无覆盖近期 Windows、
+RESTORE、诊断或 CI 修复。真实适配注册表仍为空，真实 MuMu 能力默认关闭；
+校准/绑定和 runner 协议链的软件测试不能证明实际位置、传感器、物理停止
+或学校记录。旧间歇 HTTP/TLS 调查继续保留，不能用后续一次绿消除失败史。
+
+完成原批准矩阵的精确门禁为本分支下一次 before005bb 的可信 push，三个
+指定 job（ordinary/optional/HTTPS）各 API31/35，其他事件 runtime 未执行。
+新 HEAD 的完整软件/设备结果见 PR 正文和 Actions；此处不预填通过结果。
+普通 APK 与 instrumentation APK 必须同构建同签名配对；debug 签名跨次
+可能不同，签名冲突不得自动卸载抹除数据。
+
+### 234 显示附着等待修订
+
+234 普通 API31 的 RESTORE 后读取到尚未附着的 display=-1，原循环立即退出，
+最终严格门槛正确拒绝。该确定性测试入口缺陷已用旧谓词 JVM RED 复现。
+修订仅允许未知 -1 在原有期限内只读等待；已知错误 display、错误 task 或
+多 task 仍立即退出，最终接受条件及超时均不变。21 个资源路径保持原字节。
+234 原完整矩阵新增 HTTPS API35 的 back_idle/rapid_toggle RuntimeError，
+暂不能据仅异常类型判定 UI 或 fixture 根因。API31 HTTPS 全部通过，普通 API35、
+optional API31/35 通过；历史 af3 同类成功与本次失败均保留。
+本次收窄为本分支精确 before234 下一次可信 push 的两个组合：ordinary/API31
+验证等待修订，HTTPS/API35 保留原完整顺序获取主错误与退出错误安全证据。
+其他组合继续构建/静态检查，runtime 明确 not_run；不能称最终全矩阵通过。
+后续完整验收仍需准确新 HEAD 的六组合实际结果。
+
+### 73af 双组合结果与最终六组合验收
+
+73af 普通 API31 实际 display7/native15/namespace3 通过；HTTPS API35
+实际 15HTTP+3UI+14前台+持久恢复1+存活旧fence1 通过。本轮没有复现
+234 的两个 RuntimeError，因此其根因仍 open；新增安全诊断未证明修复根因。
+本候选仅更新门禁与状态，产品、QA判定、预算和资源字节不变。最终本分支
+精确 before73af 的一次可信 push 恢复普通/optional/HTTPS × API31/35
+完整六组合，旧 before234 拒绝，其他事件运行明确 not_run。最终结果以
+准确新 HEAD 为准，不合并不同 HEAD 的绿灯冒充统一验收。

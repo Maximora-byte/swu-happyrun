@@ -18,11 +18,13 @@ def main() -> int:
     for key, value in expected.items():
         if os.environ.get(key) != value:
             raise SystemExit(f"KVM grant refused: missing exact {key} gate")
-    if os.environ.get("HAPPYRUN_ANDROID_API") not in {"31", "35"}:
-        raise SystemExit("KVM grant refused: only this API31/35 acceptance matrix")
+    if os.environ.get("HAPPYRUN_ANDROID_API") not in {"31", "35"} or os.environ.get(
+        "GITHUB_JOB"
+    ) not in {"android-apk", "android-self-probe", "remote-https"}:
+        raise SystemExit("KVM grant refused: only reviewed three-job API31/35 matrix")
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
     repository = "Maximora-byte/swu-happyrun"
-    branch = "dot/android-remote-agent"
+    branch = "dot/android-foreground-agent"
     event_name = os.environ.get("GITHUB_EVENT_NAME")
     push = (
         event_name == "push"
@@ -31,7 +33,7 @@ def main() -> int:
         and event.get("after") == os.environ.get("GITHUB_SHA")
     )
     if (
-        event.get("before") != "e5b3b973f9e055fc8bcb4a9e3261cf6320568787"
+        event.get("before") != "73af56fd3f92a87d782fa33b80bdde480c75b6d9"
         or event.get("repository", {}).get("full_name") != repository
         or not isinstance(event.get("after"), str)
         or len(event["after"]) != 40

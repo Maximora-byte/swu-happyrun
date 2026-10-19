@@ -90,6 +90,8 @@ def test_emulator_selects_stable_api31_image_without_license_acceptance():
     [
         ("sdk", "Official SDK installation failed"),
         ("ini", "AVD metadata missing after creation"),
+        ("avd_exit", "SYNTHETIC_AVD_FAILURE"),
+        ("avd_read", "Emulator exited before readiness"),
         ("list", "Created AVD not visible to emulator"),
         ("exit", "Emulator exited before readiness"),
     ],
@@ -109,6 +111,12 @@ def test_emulator_bootstrap_failures_are_bounded(tmp_path, failure, expected):
         programs["sdkmanager"] = "exit 77\n"
     elif failure == "ini":
         programs["avdmanager"] = "exit 0\n"
+    elif failure == "avd_exit":
+        programs["avdmanager"] = "echo SYNTHETIC_AVD_FAILURE >&2\nexit 7\n"
+    elif failure == "avd_read":
+        programs["avdmanager"] = (
+            'read -r answer\n[ "$answer" = no ] || exit 88\n' + programs["avdmanager"]
+        )
     elif failure == "list":
         programs["emulator"] = "exit 0\n"
     for name, body in programs.items():
@@ -121,8 +129,19 @@ def test_emulator_bootstrap_failures_are_bounded(tmp_path, failure, expected):
     copied.parent.mkdir(parents=True)
     copied.write_bytes((ROOT / "scripts/android_emulator_test.sh").read_bytes())
     started = time.monotonic()
+    command = ["bash", str(copied)]
+    if failure == "ini":
+        # Force a fast avdmanager to close stdin before a pipeline writer runs.
+        # A here-string has no upstream process whose SIGPIPE masks diagnostics.
+        command = [
+            "bash",
+            "-c",
+            'printf() { sleep 0.05; builtin printf "$@"; }; export -f printf; exec bash "$1"',
+            "synthetic-bootstrap",
+            str(copied),
+        ]
     result = subprocess.run(
-        ["bash", str(copied)],
+        command,
         env=dict(
             os.environ, ANDROID_HOME=str(sdk), RUNNER_TEMP=str(tmp_path), HAPPYRUN_ANDROID_API="35"
         ),
@@ -133,5 +152,7 @@ def test_emulator_bootstrap_failures_are_bounded(tmp_path, failure, expected):
     assert result.returncode != 0
     assert time.monotonic() - started < 8
     assert expected in result.stderr
-    if failure == "exit":
+    if failure == "avd_exit":
+        assert result.returncode == 7
+    if failure in {"exit", "avd_read"}:
         assert "SYNTHETIC_EMULATOR_EXIT" in result.stderr

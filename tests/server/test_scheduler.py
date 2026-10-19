@@ -180,21 +180,34 @@ def test_background_expiry_without_read_or_mutation(client, app, settings, spec)
     assert view["resume_phase"] == "running"
 
 
-def test_scheduler_uses_time_after_acquiring_write_lock(client, app, settings, spec, monkeypatch):
+def test_scheduler_uses_time_after_acquiring_write_lock(settings, spec, monkeypatch):
     from contextlib import contextmanager
 
-    client.post("/api/v1/schedules", headers=ADMIN, json=schedule(spec))
-    original = app.state.store.connection
+    from swu_happyrun.core.models import ScheduleSpec
+    from swu_happyrun.server.scheduler import Scheduler
+    from swu_happyrun.server.store import SqliteJobStore
+
+    # This tests tick's lock/time ordering, not lifespan scheduling. A live ticker
+    # could consume the due occurrence before the simulated lock wait is installed.
+    clock = FakeClock()
+    store = SqliteJobStore(settings.database_path, clock)
+    scheduler = Scheduler(store, clock)
+    scheduler.create(ScheduleSpec.model_validate(schedule(spec)))
+    original = store.connection
+    write_entries = []
 
     @contextmanager
     def lock_crosses_deadline(*, write=False):
         with original(write=write) as db:
             if write:
-                app.state.clock.advance(3601)
+                assert db.in_transaction
+                write_entries.append(clock.utcnow())
+                clock.advance(3601)
             yield db
 
-    monkeypatch.setattr(app.state.store, "connection", lock_crosses_deadline)
-    assert app.state.scheduler.tick() == 0
+    monkeypatch.setattr(store, "connection", lock_crosses_deadline)
+    assert scheduler.tick() == 0
+    assert len(write_entries) == 1
     with sqlite3.connect(settings.database_path) as db:
         assert db.execute("SELECT status FROM occurrences").fetchone()[0] == "skipped"
         assert db.execute("SELECT count(*) FROM jobs").fetchone()[0] == 0

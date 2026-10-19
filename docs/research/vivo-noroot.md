@@ -27,3 +27,29 @@
 4. 只有本次记录最终有效才升级到 `record_verified`。
 
 不自动安装 Root、LSPosed、来源未知 APK，不关闭系统保护，不将参考项目或他人设备成功当作本机证据。用户本人完成登录/必要授权；不把密码、token 或原始设备数据提交 Git。无法使用某一通道仅说明该组合的验证结果，不能写成 vivo 或无 Root 永久不支持。
+
+## Task 7 输入交接（2026-10-19）
+
+统一最小清单、CRS 与脱敏要求见 [实际接入](../onboarding.md)。另须本地确认
+vivo X200 Pro 的完整系统构建/Android/API、目标 package/versionName/versionCode、
+授权方式及每项只读能力的实际观测。不得从 MuMu 或其他 vivo 型号继承能力结果。
+无 Root 是持续约束；不改变 Root、系统保护、网络安全设置或权限来填平输入缺口。
+
+当前未取得该版本实际页面，未实现选择器；真实执行仍为
+`unsupported_by_this_candidate`，现场能力与最终学校记录均为 `not_tested`。
+离线 metadata 校验通过只说明清单结构，不代表无 Root 能力可用。
+下一最小证据是本人的精确版本及已脱敏页面结构，不是账号、token、原截图或路线。
+
+## R5 旧教程差异与最小私有采样（2026-10-19）
+
+只读核对 [hyper152/happy_run 固定 README](https://github.com/hyper152/happy_run/blob/efda3c5530aa3c220415c55865d4c1f493f55fdf/README.md)：作者设备是 vivo Y93s/V1818CA、Android 8.1.0、Funtouch OS 9，虚拟系统 Android 7.1，并明确要求核实 armeabi-v7a 兼容性。该资料不证明 X200 Pro 的当前系统、32 位运行环境或目标 APK 可用；没有下载/安装其 APK，也没有采纳其防护规避或重复上传建议。
+
+在已获授权且已连接的指定设备上，由本地验收者只读保存以下最小输入；本次尚未采集：
+
+- 观测时间、用户选定设备的本地别名、连接方式与当前授权状态；真实 serial 留私有目录，不自动授权或切换设备。
+- 型号、系统构建、Android release/API、系统报告的 ABI 列表及 32 位兼容列表。只看 CPU 为 64 位不够；未知即未知，不补写猜测值。
+- 目标 package/versionName/versionCode、实际运行在真机还是已有虚拟环境；不扫描账号/会话，不安装新环境。
+- 若已有候选 APK 元数据，由本人提供来源及本地 hash/ABI/最低系统要求，仅离线静态核对，不运行其程序；没有这些信息，不把教程中的 APK 架构当作已测事实。
+- 用脱敏摘要记录匹配/缺失项；原始命令输出、设备标识和页面留忽略目录 local/。拒绝权限或无连接时记阻塞，不改变 Root、权限、电池白名单或系统保护。
+
+仅在明确的已知候选与系统要求不匹配时标记该组合 `unsupported_by_candidate`；当前未采样应为 `not_tested`。这与“当前产品没有可执行适配器”的 `unsupported_by_this_candidate` 是两层状态。LocationSpoofer 的 Root/框架调用及广播限制见[独立审查](location-backends.md)，不能用它代替无 Root 接入。
