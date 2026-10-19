@@ -33,6 +33,8 @@
 
 #39/#37 已接受；#40 的 `8aef593dd89ca47d63a702ee1cf6952382169bbd` 已独立接受并合入原候选 `2d0fcc550f9c1f6cf8cc6e0106dcafd106cf181a`，#36已关闭，不再派发旧问题。接受回执与 e490 评审见 [#46](https://github.com/Maximora-byte/swu-happyrun/pull/46#issuecomment-6262758607)。完整产品尚未合入 main。
 
+**10/19 后续执行回执：** #55/#56 已独立接受并合入原候选 `f705f91409df88df9614aa4dd53c136dd00ed8a0`，#52/#53关闭，不再重复修复。任务1的MuMu6.8.4.0/Android15自身离线检查完成：普通/可选APK各30项instrumentation和独立界面完成、重启、中断、不重跑、待处理停止通过；联网部分仍未完成。详见[现场报告](../../qa/2026-10-19-mumu-field-acceptance.md)。Dot优先处理[#57](https://github.com/Maximora-byte/swu-happyrun/issues/57) API35 HTTPS、[#58](https://github.com/Maximora-byte/swu-happyrun/issues/58) MuMu采证、[#59](https://github.com/Maximora-byte/swu-happyrun/issues/59) Windows输出诊断；任务2的本机location/gyro帮助已回写#7，读回及停止确认仍待实现。下列未完成的任务级检查不因离线通过而整体勾选。
+
 顺序：**任务0 → 任务1的软件/现场接受；任务2与任务3的只读样本可并行；真实执行依赖任务2+3，再完成任务4。任务5独立研究。** Dot 修当前阻塞时，可以准备样本工具、MuMu无损测试步骤和服务器故障测试，不必等设备输入才能继续全部工作。
 
 ## 任务0：收尾当前修复，冻结一个可验收的软件候选
