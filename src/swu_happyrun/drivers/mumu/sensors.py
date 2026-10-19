@@ -28,6 +28,7 @@ class MuMuSensors:
         self._transport: SyntheticSensorTransport | None = None
         self._clock = monotonic
         self._guard: Callable[[], None] = _unguarded
+        self._execution_binding_check: Callable[[], None] | None = None
         self._halted = False
         self._stop_confirmed = False
         self._lock = RLock()
@@ -41,9 +42,15 @@ class MuMuSensors:
         result._clock = clock
         return result
 
-    def configure_execution_guard(self, check: Callable[[], None]) -> None:
+    def configure_execution_guard(
+        self,
+        check: Callable[[], None],
+        *,
+        binding_check: Callable[[], None] | None = None,
+    ) -> None:
         with self._lock:
             self._guard = check
+            self._execution_binding_check = binding_check
 
     def write(self, sample: tuple[float, ...], *, deadline: float) -> None:
         with self._lock:
@@ -64,11 +71,23 @@ class MuMuSensors:
                     or not self._clock() < deadline
                 ):
                     raise DriverError("action_budget_exhausted")
+                if self._execution_binding_check is not None:
+                    self._execution_binding_check()
                 self._guard()
                 if self._halted:
                     raise DriverError("channel_halted")
+                if self._execution_binding_check is not None:
+                    self._execution_binding_check()
                 if not self._clock() < deadline:
                     raise DriverError("action_budget_exhausted")
+                # Recheck authority after the preceding validation/clock callback.
+                self._guard()
+                # The synchronous guard may consume the sample's shorter budget.
+                # This final time read must be a pure monotonic observation.
+                if not self._clock() < deadline:
+                    raise DriverError("action_budget_exhausted")
+                if self._halted:
+                    raise DriverError("channel_halted")
                 self._transport.write(sample)
             except Exception:
                 self._halted = True

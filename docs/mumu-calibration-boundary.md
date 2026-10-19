@@ -60,3 +60,33 @@ this delivery. Offline synthetic tests prove software rejection/stop behavior
 only. No real step count, Budao acceptance or school record is verified. Real
 Windows/MuMu help, controlled transport/readback, device queue-clear evidence,
 current app samples and end-to-end acceptance remain required.
+
+## Issue 53: authority after validation callbacks
+
+Synthetic location writes retain the calibration revalidation after the initial
+execution guard, then recheck the current binding and calibration after that
+observation. Immediately before transport
+write, they recheck execution authority, then use a pure clock read to reject
+calibration expiry during that guard, and recheck the halted flag. Calibration or binding
+callbacks can consume the remaining lease or request stop; neither a still-valid
+calibration nor a successful earlier guard permits a later write. Sensors apply the
+same final authority recheck after the action-deadline clock read, followed by
+a pure deadline read and halted check so a slow guard cannot overrun that budget. No renewal,
+lease extension, capability change, or physical-channel activation is introduced.
+
+Deterministic regressions use the actual `AgentRunner._effect_guard`: a 30-second
+lease expires at synthetic t=31 while the location calibration remains valid for
+five minutes, and the transport receives zero writes. Other cases cover remaining
+budget, cancellation, stop during calibration/binding/clock/final guard callbacks,
+and changed boot/display/app identity. A failed write keeps the channel halted;
+replacing the guard cannot replay it, and cleanup still requires queue-clear ack.
+
+`MuMuDriver` wires its binding observation separately into each channel and passes
+the runner authority guard directly; it no longer nests binding I/O inside the
+channel authority callback. The fake route retains its original combined guard.
+The authority guard must synchronously validate current authority without further
+external observations; final time reads must be pure clock observations. These
+checks do not support arbitrary callbacks mutating state after their own check.
+This is a synchronous, cooperative callback boundary, not hardware-level atomicity
+between a check and a device effect. A future physical transport still needs its own
+bounded-call and queue-clear evidence. MuMu现场及真实乐跑记录仍待验收。
