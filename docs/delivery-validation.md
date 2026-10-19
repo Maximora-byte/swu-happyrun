@@ -129,3 +129,17 @@ Windows/Python3.11取消/停止失败测试的start_count=0已通过真实TCP可
 最后追加仅Android持久化故障锁存及UI/真实SQLite trigger回归：存储失败停止模拟、显示未保存状态并禁止继续开始/停止；不能把旧持久running当成仍在执行。另增加已核包名的只读PackageInfo诊断。Android CI分别运行API31/35官方AVD，记录debug签名指纹；这些均不能代替MuMu或目标应用执行验收。此前完整Python结果按原快照保留，最后变更另做目标测试/静态/分发检查。
 
 最终五路更新后的Python目标检查（Android契约与delivery）**14 passed**，Schema/边界防漂移、Ruff、旧web Node、脚本/XML/接口静态检查和分发隐私检查通过；Python生产模块仍与f3d相同。APK构建与11项Android测试尚未在本地运行，须取同HEAD的API31/35 Actions证据。
+
+## Android single-entry onboarding integration (2026-10-19)
+
+Base cf3cfee12701573b4a577225d66980bb2279a346; final candidate SHA is bound by PR/Actions. Independent combined source local checks: Python 3.12.14 full 584 passed, one inherited deprecation warning, 124.76 seconds; delivery subset 30 passed; pure Java compilation with -source/-target17 on compiler21 and 23 JUnit passed. Final UI wording changes were followed by Java recompile/retest. The pure optional entry also compiles against independently hash-checked official API82; no Android SDK compilation is inferred.
+
+Frozen lock, Schema drift, Ruff/135 Python format checks, Node helper, shell syntax, eight XML documents, wheel/sdist build and distribution privacy checks passed. The 582-test first run remains historical; two added integration wiring fixtures account for the final 584. Neither local run invokes actual su or installs a framework.
+
+Pending exact-HEAD hosted checks: both Android variant builds/lint, actual APK metadata/DEX/resource-scope inspection, official API31/35 AVD inactive/variant-identity checks and four wizard cases for each variant. New tests use installed-target BuildConfig reflection and dynamic target resource IDs because one optional instrumentation APK is reused across variants. Same-job signature replacement must pass before recommending a single optional APK. Initial eleven native tests remain separate. ART activation, live Root authorization, MuMu variants and real records remain unverified.
+
+## Onboarding launch rebase (2026-10-19)
+
+Rebased onto629f2e9b86d7a72502f528abd1c1edf999d6a842 / tree c061531110495f6691954acf28324228d2aef81f. All172 baseline files verified. Final full Python612 passed/95.17seconds with one inherited warning; delivery58 passed. New profile negative fixtures first failed then passed; all prior launch error/budget/crash cases run with core and wizard. Ruff/137format, Schema, frozen lock, Node helpers, Bash, wheel/sdist and privacy checks passed.
+
+34 Java source files are byte-identical to the previous independently reviewed onboarding candidate: reuse23JUnit evidence, no claim of a fresh Java run. Default core launch controls are unchanged; explicit wizard requires app_scroll/framework_probe/wizard_refresh. Every other launch safety/readiness condition stays unchanged. Optional replacement runs the same bounded probe with separately allowlisted evidence. Actual Android SDK/AVD and ART remain pending exact-HEAD validation.

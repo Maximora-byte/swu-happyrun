@@ -42,11 +42,17 @@ XML = (
         ("ok", ACTIVITY, XML, "HOST_COMMAND_TIMEOUT", 1),
     ],
 )
+@pytest.mark.parametrize("profile", ["core", "wizard"])
 def test_single_launch_requires_visible_resumed_app_without_crash(
-    monkeypatch, tmp_path, status, activity, xml, log, expected
+    monkeypatch, tmp_path, status, activity, xml, log, expected, profile
 ):
     monkeypatch.setenv("ANDROID_SERIAL", "emulator-5554")
     monkeypatch.setenv("HAPPYRUN_DISPOSABLE_EMULATOR", "1")
+    monkeypatch.setenv("HAPPYRUN_ANDROID_LAUNCH_PROFILE", profile)
+    if profile == "wizard":
+        xml = xml.replace("task_state", "framework_probe").replace(
+            "start_simulation", "wizard_refresh"
+        )
     monkeypatch.setattr(PROBE.sys, "argv", ["probe", str(tmp_path)])
     clock = [0]
     monkeypatch.setattr(PROBE.time, "monotonic", lambda: clock[0])
@@ -103,3 +109,28 @@ def test_probe_refuses_unmarked_or_real_device(monkeypatch, tmp_path):
 def test_empty_bounds_and_malformed_ui_never_count_as_visible():
     assert not PROBE.visible(ACTIVITY, XML.replace("[0,0][100,100]", "[0,0][0,100]"))
     assert not PROBE.visible(ACTIVITY, "not XML")
+
+
+def test_wizard_profile_requires_its_own_visible_first_screen():
+    wizard = XML.replace("task_state", "framework_probe").replace(
+        "start_simulation", "wizard_refresh"
+    )
+    assert PROBE.visible(ACTIVITY, wizard, "wizard")
+    assert not PROBE.visible(ACTIVITY, XML, "wizard")
+    assert not PROBE.visible(ACTIVITY, wizard, "core")
+    assert not PROBE.visible(ACTIVITY, "<hierarchy/>", "wizard")
+    assert not PROBE.visible("other resumed", wizard, "wizard")
+    assert not PROBE.visible(
+        ACTIVITY, wizard.replace('package="org.happyrun.app"', 'package="other"'), "wizard"
+    )
+    assert not PROBE.visible(ACTIVITY, wizard, "unknown")
+
+
+def test_unknown_profile_rejected_before_adb(monkeypatch, tmp_path):
+    monkeypatch.setenv("ANDROID_SERIAL", "emulator-5554")
+    monkeypatch.setenv("HAPPYRUN_DISPOSABLE_EMULATOR", "1")
+    monkeypatch.setenv("HAPPYRUN_ANDROID_LAUNCH_PROFILE", "anything")
+    monkeypatch.setattr(PROBE.sys, "argv", ["probe", str(tmp_path)])
+    monkeypatch.setattr(PROBE.subprocess, "run", lambda *a, **kw: pytest.fail("ADB called"))
+    with pytest.raises(SystemExit, match="profile"):
+        PROBE.main()

@@ -9,9 +9,16 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 PACKAGE = "org.happyrun.app"
+PROFILES = {
+    "core": {"app_scroll", "task_state", "start_simulation"},
+    "wizard": {"app_scroll", "framework_probe", "wizard_refresh"},
+}
 
 
-def visible(activity: str, xml: str) -> bool:
+def visible(activity: str, xml: str, profile: str = "core") -> bool:
+    if profile not in PROFILES:
+        return False
+
     def has_area(bounds: str) -> bool:
         match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
         if not match:
@@ -32,15 +39,7 @@ def visible(activity: str, xml: str) -> bool:
         }
     except ET.ParseError:
         return False
-    return (
-        bool(resumed)
-        and {
-            f"{PACKAGE}:id/app_scroll",
-            f"{PACKAGE}:id/task_state",
-            f"{PACKAGE}:id/start_simulation",
-        }
-        <= ids
-    )
+    return bool(resumed) and {f"{PACKAGE}:id/{name}" for name in PROFILES[profile]} <= ids
 
 
 def unhealthy(log: str) -> bool:
@@ -54,6 +53,9 @@ def main() -> int:
     serial = os.environ.get("ANDROID_SERIAL", "")
     if os.environ.get("HAPPYRUN_DISPOSABLE_EMULATOR") != "1" or serial != "emulator-5554":
         raise SystemExit("Only the explicitly disposable CI emulator is supported")
+    profile = os.environ.get("HAPPYRUN_ANDROID_LAUNCH_PROFILE", "core")
+    if profile not in PROFILES:
+        raise SystemExit("Unknown launch profile")
     out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
 
@@ -133,7 +135,7 @@ def main() -> int:
             or log.startswith(("ADB_COMMAND_FAILED", "HOST_COMMAND_TIMEOUT"))
         ):
             break
-        if visible(activity, xml):
+        if visible(activity, xml, profile):
             success = True
             break
         if time.monotonic() >= deadline:
@@ -148,7 +150,8 @@ def main() -> int:
     except subprocess.TimeoutExpired:
         pass
     (out / "launch-verification.txt").write_text(
-        f"visible_resumed={success}\noriginal_status_timeout={'Status: timeout' in launch}\n"
+        f"profile={profile}\nvisible_resumed={success}\n"
+        f"original_status_timeout={'Status: timeout' in launch}\n"
     )
     return 0 if success else 1
 
