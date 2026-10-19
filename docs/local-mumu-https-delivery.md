@@ -69,3 +69,44 @@ remoteQa 包仅用于隔离 HTTPS 验收，不是日常分发包；同 appId 不
 本工具不会运行安装、修改 Root/LSPosed、写学校应用、上传记录或放宽任何网络预算。
 
 当前云端证据仅源码/模拟工具回归；完整 SDK 编译、四APK实际配对与 MuMu HTTPS 均须本地实跑。
+
+## Windows Gradle 输出修订（PR75 本机复测）
+
+Codex 已在产品9534、工具3ac878、adapter db685上实际完成本机CA、同组四APK编译、
+资源/签名/配对验证及新隔离实例安装。该成功产物事实保留；原工具的 Windows 文本管道
+reader 在首次实际编译的 stderr 解码失败但未通知主线程，故工具本身不能接受为全绿。
+现场二进制复核证明 stdout 是 UTF-8，stderr 可严格 GBK 解码；UP-TO-DATE 的无诊断
+输出不能代替首次 clean 编译验证。详细记录见 [PR79](https://github.com/Maximora-byte/swu-happyrun/pull/79)
+及 [PR75 本机反馈](https://github.com/Maximora-byte/swu-happyrun/pull/75#issuecomment-6268225149)。
+
+修订对所有外部工具用 binary pipes，每路最多8 MiB，主线程检查读取错误、退出码、
+原请求超时及线程结束；超限、超时、非法字节、reader错误均拒绝。失败清理最多另等
+进程2秒及reader合计2秒，不能据此延长成功预算。它只结束自身启动的直接子进程；
+若Gradle另有后代持有pipe，reader无法结束会明确失败，不能当作后台工作已全部停止。
+
+默认两路都严格 UTF-8。**只对已核实的本机 Gradle stderr**，在原build命令额外指定：
+
+```powershell
+--gradle-stderr-encoding gbk --private-build-evidence "$newPrivateEvidence"
+```
+
+stdout仍严格UTF-8；证书、SDK XML、资源表、签名和Git机器输出始终严格UTF-8，
+不受该flag影响。无自动编码猜测、ignore/replace、系统codepage或全局UTF-8模式修改。
+这不是要求重建或上传现有用户CA/APK；由本地验收者决定是否做受控工具复测。
+
+证据路径必须是**源码及交付包外的新目录**，父目录已存在且无符号链接；不复用旧目录。
+ordinary/remoteQa各保留stdout.bin、stderr.bin及capture.json（仅固定原因、返回码、
+预算、编码、捕获字节数及SHA256）。原始字节可能含本机路径或工具诊断中的敏感信息，
+只留本人私有目录，不进Git、APK包、CI artifact或聊天。目录以0700、文件以0600创建；
+Windows权限仍依本机ACL，由使用者选择已有私有父目录，工具不更改系统安全设置。
+未提供该可选路径时仅有有界内存捕获，不持久保存原始日志；故障复测建议显式提供。
+超限仅保存有界前缀，reason=output_limit，不能将该SHA当完整流摘要。
+
+任一步失败不会输出 Four APKs verified，也不继续认定已有APK为本次成功。
+本次仅修交付捕获，不改变9534产品、CA信任、配对schema或MuMu执行授权。
+
+交付链对APK信任内容的检查复用已binary/strict UTF-8捕获的manifest，调用共享纯
+check_manifest函数，不再隐蔽启动第二次apkanalyzer。共享脚本旧独立CLI wrapper的
+文本捕获不在本次交付链中；本修订不宣称已处理全仓所有子进程输出。私有路径先词法
+消除`.`/`..`，再拒绝路径父链的symlink并检查源码/交付包包含关系，不通过resolve
+跟随链接绕过限制。

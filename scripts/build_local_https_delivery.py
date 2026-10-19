@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -14,6 +15,7 @@ from check_local_https_delivery import (
     SOURCE_TREE,
     digest,
     inspect_pairs,
+    private_directory,
     run,
     verify_bundle,
     verify_certificates,
@@ -68,12 +70,31 @@ def build(args):
         raise ValueError("adapter_file_required")
     if ca.exists():
         raise ValueError("generated_ca_already_exists")
+    evidence = getattr(args, "private_build_evidence", None)
+    if evidence is not None:
+        evidence = Path(os.path.abspath(evidence))
+        if (
+            evidence == source
+            or source in evidence.parents
+            or evidence == output
+            or output in evidence.parents
+        ):
+            raise ValueError("private_evidence_must_be_outside_source_and_bundle")
+        evidence = private_directory(evidence)
+    stderr_encoding = getattr(args, "gradle_stderr_encoding", "utf-8")
+    if stderr_encoding not in ("utf-8", "gbk"):
+        raise ValueError("invalid_gradle_stderr_encoding")
     output.mkdir(parents=True, exist_ok=False)
     created_ca = created_adapter = False
     try:
         # Clean removes stale variant APKs, preventing success from reusing old output.
         command = [args.gradle, "--no-daemon", "-p", str(source / "android")]
-        run(command + ["clean", "assembleDebug", "assembleDebugAndroidTest"], timeout=1800)
+        run(
+            command + ["clean", "assembleDebug", "assembleDebugAndroidTest"],
+            timeout=1800,
+            stderr_encoding=stderr_encoding,
+            private_evidence=evidence / "ordinary" if evidence else None,
+        )
         ca.parent.mkdir(parents=True, exist_ok=True)
         with ca.open("xb") as stream:
             stream.write(Path(args.ca_cert).read_bytes())
@@ -87,6 +108,8 @@ def build(args):
             command
             + ["-PremoteQaInstrumentation", "assembleRemoteQa", "assembleRemoteQaAndroidTest"],
             timeout=1800,
+            stderr_encoding=stderr_encoding,
+            private_evidence=evidence / "remoteQa" if evidence else None,
         )
         for name, relative in OUTPUTS.items():
             original = source / "android/app/build/outputs" / relative
@@ -158,6 +181,17 @@ def main():
         "aapt2",
     ):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument(
+        "--gradle-stderr-encoding",
+        choices=("utf-8", "gbk"),
+        default="utf-8",
+        help="Explicit Gradle stderr encoding only; stdout/machine tools stay UTF-8",
+    )
+    parser.add_argument(
+        "--private-build-evidence",
+        type=Path,
+        help="New local-only directory outside source/bundle for raw Gradle bytes",
+    )
     parser.add_argument("--adapter")
     parser.add_argument("--adapter-commit")
     args = parser.parse_args()

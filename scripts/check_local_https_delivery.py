@@ -6,13 +6,16 @@ import argparse
 import hashlib
 import ipaddress
 import json
+import os
 import re
 import subprocess
+import threading
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from check_android_delivery_pair import ANDROID, certificate, manifests
-from check_remote_qa_packaging import check
+from check_remote_qa_packaging import check_manifest as check
 
 SOURCE_COMMIT = "9534f51efe3a557e6b4bda5605426e4004a34783"
 SOURCE_TREE = "53d6858c01b982e1143436018d7201e934c4ee58"
@@ -30,13 +33,155 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def run(command, *, timeout=120):
-    result = subprocess.run(
-        command, capture_output=True, text=True, encoding="utf-8", errors="strict", timeout=timeout
-    )
-    if result.returncode:
-        raise ValueError("external_verification_failed")
-    return result.stdout
+def private_directory(path):
+    """Reserve an explicit new local-only directory; never follow a supplied symlink."""
+    path = Path(os.path.abspath(path))
+    if any(parent.is_symlink() for parent in (path, *path.parents)):
+        raise ValueError("private_evidence_symlink")
+    try:
+        path.mkdir(mode=0o700, parents=False, exist_ok=False)
+    except OSError:
+        raise ValueError("private_evidence_unavailable") from None
+    return path
+
+
+def _private_write(path, data):
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(data)
+
+
+def _read_pipe(pipe, target, limit, failed, reasons):
+    try:
+        while True:
+            block = pipe.read(65536)
+            if not block:
+                break
+            available = limit - len(target)
+            target.extend(block[:available])
+            if len(block) > available:
+                reasons.append("output_limit")
+                failed.set()
+                break
+    except Exception:
+        # Windows reader failures must be visible to the main thread. No error
+        # messages, command arguments or raw output cross this boundary.
+        reasons.append("reader_error")
+        failed.set()
+    finally:
+        try:
+            pipe.close()
+        except Exception:
+            reasons.append("reader_error")
+            failed.set()
+
+
+def run(
+    command,
+    *,
+    timeout=120,
+    stderr_encoding="utf-8",
+    private_evidence=None,
+    max_output=8 * 1024 * 1024,
+):
+    """Bounded binary pipes; only explicitly selected Gradle stderr may use GBK."""
+    if stderr_encoding not in ("utf-8", "gbk") or timeout <= 0 or max_output <= 0:
+        raise ValueError("invalid_capture_policy")
+    evidence = private_directory(private_evidence) if private_evidence is not None else None
+    data = {"stdout": bytearray(), "stderr": bytearray()}
+    failed, reasons = threading.Event(), []
+    started = time.monotonic()
+    deadline = started + timeout
+    process = None
+    threads = []
+    reason = "ok"
+    timed_out = False
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            text=False,
+        )
+        for name in data:
+            thread = threading.Thread(
+                target=_read_pipe,
+                args=(getattr(process, name), data[name], max_output, failed, reasons),
+                daemon=True,
+            )
+            threads.append(thread)
+            thread.start()
+        while process.poll() is None or any(thread.is_alive() for thread in threads):
+            if failed.is_set():
+                reason = reasons[0]
+                break
+            if time.monotonic() >= deadline:
+                reason = "timeout"
+                timed_out = True
+                break
+            time.sleep(min(0.01, max(0, deadline - time.monotonic())))
+    except OSError:
+        reason = "launch_error"
+    finally:
+        if process is not None:
+            if process.poll() is None:
+                process.kill()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                reason = "cleanup_timeout"
+            cleanup_deadline = time.monotonic() + 2
+            for thread in threads:
+                thread.join(timeout=max(0, cleanup_deadline - time.monotonic()))
+            if any(thread.is_alive() for thread in threads):
+                reason = "reader_join_failed"
+    if reason == "ok" and reasons:
+        reason = reasons[0]
+    returncode = process.returncode if process is not None else None
+    if reason == "ok" and returncode != 0:
+        reason = "nonzero_exit"
+    decoded = {}
+    # Frozen copies also prevent a late daemon reader from mutating evidence.
+    raw = {name: bytes(value) for name, value in data.items()}
+    for name, encoding in (("stdout", "utf-8"), ("stderr", stderr_encoding)):
+        try:
+            decoded[name] = raw[name].decode(encoding, errors="strict")
+        except UnicodeDecodeError:
+            if reason == "ok":
+                reason = "invalid_" + name + "_encoding"
+    report = {
+        "reason": reason,
+        "returncode": returncode,
+        "timeout_seconds": timeout,
+        "timed_out": timed_out,
+        "elapsed_seconds": round(time.monotonic() - started, 6),
+        "reader_complete": all(not thread.is_alive() for thread in threads),
+        "output_limit_exceeded": "output_limit" in reasons,
+        "reader_error": "reader_error" in reasons,
+        "stdout_encoding": "utf-8",
+        "stderr_encoding": stderr_encoding,
+        "max_bytes_per_stream": max_output,
+        **{
+            name: {"size": len(value), "sha256": hashlib.sha256(value).hexdigest()}
+            for name, value in raw.items()
+        },
+    }
+    if evidence is not None:
+        try:
+            for name, value in raw.items():
+                _private_write(evidence / (name + ".bin"), value)
+            _private_write(
+                evidence / "capture.json", (json.dumps(report, indent=2) + "\n").encode("utf-8")
+            )
+        except OSError:
+            raise ValueError("private_evidence_write_failed") from None
+    if reason != "ok":
+        error = ValueError("external_process_" + reason)
+        error.capture = report
+        raise error from None
+    return decoded["stdout"]
 
 
 def local_host(value):
@@ -173,7 +318,7 @@ def inspect_pairs(bundle, ca, *, apksigner, apkanalyzer, aapt2):
         if any(not p.is_file() or p.is_symlink() for p in (app, test)):
             raise ValueError("missing_regular_apk")
         app_xml, test_xml = [run([apkanalyzer, "manifest", "print", str(p)]) for p in (app, test)]
-        check(app, apkanalyzer, qa=variant == "remoteQa", ca=Path(ca))
+        check(app, app_xml, qa=variant == "remoteQa", ca=Path(ca))
         # Test APK must not embed keys or additional trust, in either group.
         import zipfile
 

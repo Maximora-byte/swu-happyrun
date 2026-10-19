@@ -22,7 +22,12 @@ def check(apk: Path, analyzer: str, *, qa: bool, ca: Path):
         encoding="utf-8",
         timeout=60,
     )
-    app = ET.fromstring(result.stdout).find("application")
+    check_manifest(apk, result.stdout, qa=qa, ca=ca)
+
+
+def check_manifest(apk: Path, manifest_xml: str, *, qa: bool, ca: Path):
+    """Apply unchanged trust guards to an already captured manifest."""
+    app = ET.fromstring(manifest_xml).find("application")
     if app is None or app.get(ANDROID + "usesCleartextTraffic") != "false":
         raise ValueError("APK must explicitly disallow cleartext")
     config = app.get(ANDROID + "networkSecurityConfig")
