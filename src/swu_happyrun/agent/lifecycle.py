@@ -1,7 +1,8 @@
 """Cooperative process shutdown and finite retries for idle liveness only."""
 
+import math
 import signal
-import threading
+import time
 from contextlib import contextmanager
 
 from swu_happyrun.agent.client import ControlError
@@ -13,21 +14,29 @@ class ShutdownRequested(RuntimeError):
 
 class Shutdown:
     def __init__(self):
-        self.event = threading.Event()
         self.signum = None
 
     def request(self, signum, frame=None):
-        # Never interrupt an atomic journal write or perform I/O in a handler.
+        # Python handlers may run while any non-reentrant lock is held.
+        # A plain assignment is deliberate: no Event/Condition, I/O or exceptions.
         self.signum = signum
-        self.event.set()
 
     def check(self):
-        if self.event.is_set():
+        if self.signum is not None:
             raise ShutdownRequested()
 
     def wait(self, seconds):
-        self.event.wait(seconds)
-        self.check()
+        if not math.isfinite(seconds):
+            raise ValueError("wait duration must be finite")
+        deadline = time.monotonic() + max(0, seconds)
+        while True:
+            self.check()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            # Bounded polling avoids locks in the signal handler while keeping
+            # idle/backoff interruption prompt even if sleep is restarted by Python.
+            time.sleep(min(0.05, remaining))
 
     @contextmanager
     def signals(self):
