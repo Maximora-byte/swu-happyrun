@@ -28,6 +28,19 @@ PHASES = frozenset(
         "process_kill_wait",
     }
 )
+CONTROL_CODES = frozenset(
+    {
+        "transport_failed",
+        "request_timeout",
+        "http_rejected",
+        "invalid_response",
+        "closed",
+        "busy",
+        "control_failure",
+        "other",
+    }
+)
+
 ERRORS = frozenset(
     {
         "AssertionFailedError",
@@ -81,8 +94,31 @@ def summarize(output, returncode):
     if isinstance(output, bytes):
         output = output.decode("utf-8", errors="replace")
     output = output or ""
-    phases, errors, frames, snapshots = [], [], [], []
+    phases, errors, frames, snapshots, controls = [], [], [], [], []
     for line in output.splitlines():
+        control = re.fullmatch(
+            r"REMOTE_QA CONTROL code=([a-z_]+) status=(0|[1-5][0-9]{2}|other) "
+            r"retryable=(true|false) ambiguous=(true|false) phase=([a-z_]+) "
+            r"elapsed_ms=(-1|[0-9]{1,5}) elapsed_capped=(true|false)",
+            line,
+        )
+        if (
+            control
+            and control[1] in CONTROL_CODES
+            and control[5] in PHASES
+            and -1 <= int(control[6]) <= 60000
+        ):
+            controls.append(
+                {
+                    "code": control[1],
+                    "status": None if control[2] == "other" else int(control[2]),
+                    "retryable": control[3] == "true",
+                    "ambiguous": control[4] == "true",
+                    "phase": control[5],
+                    "elapsed_ms": int(control[6]),
+                    "elapsed_capped": control[7] == "true",
+                }
+            )
         phase = line.removeprefix("REMOTE_QA PHASE ")
         if line.startswith("REMOTE_QA PHASE ") and phase in PHASES:
             phases.append(phase)
@@ -122,4 +158,5 @@ def summarize(output, returncode):
         "errors": errors[:4],
         "frames": frames[:8],
         "snapshots": snapshots[-4:],
+        "controls": controls[:4],
     }

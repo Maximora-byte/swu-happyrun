@@ -59,7 +59,7 @@ jobs:
           github.job == 'remote-https' && matrix.api == 35 &&
           github.repository == 'Maximora-byte/swu-happyrun' &&
           github.event_name == 'push' && github.ref == 'refs/heads/dot/android-foreground-agent' &&
-          github.event.before == '6dda2a4e74e40b92387bcbede2ec4db28abb7662' &&
+          github.event.before == '8f9f3351ee2d297f58c55b8b1c1dcf31ff33ff17' &&
           github.event.after == github.sha
         env:
           HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'

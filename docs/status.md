@@ -1,5 +1,12 @@
 # 协作状态
 
+## 当前 hello 固定诊断候选
+
+准确基线8f9。该HEAD实际UI3与14/15HTTP通过，completed首case在hello_begin ControlException失败，fixture正常关闭，后续前台及恢复未运行。只新增七文件测试诊断：固定错误code/status/布尔/耗时，以及fixture hello观测；生产、TLS、预算和成功判定不变。独立TLS两次失败与旧Android故障保留，不能称根因修复。
+
+本轮精确before8f9，仅remote-https/API35；其他runtime not_run。未纳#69/#62或地图资料。实际结果待本HEAD，仍Draft。
+
+
 ## 当前 request-close 实验候选
 
 基线6dda保留已接受#65；仅纳PR68 `3f00b27a33ce7073cd85c0bddc6b00b1eaab2e89` 三路径与本轮精确门禁。每请求Connection: close改变连接复用策略，原TLS验证/请求预算/业务和退出验收不变。独立oversize、normal两次TLS失败未定，后来单次normal通过不覆盖；旧首次stderr缺失只保留回顾性记录。实现者HTTP/1.1配对旧9.868s、新0.131s均自然退出，不称旧超时RED。

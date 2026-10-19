@@ -368,6 +368,8 @@ class RequestEvidence:
         self.release = threading.Event()
         self.fault_used = False
         self.committed_states = []
+        self.hello_count = 0
+        self.hello_observations = []
         self.records: list[dict] = []
         self.lock = threading.Lock()
 
@@ -375,6 +377,37 @@ class RequestEvidence:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         record = {"method": scope["method"], "path": scope["path"], "status": None}
+        if scope["path"] == "/api/v1/agents/hello":
+            observation = {
+                "started": time.monotonic(),
+                "status": None,
+                "response_generated": False,
+                "send_complete": False,
+            }
+            with self.lock:
+                self.hello_count += 1
+                if len(self.hello_observations) < 8:
+                    self.hello_observations.append(observation)
+            original_send = send
+
+            async def observed_send(message):
+                with self.lock:
+                    if message["type"] == "http.response.start":
+                        status = message.get("status")
+                        observation["status"] = (
+                            status if type(status) is int and 100 <= status <= 599 else None
+                        )
+                    if message["type"] == "http.response.body" and not message.get(
+                        "more_body", False
+                    ):
+                        observation["response_generated"] = True
+                await original_send(message)
+                if message["type"] == "http.response.body" and not message.get("more_body", False):
+                    with self.lock:
+                        observation["send_complete"] = True
+                        observation["completed"] = time.monotonic()
+
+            send = observed_send
         if scope["path"].endswith("/events"):
             self.event_count += 1
         if scope["path"].endswith("/renew"):
@@ -446,6 +479,29 @@ class RequestEvidence:
         finally:
             with self.lock:
                 self.records.append(record)
+
+
+def hello_evidence(evidence):
+    """ASGI send completion is not proof that a client received the response."""
+    now = time.monotonic()
+    with evidence.lock:
+        observations = []
+        for item in evidence.hello_observations[:8]:
+            elapsed = max(0, int((item.get("completed", now) - item["started"]) * 1000))
+            observations.append(
+                {
+                    "status": item["status"],
+                    "response_generated": item["response_generated"],
+                    "send_complete": item["send_complete"],
+                    "elapsed_ms": min(60000, elapsed),
+                    "elapsed_capped": elapsed > 60000,
+                }
+            )
+        return {
+            "count": min(1000, evidence.hello_count),
+            "count_capped": evidence.hello_count > 1000,
+            "observations": observations,
+        }
 
 
 @contextmanager
