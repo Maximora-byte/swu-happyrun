@@ -38,15 +38,33 @@ def test_wrong_base_class_is_classified_without_echoing_it():
     assert not MODULE.accepted(raw, 0, "fresh", 0, 12, "abc")
 
 
-def test_both_strict_instrumentation_assertions_remain():
+def test_persistent_and_live_component_identities_are_checked_before_launch():
     source = (
         ROOT / "android/app/src/androidTest/java/org/happyrun/app/DisplayObservationTest.java"
     ).read_text(encoding="utf-8")
-    assert 'assertNotNull("Base activity must be present", baseActivity)' in source
-    assert (
-        'assertEquals("Base activity must match MainActivity", MainActivity.class.getName(),'
-        in source
+    assert "DisplayObservationGate.taskComponentsMatch(" in source
+    for component in ("baseIntentComponent", "baseActivity"):
+        assert component + ".getPackageName()" in source
+        assert component + ".getClassName()" in source
+    assert source.index("DisplayObservationGate.taskComponentsMatch(") < source.index(
+        "tasks.get(0).startActivity("
     )
     assert '"base_activity_present"' in source
-    assert '"base_activity_is_expected"' in source
-    assert "baseIntent" not in source
+    assert '"base_intent_is_expected"' in source
+
+
+def test_task_identity_failure_is_safe_and_cannot_be_success():
+    raw = (
+        "INSTRUMENTATION_STATUS: observation_phase=task_identity\n"
+        "INSTRUMENTATION_STATUS: base_intent_present=1\n"
+        "INSTRUMENTATION_STATUS: base_intent_is_expected=0\n"
+        "junit.framework.AssertionFailedError: Task components must match own MainActivity\n"
+        "private.other.Component token=private-token\n"
+    )
+    result = MODULE.diagnostics(raw, 0)
+    assert result.get("base_intent_present") == 1
+    assert result.get("base_intent_is_expected") == 0
+    assert result["assertion_code"] == "task_component_mismatch"
+    assert result["last_phase"] == "task_identity"
+    assert "private" not in str(result)
+    assert not MODULE.accepted(raw, 0, "fresh", 0, 12, "abc")

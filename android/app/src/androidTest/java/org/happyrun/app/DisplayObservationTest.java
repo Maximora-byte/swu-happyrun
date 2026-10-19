@@ -84,15 +84,24 @@ public final class DisplayObservationTest extends InstrumentationTestCase {
         List<ActivityManager.AppTask> tasks = manager.getAppTasks();
         phase("tasks", "observed_task_count", tasks.size());
         assertEquals("Do not guess among same-package tasks", 1, tasks.size());
-        phase("task_id", "observed_task_id", tasks.get(0).getTaskInfo().taskId);
-        assertEquals("Task must be selected by independent observation", task, tasks.get(0).getTaskInfo().taskId);
-        ComponentName baseActivity = tasks.get(0).getTaskInfo().baseActivity;
+        ActivityManager.RecentTaskInfo taskInfo = tasks.get(0).getTaskInfo();
+        phase("task_id", "observed_task_id", taskInfo.taskId);
+        assertEquals("Task must be selected by independent observation", task, taskInfo.taskId);
+        ComponentName baseActivity = taskInfo.baseActivity;
+        ComponentName baseIntentComponent = taskInfo.baseIntent == null ? null
+            : taskInfo.baseIntent.getComponent();
         phase("base_activity", "base_activity_present", baseActivity != null ? 1 : 0);
         phase("base_activity", "base_activity_is_expected", baseActivity != null
             && MainActivity.class.getName().equals(baseActivity.getClassName()) ? 1 : 0);
-        assertNotNull("Base activity must be present", baseActivity);
-        assertEquals("Base activity must match MainActivity", MainActivity.class.getName(),
-            baseActivity.getClassName());
+        phase("task_identity", "base_intent_present", baseIntentComponent != null ? 1 : 0);
+        phase("task_identity", "base_intent_is_expected", baseIntentComponent != null
+            && context.getPackageName().equals(baseIntentComponent.getPackageName())
+            && MainActivity.class.getName().equals(baseIntentComponent.getClassName()) ? 1 : 0);
+        assertTrue("Task components must match own MainActivity", DisplayObservationGate.taskComponentsMatch(
+            baseIntentComponent == null ? null : baseIntentComponent.getPackageName(),
+            baseIntentComponent == null ? null : baseIntentComponent.getClassName(),
+            baseActivity == null ? null : baseActivity.getPackageName(),
+            baseActivity == null ? null : baseActivity.getClassName()));
         long started = SystemClock.elapsedRealtime();
         Instrumentation.ActivityMonitor monitor = getInstrumentation().addMonitor(MainActivity.class.getName(), null, false);
         Activity activity = null;

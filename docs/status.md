@@ -252,3 +252,16 @@ optional job 均在首次 display observation 失败。安全报告显示安装�
 可信 push、`android-apk` job、API31。其余 Android job 仍构建和静态检查，
 runtime 显式 `not_run`。本次单机采证不能替代最终完整矩阵，也不表示已修复
 显示问题。实际运行结果以新提交的 Actions 为准。
+
+### b364 单机诊断与任务身份修订
+
+`b3642f7215135fb90230b13ff1bdcfb5930ae227` 普通 API31 的实际报告明确
+`base_activity_missing`，`base_activity_present=0`；安装身份及唯一 task 匹配。
+其余 Android runtime 按计划未执行；Windows/Linux、浏览器、容器及 Android
+构建/静态检查通过。此结果定位了失败断言，没有证明替代实现已通过。
+
+修订先严格校验持久 `baseIntent` 的组件包名和类名；若 `baseActivity` 非空，
+同样必须精确匹配。仅在原 `AppTask` 中启动本应用，启动后的同 task/display、
+窗口焦点、可见控件、签名与时效门槛全部保留。候选继续只授权精确 before
+`b3642f7215135fb90230b13ff1bdcfb5930ae227` 的普通 API31 验证，后续完整矩阵
+仍待修订实际运行结果。资源 R1–R5 的独立候选未加入本次修订。

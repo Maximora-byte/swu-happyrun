@@ -53,6 +53,7 @@ PHASES = frozenset(
         "tasks",
         "task_id",
         "base_activity",
+        "task_identity",
         "launch",
         "activity",
         "viewport",
@@ -72,9 +73,12 @@ METRICS = frozenset(
         "installed_version_code",
         "base_activity_present",
         "base_activity_is_expected",
+        "base_intent_present",
+        "base_intent_is_expected",
     }
 )
 ASSERTIONS = {
+    "Task components must match own MainActivity": "task_component_mismatch",
     "Base activity must be present": "base_activity_missing",
     "Base activity must match MainActivity": "base_activity_mismatch",
     "Requires a disposable instance with no personal data": "isolation_missing",

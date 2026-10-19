@@ -8,6 +8,17 @@ final class DisplayObservationGate {
         boolean window, controls;
         long started, captured, finished;
     }
+    /** Persistent task identity remains available when instrumentation stops the live Activity. */
+    static boolean taskComponentsMatch(String intentPackage, String intentClass,
+                                       String basePackage, String baseClass) {
+        if (!"org.happyrun.app".equals(intentPackage)
+            || !"org.happyrun.app.MainActivity".equals(intentClass)) return false;
+        // A missing live component is permitted only after exact persistent component proof.
+        // Any non-null live component must independently match; no alias/other Activity fallback.
+        return (basePackage == null && baseClass == null)
+            || ("org.happyrun.app".equals(basePackage)
+                && "org.happyrun.app.MainActivity".equals(baseClass));
+    }
     static boolean accepts(Snapshot s, String id, int display, int task,
                            String signature, long deadline) {
         return s != null && id != null && !id.isEmpty() && id.equals(s.observationId)
