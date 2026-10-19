@@ -52,3 +52,9 @@ API35 的同轮日志显示 `Unknown AVD name`：创建工具和模拟器未看�
 ### 首次显示诊断
 
 后续 cf3cfee 候选的官方 API31/35 AVD 已实际启动并安装 APK；`am start -W` 返回 timeout，尚未进入11项仪器测试。当前没有应用 logcat，不能把原因认定为应用死锁或仅软件模式慢。启动探针单次启动，保留原状态，并在有界窗口核对 MainActivity resumed、精确包名和普通版 app_scroll/task_state/start_simulation 的非零 UI 区域；ANR、崩溃、无 UI 或超界均失败。timeout 后即使界面核验通过，也不表示启动性能已经验收。诊断只针对无账号的临时官方模拟器，保存 activity/window、logcat、pid、UI XML、截图与判定，按精确白名单上传；不自动运行模拟或 Root，不改变锁屏设置。后续带向导版需要独立调整首屏标识并复测，不能直接沿用普通版控件假设。
+
+### 本轮临时 CI 硬件加速
+
+629f2e9 的实测证据显示官方模拟器系统 UI/电话服务 ANR，首屏被遮挡；API35 另有启动超时，不能把这些当成应用通过。经本轮明确批准，下一次 `dot/android-app` 从 `629f2e9b86d7a72502f528abd1c1edf999d6a842` 出发的精确 push 事件可给当前官方 GitHub 临时测试账户添加 `/dev/kvm` 的 named-user `rw` ACL。工作流和脚本同时核对仓库、分支、事件 before/after、官方 hosted Linux runner、API31/35、字符设备及非 root uid；缺字段即拒绝。PR、其他分支和后续提交默认不执行授权步骤。只验证已有设备权限与 `emulator -accel-check`，不改全员权限、系统组、udev或用户电脑；临时 runner 销毁后该 ACL 不保留。这不是未来测试的长期授权。
+
+依据 [GitHub push 事件定义](https://docs.github.com/en/webhooks/webhook-events-and-payloads#push)，before/after 分别是本次 ref 更新前后提交；[官方默认环境变量](https://docs.github.com/en/actions/reference/workflows-and-actions/variables)提供事件路径、当前提交及 hosted runner 类型。真实硬件加速与仪器验收结果仍必须读取本轮准确 push 的日志，不能从 ACL fixture 测试推断。

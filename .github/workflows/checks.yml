@@ -113,6 +113,15 @@ jobs:
           mkdir -p qa/android
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee qa/android/signature.txt
           sha256sum android/app/build/outputs/apk/debug/app-debug.apk > qa/android/SHA256SUMS
+      - name: Enable current-account KVM for single approved push transition
+        if: ${{ github.event_name == 'push' && github.repository == 'Maximora-byte/swu-happyrun' && github.ref == 'refs/heads/dot/android-app' && github.event.before == '629f2e9b86d7a72502f528abd1c1edf999d6a842' }}
+        env:
+          HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: |
+          set -euo pipefail
+          mkdir -p qa/android
+          python scripts/check_ci_kvm.py 2>&1 | tee qa/android/kvm-check.txt
       - name: Install and exercise APK on official Android emulator
         env:
           HAPPYRUN_ANDROID_API: ${{ matrix.api }}
@@ -129,6 +138,7 @@ jobs:
             qa/android/SHA256SUMS
             qa/android/signature.txt
             qa/android/emulator.log
+            qa/android/kvm-check.txt
             qa/android/launch.txt
             qa/android/launch-activity.txt
             qa/android/launch-window.txt
