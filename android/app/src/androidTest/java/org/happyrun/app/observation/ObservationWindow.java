@@ -24,7 +24,7 @@ public final class ObservationWindow {
     private final List<Sample> samples = new ArrayList<>();
     private final Map<String,Long> last = new HashMap<>();
     public ObservationWindow(long start, long durationNanos, int limit) {
-        if(start<0 || durationNanos<=0 || durationNanos>30000000000L || limit<1 || limit>128)
+        if(start<0 || durationNanos<=0 || durationNanos>5000000000L || limit<1 || limit>128)
             throw new IllegalArgumentException("observation_budget_invalid");
         this.start=start; this.duration=durationNanos; this.limit=limit;
     }
@@ -35,12 +35,14 @@ public final class ObservationWindow {
         int size="location".equals(channel)?2:("gravity".equals(channel)?3:0);
         if(size==0 || values==null || values.length!=size || timestamp<start || timestamp>now
                 || timestamp<=last.getOrDefault(channel,-1L) || !Double.isFinite(accuracy))return false;
+        if("gravity".equals(channel) && (accuracy!=Math.rint(accuracy) || accuracy < -1 || accuracy > 3))return false;
         for(double v:values)if(!Double.isFinite(v))return false;
         if("location".equals(channel) && (Math.abs(values[0])>90 || Math.abs(values[1])>180 || accuracy<0))return false;
         if(samples.size()>=limit) { closed=true; return false; }
         samples.add(new Sample(channel,timestamp,values,accuracy));last.put(channel,timestamp);
         return true;
     }
+    public long startNanos() { return start; }
     public synchronized void close() { closed=true; }
     public synchronized List<Sample> snapshot() { return new ArrayList<>(samples); }
 }

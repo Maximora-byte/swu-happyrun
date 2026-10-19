@@ -84,3 +84,82 @@ and queue semantics per channel, location input CRS, gyro units/axes/timing, and
 current private R1 binding/R2 calibration/authorization. TYPE_GRAVITY availability
 alone does not prove it corresponds to vendor gyro. Unknown remains unsupported.
 No school/third-party app execution or school record verification is included.
+
+## N2 private readback bridge (software candidate, device acceptance pending)
+
+`OwnProbe(adb, binding, binding_check=..., authorization_check=...)` consumes the
+existing `MumuBinding`; `sample("location" | "gravity", duration_ms=1..5000)` returns
+at most 128 immutable `OwnSample` objects. Location values are `(latitude,
+longitude)` and accuracy is meters. Gravity values are Android `TYPE_GRAVITY`
+`(x,y,z)` in m/s² and accuracy remains Android's integer sensor status. Vendor
+MuMu `gyro --angle` takes angles according to the
+[MuMu command reference](https://mumu.163.com/help/20240726/35047_1170006.html).
+These channels and units are different; gravity never enables gyro or steps.
+
+The actual bridge invokes only
+`org.happyrun.app.observation.AndroidObservationTest#testPrivateReadbackWhenRequested`
+in the paired `org.happyrun.app.test` instrumentation package. The method requires
+the `selfProbe` build type, reads the boot ID itself, collects real own-package
+callbacks, and writes a CREATE_NEW/nofollow file under the own app's private files
+directory. Ordinary and remoteQa builds do not enter this private sampling path;
+no manifest permission is added. Precise location permission must already be
+chosen by the user; no grant command is issued. No cached/last-known location API
+is used. Device timestamps must fall within the new device-side window and be
+strictly increasing. Host monotonic time is never subtracted from Android time.
+
+The host fetches that single nonce-named result with `adb exec-out run-as` and
+strictly checks the nonce, binding digest, boot, channel, window, sample shape,
+accuracy and the 64 KiB private-JSON budget. Capture reuses the exact #87
+`65d44ae8747affd10fc7928e664cb9002cf0b120` implementation (1 MiB per stream,
+strict UTF-8, shared pending-process/reader gate); the returned private JSON is
+then independently capped at 64 KiB. Re-encoding normalized UTF-8 does not change
+JSON numeric values. Raw output and argv are never printed. Instrumentation has
+an explicit duration-plus-10-second host startup/completion budget; private fetch
+and deletion each have five seconds, and each capture has its separate 0.5-second
+cleanup budget. This is bounded own-app instrumentation, including listener
+registration and a private temporary file, not a purely side-effect-free query.
+It does not authorize using the readonly helper for arbitrary device writes. The
+private remote file is removed even when decoding fails. Failed removal or an
+uncertain instrumentation exit returns `private_cleanup_unconfirmed`, never
+samples, and that probe instance cannot start another observation. An adb timeout
+cannot prove the Android process ended; a late private result may remain and
+requires local inspection/recovery before a new probe instance is used. The
+latch is per object only; it is not a persisted cross-CLI recovery lock. The
+raised error preserves the original fixed `primary_code` alongside the cleanup
+failure, and the CLI exposes only those fixed reason codes. Listener
+cleanup is not an injection stop or queue-empty acknowledgment.
+
+Use the same-source, same-signature selfProbe app/test pair verified by the existing
+`check_selfprobe_apks.py`; installation and Android permission selection remain
+Codex/user operations. This change does not generate, replace or mix APKs or CA
+material. Android SDK compilation is still a required normal-CI check on the
+published exact head, separate from the JVM/Python tests.
+
+PowerShell, after installing the verified package pair and preparing a fresh local
+binding observation for the own package:
+
+```powershell
+python scripts/check_mumu_virtual_channel.py --channel location
+python scripts/check_mumu_virtual_channel.py --adb $Adb --binding $PrivateBinding --channel location --duration-ms 1000 --observe-own-channel --isolated-no-personal-data --private-output $NewPrivateEvidence
+```
+
+The first command is a zero-process preview. The second is a bounded read only,
+checks binding freshness and the actual selected device boot before/after the
+observation, and prints only fixed status/channel/count/calibration/stop fields.
+`--private-output` is optional, exclusively creates a new local file, and must
+stay local. It contains sample values and local correlation metadata, so never
+attach it to an issue, public report, or distribution. Restrict its containing
+folder to the current Windows user; POSIX creation requests mode 0600. The
+binding input is opened as a regular file, rejects links/reparse points in the
+file and parent chain, and reads only limit-plus-one bytes. Output rejects linked
+parent directories and exclusively creates a new regular file. These checks do
+not create or broaden a Windows ACL; that private-directory setup remains the
+operator's responsibility.
+
+After N1's write/stop/queue prerequisites are independently accepted, Codex can
+invoke this reader after each of two asymmetric controlled virtual targets.
+Declare the target-to-readback error and latency budget in that local experiment.
+Those observations establish only the tested point mappings and elapsed windows;
+they do not prove all CRS transformations, no vendor queue, effective trajectory
+stop, step counts, or any accepted school record. Missing callbacks, permissions,
+cleanup or channel evidence remain failures/unknown, and capabilities stay empty.
