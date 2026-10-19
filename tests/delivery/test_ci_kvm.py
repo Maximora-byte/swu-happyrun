@@ -21,14 +21,14 @@ def setup(monkeypatch, tmp_path):
     for key, value in {
         "HAPPYRUN_KVM_APPROVED_THIS_RUN": "true",
         "GITHUB_ACTIONS": "true",
-        "GITHUB_JOB": "android-apk",
+        "GITHUB_JOB": "remote-https",
         "GITHUB_EVENT_NAME": "push",
         "GITHUB_REF": "refs/heads/dot/android-foreground-agent",
         "GITHUB_SHA": "a" * 40,
         "GITHUB_REPOSITORY": "Maximora-byte/swu-happyrun",
         "RUNNER_ENVIRONMENT": "github-hosted",
         "RUNNER_OS": "Linux",
-        "HAPPYRUN_ANDROID_API": "31",
+        "HAPPYRUN_ANDROID_API": "35",
         "ANDROID_HOME": "/synthetic-sdk",
     }.items():
         monkeypatch.setenv(key, value)
@@ -36,7 +36,7 @@ def setup(monkeypatch, tmp_path):
     event.write_text(
         json.dumps(
             {
-                "before": "73af56fd3f92a87d782fa33b80bdde480c75b6d9",
+                "before": "f705f91409df88df9614aa4dd53c136dd00ed8a0",
                 "after": "a" * 40,
                 "ref": "refs/heads/dot/android-foreground-agent",
                 "repository": {"full_name": "Maximora-byte/swu-happyrun"},
@@ -122,7 +122,7 @@ def test_missing_device_or_failed_verification_blocks(setup, monkeypatch, kind):
 
 def test_workflow_gate_binds_exact_single_transition():
     workflow = (ROOT / ".github/workflows/checks.yml").read_text(encoding="utf-8")
-    assert "github.event.before == '73af56fd3f92a87d782fa33b80bdde480c75b6d9'" in workflow
+    assert "github.event.before == 'f705f91409df88df9614aa4dd53c136dd00ed8a0'" in workflow
     assert "github.ref == 'refs/heads/dot/android-foreground-agent'" in workflow
     assert "github.event_name == 'push'" in workflow
     assert "workflow_dispatch:" not in workflow
@@ -288,8 +288,13 @@ def test_previous_server_stack_parent_is_consumed(setup, monkeypatch):
 def test_exact_final_matrix_acl_is_current_uid_only(setup, monkeypatch, job, api):
     monkeypatch.setenv("GITHUB_JOB", job)
     monkeypatch.setenv("HAPPYRUN_ANDROID_API", api)
-    assert PROBE.main() == 0
-    assert setup[1][0] == ["sudo", "-n", "setfacl", "-n", "-m", "u:1001:rw", "/dev/kvm"]
+    if (job, api) == ("remote-https", "35"):
+        assert PROBE.main() == 0
+        assert setup[1][0] == ["sudo", "-n", "setfacl", "-n", "-m", "u:1001:rw", "/dev/kvm"]
+    else:
+        with pytest.raises(SystemExit):
+            PROBE.main()
+        assert not setup[1]
 
 
 def test_previous_restore_parent_is_consumed(setup, monkeypatch):
@@ -316,6 +321,36 @@ def test_previous_234_parent_is_consumed(setup):
     event_path = Path(PROBE.os.environ["GITHUB_EVENT_PATH"])
     event = json.loads(event_path.read_text(encoding="utf-8"))
     event["before"] = "234d280c23f5275371a5092bfdc7a4b7ea302f65"
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        PROBE.main()
+    assert not setup[1]
+
+
+def test_previous_73af_parent_is_consumed(setup):
+    event_path = Path(PROBE.os.environ["GITHUB_EVENT_PATH"])
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+    event["before"] = "73af56fd3f92a87d782fa33b80bdde480c75b6d9"
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        PROBE.main()
+    assert not setup[1]
+
+
+def test_previous_e490_parent_is_consumed(setup):
+    event_path = Path(PROBE.os.environ["GITHUB_EVENT_PATH"])
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+    event["before"] = "e490dce3b8eec56d2db5ccad939ec49fb3fa73ed"
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        PROBE.main()
+    assert not setup[1]
+
+
+def test_previous_5eb_parent_is_consumed(setup):
+    event_path = Path(PROBE.os.environ["GITHUB_EVENT_PATH"])
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+    event["before"] = "5eb00e27f59a7fe927dff389e4cdd6d8d8665a55"
     event_path.write_text(json.dumps(event), encoding="utf-8")
     with pytest.raises(SystemExit):
         PROBE.main()

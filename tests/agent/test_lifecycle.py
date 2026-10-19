@@ -44,16 +44,20 @@ def test_handlers_are_restored_and_backoff_is_interruptible():
     assert {sig: signal.getsignal(sig) for sig in previous} == previous
 
 
-def test_signal_handler_does_not_reenter_event_condition_in_real_process():
+def test_signal_handler_does_not_reenter_event_condition_in_real_process(tmp_path):
     import os
     import subprocess
     import sys
+    import time
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[2]
+    ready = tmp_path / "signal-ready"
     code = """
 import signal
+import sys
 import threading
+from pathlib import Path
 from swu_happyrun.agent.lifecycle import Shutdown, ShutdownRequested
 shutdown = Shutdown()
 # Retain the original synchronization primitive when testing the old version;
@@ -62,6 +66,9 @@ event = getattr(shutdown, "event", threading.Event())
 previous = signal.getsignal(signal.SIGTERM)
 with shutdown.signals():
     with event._cond:
+        # Tell the parent imports/setup are complete, then wait for its timer.
+        Path(sys.argv[1]).write_text("ready", encoding="utf-8")
+        assert sys.stdin.readline() == "go\\n"
         signal.raise_signal(signal.SIGINT)
         signal.raise_signal(signal.SIGTERM)
     try:
@@ -73,15 +80,26 @@ with shutdown.signals():
 assert signal.getsignal(signal.SIGTERM) is previous
 """
     process = subprocess.Popen(
-        [sys.executable, "-c", code],
+        [sys.executable, "-c", code, str(ready)],
         env={**os.environ, "PYTHONPATH": str(root / "src")},
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
     try:
+        # Startup/imports have their own bounded budget; they are not evidence
+        # of signal-handler deadlock. The original 3s budget starts at "go".
+        startup_deadline = time.monotonic() + 30
+        while not ready.exists():
+            if process.poll() is not None:
+                stdout, stderr = process.communicate(timeout=3)
+                pytest.fail(f"Signal subprocess exited before readiness: {stderr or stdout}")
+            if time.monotonic() >= startup_deadline:
+                pytest.fail("Signal subprocess startup/import timed out before readiness")
+            time.sleep(0.01)
         try:
-            stdout, stderr = process.communicate(timeout=3)
+            stdout, stderr = process.communicate(input="go\n", timeout=3)
         except subprocess.TimeoutExpired:
             pytest.fail("Signal handler deadlocked while the Event condition was held")
         assert process.returncode == 0, stderr

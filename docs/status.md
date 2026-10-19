@@ -338,3 +338,22 @@ optional API31/35 通过；历史 af3 同类成功与本次失败均保留。
 精确 before73af 的一次可信 push 恢复普通/optional/HTTPS × API31/35
 完整六组合，旧 before234 拒绝，其他事件运行明确 not_run。最终结果以
 准确新 HEAD 为准，不合并不同 HEAD 的绿灯冒充统一验收。
+
+### e490 后续独立验收与修订
+
+PR40 已于 2026-10-19 独立接受并合入 dot/android-remote-agent，merge
+2d0fcc550f9c1f6cf8cc6e0106dcafd106cf181a；Issue36 已关闭。上方待接受文字
+仅保留历史时点。e490 本轮普通四组合与HTTPS/API31通过，HTTPS/API35
+仍失败：一个body已通过但fixture shutdown失败，以及Back/Home停止观测
+失败；具体根因尚未全部确认，不能以73af成功覆盖。
+
+PR55 已于 08:33:59 合入本候选分支（5eb00e27），Issue52 于 08:34:05 关闭。
+PR56 于 08:46:43 合入本候选分支（f705f914），Issue53 于 08:46:57 关闭。
+本后续组合保留已独立接受的 Windows symlink 与 Issue53分层校准/绑定/
+最终租约授权检查修订，并增加固定安全Java阶段与TLS连接状态诊断。
+fixture退出失败后余下case明确not_run且suite失败，避免遗留线程污染后续
+归因；不放宽产品、测试预算或成功条件。精确依赖HEAD见发布PR。
+
+下一次仅本分支精确beforef705f914可信push的remote-https/API35运行原完整顺序；
+其余组合构建/静态检查，runtime明确not_run。当前候选仍非最终验收，
+真实MuMu当前版本及真实学校记录未由这些模拟软件结果证明。

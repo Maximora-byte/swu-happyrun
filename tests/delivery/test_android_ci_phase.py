@@ -13,14 +13,14 @@ spec.loader.exec_module(phase)
 def grant():
     env = dict(
         GITHUB_ACTIONS="true",
-        GITHUB_JOB="android-apk",
+        GITHUB_JOB="remote-https",
         RUNNER_ENVIRONMENT="github-hosted",
         RUNNER_OS="Linux",
         GITHUB_REPOSITORY=phase.REPOSITORY,
         GITHUB_EVENT_NAME="push",
         GITHUB_REF=phase.BRANCH,
         GITHUB_SHA="a" * 40,
-        HAPPYRUN_ANDROID_API="31",
+        HAPPYRUN_ANDROID_API="35",
     )
     event = dict(
         repository={"full_name": phase.REPOSITORY},
@@ -181,10 +181,28 @@ def test_dirty_checkout_rejected_before_provenance(monkeypatch, tmp_path):
 def test_exact_final_matrix_only(job, api):
     env, event = grant()
     env.update(GITHUB_JOB=job, HAPPYRUN_ANDROID_API=api)
-    assert phase.authorized(env, event)
+    assert phase.authorized(env, event) == ((job, api) == ("remote-https", "35"))
 
 
 def test_previous_diagnostic_transition_is_consumed():
     env, event = grant()
     event["before"] = "234d280c23f5275371a5092bfdc7a4b7ea302f65"
+    assert not phase.authorized(env, event)
+
+
+def test_previous_73af_transition_is_consumed():
+    env, event = grant()
+    event["before"] = "73af56fd3f92a87d782fa33b80bdde480c75b6d9"
+    assert not phase.authorized(env, event)
+
+
+def test_previous_e490_transition_is_consumed():
+    env, event = grant()
+    event["before"] = "e490dce3b8eec56d2db5ccad939ec49fb3fa73ed"
+    assert not phase.authorized(env, event)
+
+
+def test_previous_5eb_transition_is_consumed():
+    env, event = grant()
+    event["before"] = "5eb00e27f59a7fe927dff389e4cdd6d8d8665a55"
     assert not phase.authorized(env, event)

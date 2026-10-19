@@ -128,8 +128,9 @@ jobs:
       - name: Enable explicitly approved one-transition KVM access
         if: >-
           steps.runtime_gate.outputs.authorized == 'true' &&
+          github.job == 'remote-https' && matrix.api == 35 &&
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == '73af56fd3f92a87d782fa33b80bdde480c75b6d9' &&
+          github.event.before == 'f705f91409df88df9614aa4dd53c136dd00ed8a0' &&
           github.event_name == 'push' && github.ref == 'refs/heads/dot/android-foreground-agent' &&
           github.event.after == github.sha
         env:
@@ -251,8 +252,9 @@ jobs:
       - name: Enable explicitly approved one-transition KVM access
         if: >-
           steps.runtime_gate.outputs.authorized == 'true' &&
+          github.job == 'remote-https' && matrix.api == 35 &&
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == '73af56fd3f92a87d782fa33b80bdde480c75b6d9' &&
+          github.event.before == 'f705f91409df88df9614aa4dd53c136dd00ed8a0' &&
           github.event_name == 'push' && github.ref == 'refs/heads/dot/android-foreground-agent' &&
           github.event.after == github.sha
         env:

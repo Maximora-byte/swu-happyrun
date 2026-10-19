@@ -35,6 +35,19 @@ public final class RemoteForegroundActivityAcceptanceTest extends Instrumentatio
     private final Set<RemoteFakeDriver> drivers=Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<RemoteForegroundSession> sessions=Collections.newSetFromMap(new IdentityHashMap<>());
     private String secret;
+    private String diagnosticPhase="open_main_begin";
+    private void phase(String name) {
+        diagnosticPhase=name;
+        try {marker("PHASE "+name);}
+        catch(RuntimeException diagnosticUnavailable) { /* Diagnostics cannot replace a body failure. */ }
+    }
+    private void errorMarker(String channel,Throwable error) {
+        String kind=error.getClass().getSimpleName();
+        if(!java.util.Arrays.asList("AssertionFailedError","AssertionError","SecurityException",
+                "IOException","IllegalStateException","RuntimeException","NullPointerException").contains(kind))kind="other";
+        try {marker(channel+" kind="+kind+" phase="+diagnosticPhase);}
+        catch(RuntimeException diagnosticUnavailable) { /* Preserve the original failure. */ }
+    }
     private String arg(String name) {
         String value=((InstrumentationTestRunner)getInstrumentation()).getArguments().getString(name);
         assertNotNull("Missing synthetic argument",value);return value;
@@ -60,11 +73,16 @@ public final class RemoteForegroundActivityAcceptanceTest extends Instrumentatio
     private void marker(String value) {Bundle b=new Bundle();b.putString("stream","\nFOREGROUND_QA "+value+"\n");getInstrumentation().sendStatus(0,b);}
     private RemoteAgentActivity openFromMain()throws Exception {
         Intent intent=new Intent(getInstrumentation().getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        phase("open_main_begin");
         MainActivity main=(MainActivity)getInstrumentation().startActivitySync(intent);
+        phase("open_main_return");
         Instrumentation.ActivityMonitor monitor=getInstrumentation().addMonitor(RemoteAgentActivity.class.getName(),null,false);
         try {
+            phase("entry_click_begin");
             ui(()->{assertTrue(main.findViewById(id(main,"remote_entry")).performClick());});
+            phase("entry_click_return");
             Activity opened=monitor.waitForActivityWithTimeout(5000);assertNotNull("Main entry did not open remote page",opened);
+            phase("remote_page_observed");
             return (RemoteAgentActivity)opened;
         }finally{getInstrumentation().removeMonitor(monitor);}
     }
@@ -101,8 +119,10 @@ public final class RemoteForegroundActivityAcceptanceTest extends Instrumentatio
         assertTrue(new File(directory,digest.toString()).createNewFile());
     }
     public void testScenario()throws Exception {
-        String scenario=arg("scenario");secret=arg("token");page=openFromMain();
+        String scenario=arg("scenario");secret=arg("token");
+        Throwable primary=null;
         try {
+            page=openFromMain();
             assertFalse("Page connected automatically",enabled("remote_stop"));
             if(scenario.equals("storage_latch"))storageFault();
             connect(scenario.equals("rapid_toggle"));
@@ -133,13 +153,25 @@ public final class RemoteForegroundActivityAcceptanceTest extends Instrumentatio
                 marker(running?"RUNNING":"WAITING");
                 if(scenario.startsWith("disconnect"))ui(()->page.findViewById(id(page,"remote_stop")).performClick());
                 else if(scenario.startsWith("back")) {
+                    phase("back_send_begin");
                     getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+                    phase("back_send_return");
                     await("Back stopped old Activity",()->!foreground(),5000);
+                    phase("leave_observed");
                 } else if(scenario.startsWith("home")) {
-                    try(android.os.ParcelFileDescriptor command=getInstrumentation().getUiAutomation().executeShellCommand("input keyevent 3")){
-                        try(java.io.InputStream output=new android.os.ParcelFileDescriptor.AutoCloseInputStream(command)){while(output.read()!=-1){}}
+                    phase("home_automation_begin");
+                    android.app.UiAutomation automation=getInstrumentation().getUiAutomation();
+                    phase("home_automation_return");
+                    phase("home_shell_begin");
+                    try(android.os.ParcelFileDescriptor command=automation.executeShellCommand("input keyevent 3")){
+                        phase("home_shell_return");
+                        try(java.io.InputStream output=new android.os.ParcelFileDescriptor.AutoCloseInputStream(command)){
+                            while(output.read()!=-1){}phase("home_stream_eof");
+                        }
                     }
+                    phase("home_stream_closed");
                     await("Home really backgrounded Activity",()->!foreground()&&!page.hasWindowFocus(),5000);
+                    phase("leave_observed");
                 } else if(scenario.startsWith("rotate")) {
                     RemoteAgentActivity old=page;
                     Instrumentation.ActivityMonitor monitor=getInstrumentation().addMonitor(RemoteAgentActivity.class.getName(),null,false);
@@ -150,20 +182,36 @@ public final class RemoteForegroundActivityAcceptanceTest extends Instrumentatio
                     }finally{getInstrumentation().removeMonitor(monitor);}
                 }
             }
+            phase("worker_release_begin");
             await("worker session reference released",()->field(page,"session")==null&&!((RemoteSessionGate)field(page,"gate")).busy(),8000);
+            phase("worker_release_return");
             assertTrue("Driver not stopped",drivers.stream().allMatch(RemoteFakeDriver::stopped));
+            phase("reopen_begin");
             if(scenario.startsWith("home")) {
                 RemoteAgentActivity old=page;
                 ui(()->old.startActivity(new Intent(old,RemoteAgentActivity.class).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)));
                 await("foreground return",()->foreground()&&page.hasWindowFocus(),5000);
             } else if(scenario.startsWith("back"))page=openFromMain();
+            phase("reopen_return");
             assertFalse("Automatic reconnect after leave",enabled("remote_stop"));
-            noStoredCredential();marker("STOPPED starts="+starts());
+            phase("credential_check_begin");
+            noStoredCredential();
+            phase("credential_check_return");marker("STOPPED starts="+starts());
             // Host creates another queued task after this marker. No UI action may reconnect.
-            SystemClock.sleep(3200);observe();assertFalse(enabled("remote_stop"));assertNull(field(page,"session"));noStoredCredential();
+            SystemClock.sleep(3200);observe();assertFalse(enabled("remote_stop"));assertNull(field(page,"session"));phase("credential_check_begin");noStoredCredential();phase("credential_check_return");
             marker("PASS starts="+starts()+" stopped=true");
+        } catch(Exception | AssertionError failure) {
+            primary=failure;errorMarker("ERROR",failure);throw failure;
         } finally {
-            if(page!=null)ui(()->page.finish());
+            phase("cleanup_begin");
+            try {
+                if(page!=null)ui(()->page.finish());
+                phase("cleanup_return");
+            } catch(Exception | AssertionError cleanupFailure) {
+                errorMarker("CLEANUP_ERROR",cleanupFailure);
+                if(primary==null)throw cleanupFailure;
+                // The original body failure is already pending; cleanup must not replace it.
+            }
         }
     }
 }

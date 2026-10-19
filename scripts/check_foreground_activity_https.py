@@ -21,7 +21,9 @@ from remote_https_fixture import (
     error_type,
     failure_evidence,
     instrumentation_evidence,
+    remaining_not_run,
     server_fixture,
+    suite_contaminated,
     trusted_client,
 )
 
@@ -326,6 +328,9 @@ def main():
                 "diagnostics": failure_evidence(error, diagnostics),
             }
         results.append(result)
+        contaminated = suite_contaminated(diagnostics)
+        if contaminated:
+            results.extend(remaining_not_run(CASES, len(results)))
         print("FOREGROUND_ACTIVITY_QA", case, result["result"], flush=True)
         (args.output / "report.json").write_text(
             json.dumps(
@@ -340,6 +345,8 @@ def main():
             + "\n",
             encoding="utf-8",
         )
+        if contaminated:
+            break
     if any(r["result"] != "passed" for r in results):
         raise SystemExit(1)
 

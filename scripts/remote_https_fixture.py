@@ -102,10 +102,115 @@ def project_thread_evidence():
     return results[:16]
 
 
+JAVA_PHASES = frozenset(
+    {
+        "open_main_begin",
+        "open_main_return",
+        "entry_click_begin",
+        "entry_click_return",
+        "remote_page_observed",
+        "back_send_begin",
+        "back_send_return",
+        "home_automation_begin",
+        "home_automation_return",
+        "home_shell_begin",
+        "home_shell_return",
+        "home_stream_eof",
+        "home_stream_closed",
+        "leave_observed",
+        "worker_release_begin",
+        "worker_release_return",
+        "reopen_begin",
+        "reopen_return",
+        "credential_check_begin",
+        "credential_check_return",
+        "cleanup_begin",
+        "cleanup_return",
+    }
+)
+JAVA_ERRORS = frozenset(
+    {
+        "AssertionFailedError",
+        "AssertionError",
+        "SecurityException",
+        "IOException",
+        "IllegalStateException",
+        "RuntimeException",
+        "NullPointerException",
+        "other",
+    }
+)
+
+
+def connection_evidence(server):
+    """Last parsed route role is diagnostic only; never emit addresses/headers/path text."""
+    result = []
+    for connection in list(server.server_state.connections)[:16]:
+        scope = getattr(connection, "scope", None) or {}
+        path = scope.get("path", "")
+        method = scope.get("method", "")
+        role = "unknown"
+        if method == "POST" and (
+            path in {"/api/v1/agents/hello", "/api/v1/agents/heartbeat", "/api/v1/leases/claim"}
+            or (
+                path.startswith("/api/v1/jobs/")
+                and path.rsplit("/", 1)[-1] in {"renew", "events", "stop-ack"}
+                and len(path.split("/")) == 6
+            )
+        ):
+            role = "agent"
+        elif (
+            method in {"GET", "POST"}
+            and path in {"/api/v1/devices", "/api/v1/jobs", "/api/v1/schedules"}
+        ) or (
+            method == "POST"
+            and path.startswith("/api/v1/jobs/")
+            and len(path.split("/")) == 6
+            and path.rsplit("/", 1)[-1] in {"cancel", "resume"}
+        ):
+            role = "admin"
+        elif method == "GET" and path in {"/api/v1/health", "/api/v1/ready"}:
+            role = "health"
+        transport = getattr(connection, "transport", None)
+        protocol = getattr(transport, "_ssl_protocol", None)
+        state = getattr(getattr(protocol, "_state", None), "name", "unknown")
+        if state not in {"UNWRAPPED", "DO_HANDSHAKE", "WRAPPED", "FLUSHING", "SHUTDOWN"}:
+            state = "unknown"
+        result.append(
+            {
+                "last_route_role": role,
+                "transport_closing": bool(transport is not None and transport.is_closing()),
+                "ssl_state": state,
+            }
+        )
+    return result
+
+
+def suite_contaminated(diagnostics):
+    return diagnostics.get("fixture_shutdown_code") == "shutdown_failed"
+
+
+def remaining_not_run(cases, completed):
+    return [
+        {"case": case, "result": "not_run", "reason": "fixture_contaminated"}
+        for case in cases[completed:]
+    ]
+
+
 def instrumentation_evidence(output):
     combined = "\n".join(output)
     markers = []
+    phases = []
+    errors = []
     for line in output:
+        phase = line.removeprefix("FOREGROUND_QA PHASE ")
+        if line.startswith("FOREGROUND_QA PHASE ") and phase in JAVA_PHASES:
+            phases.append(phase)
+        match = re.fullmatch(
+            r"FOREGROUND_QA (ERROR|CLEANUP_ERROR) kind=([A-Za-z]+) phase=([a-z_]+)", line
+        )
+        if match and match[2] in JAVA_ERRORS and match[3] in JAVA_PHASES:
+            errors.append({"channel": match[1], "kind": match[2], "phase": match[3]})
         if re.fullmatch(
             r"FOREGROUND_QA (?:WAITING|RUNNING|LATCHED|RECONNECTED|RAPID_DONE|TWO_DONE|"
             r"STOPPED starts=[012]|PASS starts=[012] stopped=true)",
@@ -129,6 +234,8 @@ def instrumentation_evidence(output):
     )
     return {
         "markers": markers[:12],
+        "phases": phases[-32:],
+        "errors": errors[:4],
         "junit_ok_one": len(re.findall(r"OK \(1 test\)", combined)),
         "platform_failure": bool(
             re.search(r"FAILURES|INSTRUMENTATION_(?:FAILED|ABORTED)", combined)
@@ -416,6 +523,7 @@ def server_fixture(
             diagnostics["project_thread_stacks"] = project_thread_evidence()
             diagnostics["server_started"] = bool(server.started)
             diagnostics["connections"] = len(server.server_state.connections)
+            diagnostics["connection_evidence"] = connection_evidence(server)
             diagnostics["tasks"] = len(server.server_state.tasks)
             raise FixtureLifecycleError("shutdown") from primary
         diagnostics["fixture_phase"] = "closed"

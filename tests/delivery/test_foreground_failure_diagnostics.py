@@ -19,6 +19,11 @@ def fixture_code(tmp_path, started=True, stuck=False):
     tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
     names = {
         "ERROR_TYPES",
+        "JAVA_PHASES",
+        "JAVA_ERRORS",
+        "connection_evidence",
+        "suite_contaminated",
+        "remaining_not_run",
         "STACK_ALLOWLIST",
         "FixtureLifecycleError",
         "error_type",
@@ -192,3 +197,202 @@ def test_startup_and_shutdown_failures_both_retained(tmp_path):
     assert diagnostics["fixture_shutdown_code"] == "shutdown_failed"
     assert diagnostics["fixture_primary_phase"] == "startup"
     assert error.value.__cause__.phase == "startup"
+
+
+@pytest.mark.parametrize(
+    "role,method,path",
+    [
+        ("agent", "POST", "/api/v1/jobs/private/renew"),
+        ("admin", "GET", "/api/v1/devices"),
+        ("admin", "POST", "/api/v1/jobs/private/cancel"),
+        ("unknown", "GET", "/api/v1/jobs/private"),
+        ("health", "GET", "/api/v1/health"),
+        ("unknown", "GET", "/PRIVATE_TOKEN"),
+    ],
+)
+def test_connection_evidence_is_enum_only(tmp_path, role, method, path):
+    ns, _ = fixture_code(tmp_path)
+    transport = SimpleNamespace(
+        is_closing=lambda: True,
+        _ssl_protocol=SimpleNamespace(_state=SimpleNamespace(name="SHUTDOWN")),
+    )
+    connection = SimpleNamespace(
+        scope={"method": method, "path": path, "headers": [("Authorization", "PRIVATE_TOKEN")]},
+        transport=transport,
+    )
+    server = SimpleNamespace(server_state=SimpleNamespace(connections=[connection]))
+    evidence = ns["connection_evidence"](server)
+    assert evidence == [
+        {"last_route_role": role, "transport_closing": True, "ssl_state": "SHUTDOWN"}
+    ]
+    assert "PRIVATE_TOKEN" not in json.dumps(evidence)
+    transport._ssl_protocol._state.name = "PRIVATE_TOKEN"
+    assert ns["connection_evidence"](server)[0]["ssl_state"] == "unknown"
+
+
+def test_stage_and_error_markers_only_allow_fixed_enums(tmp_path):
+    ns, _ = fixture_code(tmp_path)
+    evidence = ns["instrumentation_evidence"](
+        [
+            "FOREGROUND_QA PHASE back_send_begin",
+            "FOREGROUND_QA PHASE PRIVATE_TOKEN",
+            "FOREGROUND_QA ERROR kind=SecurityException phase=home_shell_begin",
+            "FOREGROUND_QA ERROR kind=PRIVATE_TOKEN phase=home_shell_begin",
+            "FOREGROUND_QA CLEANUP_ERROR kind=IllegalStateException phase=cleanup_begin",
+        ]
+    )
+    assert evidence["phases"] == ["back_send_begin"]
+    assert len(evidence["errors"]) == 2
+    assert "PRIVATE_TOKEN" not in json.dumps(evidence)
+
+
+@pytest.mark.parametrize("contaminated", [True, False])
+def test_actual_main_stops_only_after_fixture_shutdown_failure(tmp_path, contaminated):
+    import tempfile
+
+    ns, _ = fixture_code(tmp_path)
+    script = ROOT / "scripts/check_foreground_activity_https.py"
+    tree = ast.parse(script.read_text(encoding="utf-8"))
+    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    parser = SimpleNamespace(
+        add_argument=lambda *a, **k: None,
+        parse_args=lambda: SimpleNamespace(private_dir=tmp_path, output=tmp_path),
+    )
+    calls = []
+
+    def run_case(case, directory, certificates, diagnostics):
+        calls.append(case)
+        if len(calls) == 1:
+            diagnostics["fixture_phase"] = "shutdown" if contaminated else "closed"
+            if contaminated:
+                diagnostics["fixture_shutdown_code"] = "shutdown_failed"
+                raise ns["FixtureLifecycleError"]("shutdown")
+            raise AssertionError("PRIVATE_TOKEN")
+        return {"case": case, "result": "passed"}
+
+    ns.update(
+        {
+            "argparse": SimpleNamespace(ArgumentParser=lambda: parser),
+            "Path": Path,
+            "guard": lambda: None,
+            "CASES": ("one", "two", "three"),
+            "tempfile": tempfile,
+            "run_case": run_case,
+            "json": json,
+        }
+    )
+    exec(compile(ast.Module(body=[main], type_ignores=[]), str(script), "exec"), ns)  # noqa: S102
+    with pytest.raises(SystemExit) as error:
+        ns["main"]()
+    assert error.value.code == 1
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert len(report["cases"]) == 3
+    assert calls == (["one"] if contaminated else ["one", "two", "three"])
+    assert [r["result"] for r in report["cases"]] == (
+        ["failed", "not_run", "not_run"] if contaminated else ["failed", "passed", "passed"]
+    )
+    assert "PRIVATE_TOKEN" not in json.dumps(report)
+
+
+def test_java_stages_match_host_allowlist(tmp_path):
+    ns, _ = fixture_code(tmp_path)
+    source = (
+        ROOT / "android/app/src/remoteQaAndroidTest/java/org/happyrun/app/remoteqa/"
+        "RemoteForegroundActivityAcceptanceTest.java"
+    ).read_text(encoding="utf-8")
+    assert set(re.findall(r'phase\("([a-z_]+)"\)', source)) <= ns["JAVA_PHASES"]
+    assert source.index('phase("back_send_begin")') < source.index(
+        "sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)"
+    )
+    assert source.index("sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)") < source.index(
+        'phase("back_send_return")'
+    )
+    assert 'primary=failure;errorMarker("ERROR",failure);throw failure;' in source
+    assert "if(primary==null)throw cleanupFailure;" in source
+    assert 'phase("cleanup_begin")' in source and 'phase("cleanup_return")' in source
+
+
+def test_compiled_java_cleanup_preserves_primary_failure(tmp_path):
+    import shutil
+    import subprocess
+
+    if shutil.which("java") is None:
+        pytest.skip("Java compiler unavailable; no Java result claimed")
+    source = (
+        ROOT / "android/app/src/remoteQaAndroidTest/java/org/happyrun/app/remoteqa/"
+        "RemoteForegroundActivityAcceptanceTest.java"
+    ).read_text(encoding="utf-8")
+    helpers = source[
+        source.index("    private void phase(") : source.index("    private String arg(")
+    ]
+    tail = source[source.index("        } catch(Exception | AssertionError failure)") :]
+    tail = tail[: tail.rfind("\n}")]
+    java = (
+        """
+import java.util.*;
+final class CleanupCheck {
+ String diagnosticPhase="back_send_begin";
+ boolean markerFails,cleanupFails;
+ List<String> events=new ArrayList<>();
+ final class Page {void finish(){if(cleanupFails)throw new IllegalStateException("PRIVATE_TOKEN");}}
+ Page page=new Page();
+ void marker(String value){
+  if(markerFails)throw new RuntimeException("PRIVATE_TOKEN");events.add(value);
+ }
+ void ui(Runnable action){action.run();}
+"""
+        + helpers
+        + """
+ void exercise(boolean body)throws Exception {
+  Throwable primary=null;
+  try {if(body)throw new AssertionError("PRIVATE_TOKEN");
+"""
+        + tail
+        + """
+ public static void main(String[] args)throws Exception {
+  for(int n=0;n<3;n++){
+   CleanupCheck c=new CleanupCheck();c.cleanupFails=true;c.markerFails=n==2;
+   try{c.exercise(n!=1);throw new RuntimeException("no failure");}
+   catch(Throwable actual){
+    if(n==1 ? !(actual instanceof IllegalStateException)
+            : !(actual instanceof AssertionError))throw new AssertionError();
+   }
+   if(n==0){
+    if(!c.events.get(0).startsWith("ERROR kind=AssertionError"))throw new AssertionError();
+    if(!c.events.get(1).equals("PHASE cleanup_begin"))throw new AssertionError();
+    if(!c.events.get(2).startsWith("CLEANUP_ERROR kind=IllegalStateException"))
+      throw new AssertionError();
+   }
+   if(c.events.toString().contains("PRIVATE_TOKEN"))throw new AssertionError();
+  }
+  System.out.println("PASS 3 exact Java cleanup/diagnostic preservation checks");
+ }
+}
+"""
+    )
+    path = tmp_path / "CleanupCheck.java"
+    path.write_text(java, encoding="utf-8")
+    subprocess.run(
+        [
+            "java",
+            "com.sun.tools.javac.Main",
+            "-source",
+            "17",
+            "-target",
+            "17",
+            "-d",
+            str(tmp_path),
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    result = subprocess.run(
+        ["java", "-cp", str(tmp_path), "CleanupCheck"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert "PASS 3 exact Java cleanup/diagnostic preservation checks" in result.stdout

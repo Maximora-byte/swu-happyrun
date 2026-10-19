@@ -9,8 +9,8 @@ from pathlib import Path
 
 REPOSITORY = "Maximora-byte/swu-happyrun"
 BRANCH = "refs/heads/dot/android-foreground-agent"
-# Final same-round matrix: three reviewed jobs, API31/35, exact transition.
-BEFORE = "73af56fd3f92a87d782fa33b80bdde480c75b6d9"
+# Same-round HTTPS API35 diagnostic only, exact transition.
+BEFORE = "f705f91409df88df9614aa4dd53c136dd00ed8a0"
 
 
 def authorized(env, event):
@@ -28,8 +28,7 @@ def authorized(env, event):
         and len(event["after"]) == 40
         and all(c in "0123456789abcdef" for c in event["after"])
         and event["after"] == env.get("GITHUB_SHA")
-        and env.get("HAPPYRUN_ANDROID_API") in {"31", "35"}
-        and env.get("GITHUB_JOB") in {"android-apk", "android-self-probe", "remote-https"}
+        and (env.get("GITHUB_JOB"), env.get("HAPPYRUN_ANDROID_API")) == ("remote-https", "35")
     )
 
 
