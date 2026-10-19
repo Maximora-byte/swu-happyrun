@@ -6,6 +6,14 @@
 
 Dot 已承担主要实现与修复；本地 Codex 负责 Windows、真实设备与集成独立验收。此分工覆盖旧计划中的负责人，详见 [冲刺交接](handoffs/2026-10-18-dot-lead-sprint.md) 与 [Issue #16](https://github.com/Maximora-byte/swu-happyrun/issues/16)。本文不宣称全部 v1 已验收，也不把提交、局部测试、软件联调、设备观测和学校有效记录合并为同一种“完成”。
 
+### CI 测试同步修正（2026-10-19）
+
+准确基线 `4d73f42ec15e0c2cc14371f8a4441ef2101e6e41` 的 [CI run 39179740749](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39179740749) 在 Windows/Python3.13 的 active-renewal 测试失败。独立延迟父进程检查后，确定性复现旧测试错过短暂 active 状态；这说明测试存在竞态，但未证明该次 CI 只有这一种原因。本轮只修测试同步：在启动前预设故障，由服务端处理首个已持久化 active 的 renew 时注入503；父进程退出后断言停止与不重试。
+
+组合复测另暴露 readiness 测试直接改健康标志、被后台 tick 覆盖的竞争，原518通过/1失败日志保留。现以真实 tick 成功→异常→恢复和队列屏障验证503脱敏、health200、ready恢复与线程退出。两处都不修改生产模块。
+
+最终完整 **519 passed**；同一已验收 wheel 的新 **7 daemon** 与 **15 scheduler** 场景在源码外安装环境复跑通过。生产源码与 wheel 字节不变，先前34 HTTP、9 lifecycle、50外部边界及CLI smoke证据按相同wheel SHA复用，不称本轮重新跑过。新远端CI结果仍须单独核对；设备/容器等已列阻塞不变。
+
 ### 信号处理重入修复候选（2026-10-19）
 
 在准确基线 `58264f22ba8829ec707f2d1a07617332f42ef48d` 上追加最小修复：信号 handler 内原有 Event.set 可能重入正在持有的 condition 锁而死锁。现改为无锁记录 signum，等待使用单调时钟和最长 50ms 的检查间隔。新真实子进程回归先在旧安装 wheel 上以 3 秒超时复现，再在修复包通过。

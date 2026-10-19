@@ -214,10 +214,68 @@ def test_unrepresentable_template_window_is_rejected(client, spec):
     assert client.get("/api/v1/schedules", headers=ADMIN).json() == []
 
 
-def test_readiness_reports_ticker_failure_without_internal_detail(client, app):
-    assert client.get("/api/v1/ready").status_code == 200
-    app.state.scheduler_healthy = False
-    response = client.get("/api/v1/ready")
-    assert response.status_code == 503
-    assert response.json()["error"]["retryable"] is True
-    assert client.get("/api/v1/health").status_code == 200
+def test_readiness_reports_ticker_failure_without_internal_detail(app, monkeypatch):
+    from queue import Queue
+    from threading import Event
+
+    import swu_happyrun.server.app as app_module
+
+    completed = Queue()
+    advance = Queue()
+
+    class TickBarrier:
+        """Hold each tick after the lifecycle has published its health result."""
+
+        def __init__(self):
+            self.stopped = Event()
+
+        def is_set(self):
+            return self.stopped.is_set()
+
+        def set(self):
+            self.stopped.set()
+            advance.put(None)  # Release the worker so lifespan shutdown can join it.
+
+        def wait(self, timeout):
+            completed.put(app.state.scheduler_healthy)
+            advance.get()
+            return self.is_set()
+
+    real_tick = app.state.scheduler.tick
+    outcomes = iter(("success", "failure", "recovered"))
+    failure_detail = "private fixture-token /private/database.sqlite3"
+
+    def controlled_tick():
+        if next(outcomes) == "failure":
+            raise RuntimeError(failure_detail)
+        return real_tick()
+
+    monkeypatch.setattr(app_module, "Event", TickBarrier)
+    monkeypatch.setattr(app.state.scheduler, "tick", controlled_tick)
+    with TestClient(app) as client:
+        # These bounded queue waits are deadlock guards, not polling or timing assertions.
+        # The worker is held after each actual lifecycle health update until we release it.
+        assert completed.get(timeout=5) is True
+        assert client.get("/api/v1/ready").status_code == 200
+
+        advance.put(None)
+        assert completed.get(timeout=5) is False
+        response = client.get("/api/v1/ready")
+        assert response.status_code == 503
+        assert response.json()["error"] == {
+            "code": "not_ready",
+            "message": "Service temporarily unavailable",
+            "retryable": True,
+        }
+        assert set(response.json()) == {"error", "request_id"}
+        assert failure_detail not in response.text
+        assert "fixture-token" not in response.text
+        assert "database.sqlite3" not in response.text
+        assert client.get("/api/v1/health").status_code == 200
+
+        advance.put(None)
+        assert completed.get(timeout=5) is True
+        recovered = client.get("/api/v1/ready")
+        assert recovered.status_code == 200
+        assert recovered.json() == {"status": "ready", "protocol_version": 1}
+    assert not app.state.ticker.is_alive()

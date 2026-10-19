@@ -40,6 +40,9 @@ def service(tmp_path):
         "claim": 0,
         "renew": 0,
         "renew_calls": 0,
+        "renew_active_state": None,
+        "renew_failed_at": None,
+        "renew_active_snapshot": None,
         "hello_calls": 0,
         "heartbeat_calls": 0,
         "claim_calls": 0,
@@ -56,6 +59,17 @@ def service(tmp_path):
                 return JSONResponse({"error": "lost response"}, status_code=503)
         if name in {"hello", "heartbeat", "renew"}:
             faults[name + "_calls"] += 1
+            # The child cannot finish a route before this synchronous request
+            # returns. Arm before launch and inject only after durable start,
+            # rather than racing a parent's poll against the brief active window.
+            state_path = faults["renew_active_state"] if name == "renew" else None
+            if state_path is not None and state_path.exists():
+                saved = json.loads(state_path.read_text())
+                if saved["active"]:
+                    faults["renew_active_snapshot"] = saved
+                    faults["renew_failed_at"] = faults["renew_calls"]
+                    faults["renew_active_state"] = None
+                    return JSONResponse({"error": "active renewal failed"}, status_code=503)
             if faults[name]:
                 faults[name] -= 1
                 return JSONResponse({"error": "transient"}, status_code=503)
@@ -211,17 +225,21 @@ def test_active_renewal_failure_stops_without_retrying_lease(service, tmp_path):
         "jobs", json=job.model_dump(mode="json"), headers={"Idempotency-Key": str(uuid4())}
     )
     assert response.status_code == 201
-    process = launch(tmp_path, url, "--once")
     state = tmp_path / "journal.fake.json"
+    faults["renew_active_state"] = state
+    process = launch(tmp_path, url, "--once")
     try:
-        wait_until(lambda: state.exists() and json.loads(state.read_text())["active"])
-        before = faults["renew_calls"]
-        faults["renew"] = 1
+        # Observe only after exit: fault injection must not require parent
+        # scheduling during the short active interval (the old CI race).
         stdout, stderr = process.communicate(timeout=10)
         assert process.returncode == 3, (stdout, stderr)
-        assert faults["renew_calls"] == before + 1
+        assert faults["renew_failed_at"] is not None
+        assert faults["renew_calls"] == faults["renew_failed_at"]
+        assert faults["renew_active_snapshot"]["active"]
+        assert faults["renew_active_snapshot"]["start_count"] == 1
+        assert faults["renew_active_snapshot"]["stop_count"] == 0
         saved = json.loads(state.read_text())
-        assert not saved["active"] and saved["start_count"] == 1
+        assert not saved["active"] and saved["start_count"] == 1 and saved["stop_count"] == 1
         result = client.get("jobs/" + response.json()["job_id"]).json()
         assert result["state"] == "needs_attention"
     finally:
