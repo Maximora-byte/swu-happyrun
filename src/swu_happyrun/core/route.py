@@ -10,6 +10,7 @@ import math
 from bisect import bisect_right
 from dataclasses import dataclass
 
+from swu_happyrun.core.canonical import profile_revision
 from swu_happyrun.core.clock import Clock, SystemClock
 from swu_happyrun.core.coordinates import normalize_points
 from swu_happyrun.core.geo import distance_between_points_m, validate_route
@@ -48,8 +49,6 @@ class RouteExecution:
         reasons = validate_route(route, school)
         if reasons:
             raise ValueError(reasons[0])
-        self._route = RouteProfile.model_validate(route.model_dump(mode="python"))
-        self._points = normalize_points(self._route)
         rules = dict(school.rules)
         if (
             type(speed_mps) not in (int, float)
@@ -58,6 +57,48 @@ class RouteExecution:
             or speed_mps < rules["minimum_speed_mps"]
         ):
             raise ValueError("invalid_route_speed")
+        self._initialize(route, speed_mps=speed_mps, clock=clock)
+        if self.duration_seconds > rules["maximum_duration_seconds"]:
+            raise ValueError("duration_exceeds_maximum")
+
+    @classmethod
+    def for_local_replay(
+        cls,
+        route: RouteProfile,
+        *,
+        speed_mps: float,
+        maximum_duration_seconds: float,
+        clock: Clock,
+    ) -> "RouteExecution":
+        """Bounded local prefix playback, without any school-rule assertion.
+
+        The explicit time budget caps *active* playback. A prefix stops at that
+        budget without jumping to the route endpoint or claiming completion.
+        The ordinary constructor retains all SchoolProfile validation.
+        """
+        for value, reason in (
+            (speed_mps, "invalid_route_speed"),
+            (maximum_duration_seconds, "invalid_route_duration"),
+        ):
+            if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+                raise ValueError(reason)
+        route = RouteProfile.model_validate(route.model_dump(mode="python"))
+        if route.revision != profile_revision(route):
+            raise ValueError("route_revision_mismatch")
+        points = normalize_points(route)
+        if any(
+            abs(b.longitude - a.longitude) >= 180 for a, b in zip(points, points[1:], strict=False)
+        ):
+            raise ValueError("unsupported_antimeridian_segment")
+        result = cls.__new__(cls)
+        result._initialize(route, speed_mps=speed_mps, clock=clock)
+        result.maximum_duration_seconds = float(maximum_duration_seconds)
+        result.duration_seconds = min(result.duration_seconds, maximum_duration_seconds)
+        return result
+
+    def _initialize(self, route: RouteProfile, *, speed_mps: float, clock: Clock | None):
+        self._route = RouteProfile.model_validate(route.model_dump(mode="python"))
+        self._points = normalize_points(self._route)
         self._speed = float(speed_mps)
         self.segment_distances = tuple(
             distance_between_points_m(a, b)
@@ -69,11 +110,9 @@ class RouteExecution:
         self._cumulative = tuple(cumulative)
         self.total_distance_m = cumulative[-1]
         self.duration_seconds = self.total_distance_m / self._speed
-        if (
-            not math.isfinite(self.duration_seconds)
-            or self.duration_seconds > rules["maximum_duration_seconds"]
-        ):
-            raise ValueError("duration_exceeds_maximum")
+        if not math.isfinite(self.duration_seconds) or self.duration_seconds <= 0:
+            raise ValueError("invalid_route_duration")
+        self._full_duration_seconds = self.duration_seconds
         self._clock = clock or SystemClock()
         self._state = "ready"
         self._last: float | None = None
@@ -133,7 +172,9 @@ class RouteExecution:
                 raise ValueError("invalid_monotonic_time")
             self._elapsed = min(elapsed, self.duration_seconds)
             if self._elapsed >= self.duration_seconds:
-                self._state = "completed"
+                self._state = (
+                    "completed" if self._elapsed >= self._full_duration_seconds else "stopped"
+                )
         self._last = value
         return self.snapshot
 
