@@ -67,3 +67,55 @@ states 是必须核对的状态清单，不证明已取得这些页面；须同�
 - [vivo 无 Root](research/vivo-noroot.md)：保持现有安全设置。
 - [纯接口](research/direct-protocol.md)：等待合法协议语义，不使用其他学校协议。
 - [控制协议](contracts/control-plane-v1.md)：现有状态与证据绑定为唯一运行契约。
+
+## R1：MuMu 实例绑定与私有只读取样
+
+本轮工具只做指定实例的元数据采集和本地证据结构校验，不合并 MuMu/ADB 的随机
+UUID，不启动应用、不安装、不点击、不读取账号会话/token、不写位置或传感器。
+ADB 本身可能隐式启动已有 host daemon；工具不执行 connect/pair，也没有任意
+命令或网关 URL 参数。真实 Windows/MuMu 仍由 Codex 现场验收。
+
+在已安装本项目及其依赖的 checkout 根目录，用已核实的本机路径替换示例：
+
+```powershell
+python scripts/collect_device_context.py --manager "C:\Program Files\MuMu\nx_main\MuMuManager.exe" --adb "C:\Program Files\MuMu\nx_main\adb.exe" --instance 0 --serial "<现场确认的serial>" --package org.happyrun.app --private-output local/context-001.json
+```
+
+实例、serial、package 必须显式填写；示例路径和 serial 不是自动发现结果。
+工具复用 MuMuManager.inspect 与 AdbClient.inspect，只查询元数据；stdout 仅输出
+固定 reason/missing 项，不含真实 serial、package、版本、UUID、路径或稳定 digest。
+私有输出只允许此 checkout 的 local/ 下新建文件，拒绝覆盖、越界及符号链接。
+POSIX 文件以 0600 创建；Windows 仍须先由操作者确认 local/ 继承的 ACL 仅允许
+本人，禁止放到共享/自动同步目录。工具不能代替 Windows ACL 审核。
+
+未指定 --private-output 时不保存采样。底层完整 dumpsys 输出在内存解析后丢弃；
+保存的私有文件仅含选择参数及两个现有适配器的结构化元数据。不采集原始页面、
+屏幕截图、路由、数据库或会话信息。不可把私有文件作为公开附件上传。
+
+成功读取元数据也返回 exit 2、binding_evidence_required，并列出还缺的当前别名
+映射、host/engine版本、boot身份及display/task证据。这是预期的保守结果，不能
+把两个读命令成功当成同一实例证明；命令非零/超时同样不能获得能力。
+
+R1 复用 Task5 scripts/check_mumu_observation.py 的 accepted 纯解析入口：
+collect_device_context.validate_display_replay 只解析现有私有回执，不调用其 main，
+不自动运行 am instrument。Task5 的独立自身应用观测仍按原先隔离测试要求执行。
+该回执不会证明目标乐跑页面或学校记录。多 task 必须明确当前 display/task；无法
+唯一关联时不能绑定。现场操作者还须核对 index 到 serial 的依据，不能猜 ADB 端口。
+
+本地 resolve_binding 的 observation 使用严格字段集合：instance_index、adb_serial、
+host_version、engine_version、app_version、package、display_id、task_id、boot_id、
+observation_id（UUID）、observed_at（带时区ISO时间）、mapping_source（local_review）、
+mapped_instance_index、mapped_adb_serial、observed_display_id、observed_task_id、
+matching_task_count（必须为1）。缺失或额外字段（包括 token/session/raw/url/command）
+一律拒绝且错误不回显值。时间窗为30秒，未来时间也拒绝；assert_current 先验证新观测
+的新鲜度，再核对稳定 identity_digest（实例/serial/boot/版本/package/display/task）。
+同身份的新观测ID/时间允许刷新；旧缓存超时、实例重启或版本/display/task变化拒绝。
+完整 digest 仍包含最初观测ID/时间，作为原始校准证据锚点，不因刷新偷偷重写；
+identity_digest 与完整 digest 都仅限本地，不公开。R2/R4 应保留校准所锚定的原
+MumuBinding，在每次写前对该对象调用 assert_current(本次新观测)，不能用新
+binding 替换旧证据来规避校准检查；身份改变后须重新采样、审阅与校准。
+
+该结构校验不认证手工输入的来源，也不是通用DLP；可信调用者必须提供本次实际
+观察并持续重新检查 boot 身份与上下文，不能重放缓存。MumuBinding 仅本地使用，
+capabilities 恒为空，不增加 wire 字段；即使结构有效也不授予执行权限或证实定位、
+传感器、真实页面、有效记录。R2/R4 仍需独立执行 guard 与现场证据。
