@@ -314,3 +314,17 @@ RESTORE、诊断或 CI 修复。真实适配注册表仍为空，真实 MuMu 能
 新 HEAD 的完整软件/设备结果见 PR 正文和 Actions；此处不预填通过结果。
 普通 APK 与 instrumentation APK 必须同构建同签名配对；debug 签名跨次
 可能不同，签名冲突不得自动卸载抹除数据。
+
+### 234 显示附着等待修订
+
+234 普通 API31 的 RESTORE 后读取到尚未附着的 display=-1，原循环立即退出，
+最终严格门槛正确拒绝。该确定性测试入口缺陷已用旧谓词 JVM RED 复现。
+修订仅允许未知 -1 在原有期限内只读等待；已知错误 display、错误 task 或
+多 task 仍立即退出，最终接受条件及超时均不变。21 个资源路径保持原字节。
+234 原完整矩阵新增 HTTPS API35 的 back_idle/rapid_toggle RuntimeError，
+暂不能据仅异常类型判定 UI 或 fixture 根因。API31 HTTPS 全部通过，普通 API35、
+optional API31/35 通过；历史 af3 同类成功与本次失败均保留。
+本次收窄为本分支精确 before234 下一次可信 push 的两个组合：ordinary/API31
+验证等待修订，HTTPS/API35 保留原完整顺序获取主错误与退出错误安全证据。
+其他组合继续构建/静态检查，runtime 明确 not_run；不能称最终全矩阵通过。
+后续完整验收仍需准确新 HEAD 的六组合实际结果。

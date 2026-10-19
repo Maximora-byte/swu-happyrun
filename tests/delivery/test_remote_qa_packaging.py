@@ -82,7 +82,7 @@ def test_one_gate_shared_by_six_job_matrix(tmp_path):
     remote = (ROOT / ".github/workflows/android-remote-https.yml").read_text(encoding="utf-8")
     for workflow in (legacy, remote):
         assert "run: python scripts/check_ci_kvm.py" in workflow
-        assert "github.event.before == '005bb79058d434d9897a266868a1fbd5bae566b4'" in workflow
+        assert "github.event.before == '234d280c23f5275371a5092bfdc7a4b7ea302f65'" in workflow
         assert "github.ref == 'refs/heads/dot/android-foreground-agent'" in workflow
         assert "github.event.after == github.sha" in workflow
     assert "remoteQa" in remote and "app-release-unsigned.apk" in remote

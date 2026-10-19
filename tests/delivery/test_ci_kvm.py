@@ -36,7 +36,7 @@ def setup(monkeypatch, tmp_path):
     event.write_text(
         json.dumps(
             {
-                "before": "005bb79058d434d9897a266868a1fbd5bae566b4",
+                "before": "234d280c23f5275371a5092bfdc7a4b7ea302f65",
                 "after": "a" * 40,
                 "ref": "refs/heads/dot/android-foreground-agent",
                 "repository": {"full_name": "Maximora-byte/swu-happyrun"},
@@ -122,7 +122,7 @@ def test_missing_device_or_failed_verification_blocks(setup, monkeypatch, kind):
 
 def test_workflow_gate_binds_exact_single_transition():
     workflow = (ROOT / ".github/workflows/checks.yml").read_text(encoding="utf-8")
-    assert "github.event.before == '005bb79058d434d9897a266868a1fbd5bae566b4'" in workflow
+    assert "github.event.before == '234d280c23f5275371a5092bfdc7a4b7ea302f65'" in workflow
     assert "github.ref == 'refs/heads/dot/android-foreground-agent'" in workflow
     assert "github.event_name == 'push'" in workflow
     assert "workflow_dispatch:" not in workflow
@@ -288,14 +288,29 @@ def test_previous_server_stack_parent_is_consumed(setup, monkeypatch):
 def test_exact_final_matrix_acl_is_current_uid_only(setup, monkeypatch, job, api):
     monkeypatch.setenv("GITHUB_JOB", job)
     monkeypatch.setenv("HAPPYRUN_ANDROID_API", api)
-    assert PROBE.main() == 0
-    assert setup[1][0] == ["sudo", "-n", "setfacl", "-n", "-m", "u:1001:rw", "/dev/kvm"]
+    if (job, api) in {("android-apk", "31"), ("remote-https", "35")}:
+        assert PROBE.main() == 0
+        assert setup[1][0] == ["sudo", "-n", "setfacl", "-n", "-m", "u:1001:rw", "/dev/kvm"]
+    else:
+        with pytest.raises(SystemExit):
+            PROBE.main()
+        assert not setup[1]
 
 
 def test_previous_restore_parent_is_consumed(setup, monkeypatch):
     event_path = Path(PROBE.os.environ["GITHUB_EVENT_PATH"])
     event = json.loads(event_path.read_text(encoding="utf-8"))
     event["before"] = "b4ca97743f64a52b4981fbcf338899de008b52bc"
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        PROBE.main()
+    assert not setup[1]
+
+
+def test_previous_resource_parent_is_consumed(setup, monkeypatch):
+    event_path = Path(PROBE.os.environ["GITHUB_EVENT_PATH"])
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+    event["before"] = "005bb79058d434d9897a266868a1fbd5bae566b4"
     event_path.write_text(json.dumps(event), encoding="utf-8")
     with pytest.raises(SystemExit):
         PROBE.main()

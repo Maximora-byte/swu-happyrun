@@ -135,8 +135,7 @@ public final class DisplayObservationTest extends InstrumentationTestCase {
                     s.captured = SystemClock.elapsedRealtime();
                 });
                 s.taskCount = manager.getAppTasks().size(); s.finished = SystemClock.elapsedRealtime();
-                if (s.task != task || s.display != display || s.taskCount != 1
-                    || (s.window && s.controls) || s.finished >= started + 10000) break;
+                if (!DisplayObservationGate.shouldAwaitViewport(s, display, task, started + 10000)) break;
                 // ActivityMonitor may return before layout/focus. Wait read-only, never click.
                 SystemClock.sleep(50);
             } while (true);

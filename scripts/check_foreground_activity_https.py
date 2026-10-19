@@ -17,7 +17,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from check_remote_https_android import adb, guard
-from remote_https_fixture import server_fixture, trusted_client
+from remote_https_fixture import (
+    error_type,
+    failure_evidence,
+    instrumentation_evidence,
+    server_fixture,
+    trusted_client,
+)
 
 PACKAGE = "org.happyrun.app"
 CLASS = PACKAGE + ".remoteqa.RemoteForegroundActivityAcceptanceTest#testScenario"
@@ -91,15 +97,21 @@ def require_instrumentation_success(returncode, output, starts):
     assert output.count(f"FOREGROUND_QA PASS starts={starts} stopped=true") == 1
 
 
-def run_case(case, directory, certificates):
+def run_case(case, directory, certificates, diagnostics=None):
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics["host_phase"] = "guard"
     guard()
     adb("shell", "am", "force-stop", PACKAGE)
     assert adb("shell", "pm", "clear", PACKAGE).strip() == "Success"
     scenario = "lost_renew" if case == "transport_latch" else "normal"
+    diagnostics["host_phase"] = "server_startup"
     with (
-        server_fixture(directory, certificates, scenario=scenario) as fixture,
+        server_fixture(
+            directory, certificates, scenario=scenario, diagnostics=diagnostics
+        ) as fixture,
         trusted_client(certificates["ca.pem"]) as client,
     ):
+        diagnostics["host_phase"] = "prepare_device"
         headers = {"Authorization": "Bearer " + fixture["admin_token"]}
         reply = client.post(
             fixture["origin"] + "/api/v1/devices",
@@ -149,6 +161,7 @@ def run_case(case, directory, certificates):
             command += ["-e", key, value]
         command += [PACKAGE + ".test/android.test.InstrumentationTestRunner"]
         # Kept in memory only. Never print command, raw stdout/stderr, or exception detail.
+        diagnostics["host_phase"] = "instrumentation_start"
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
@@ -174,6 +187,7 @@ def run_case(case, directory, certificates):
             return next((line for line in output if line.startswith(prefix)), None)
 
         try:
+            diagnostics["host_phase"] = "ui_observation"
             heartbeat_delay = None
             if case == "two_jobs":
                 wait_for(lambda: marker("WAITING"), 15)
@@ -213,6 +227,7 @@ def run_case(case, directory, certificates):
                     15,
                 )
                 wait_for(lambda: marker("RAPID_DONE"), 5)
+            diagnostics["host_phase"] = "await_stopped"
             stopped = wait_for(lambda: marker("STOPPED"), 30)
             expected_starts = (
                 2
@@ -225,9 +240,12 @@ def run_case(case, directory, certificates):
             )
             assert stopped == "FOREGROUND_QA STOPPED starts=" + str(expected_starts)
             before = len(incoming)
+            diagnostics["host_phase"] = "sentinel_create"
             sentinel = create_job(client, fixture, headers, "after-stopped")
+            diagnostics["host_phase"] = "instrumentation_finish"
             process.wait(timeout=10)
             reader_thread.join(timeout=2)
+            diagnostics["host_phase"] = "validate_stopped"
             require_instrumentation_success(process.returncode, output, expected_starts)
             assert len(incoming) == before, "HTTP continued after UI stop/latch/return"
             assert current(client, fixture, headers, sentinel)["state"] == "queued"
@@ -261,13 +279,24 @@ def run_case(case, directory, certificates):
             }
             if heartbeat_delay is not None:
                 result["first_heartbeat_seconds"] = round(heartbeat_delay, 3)
+            diagnostics["body_outcome"] = "passed"
             return result
+        except Exception as error:
+            diagnostics["body_outcome"] = "failed"
+            diagnostics["body_error_type"] = error_type(error)
+            raise
         finally:
+            diagnostics["instrumentation"] = instrumentation_evidence(output)
+            diagnostics["agent_requests"] = len(incoming)
+            diagnostics["process_returncode"] = process.poll()
+            diagnostics["cleanup_phase"] = "instrumentation_process"
             if process.poll() is None:
                 process.kill()
                 process.wait(timeout=5)
             process.stdout.close()
+            diagnostics["cleanup_phase"] = "adb_force_stop"
             adb("shell", "am", "force-stop", PACKAGE)
+            diagnostics["cleanup_phase"] = "done"
 
 
 def main():
@@ -283,16 +312,18 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     results = []
     for case in CASES:
+        diagnostics = {}
         try:
             with tempfile.TemporaryDirectory(
                 prefix="foreground-", dir=args.private_dir
             ) as temporary:
-                result = run_case(case, Path(temporary), certificates)
+                result = run_case(case, Path(temporary), certificates, diagnostics)
         except Exception as error:  # noqa: BLE001 -- never expose credential-bearing command errors
             result = {
                 "case": case,
                 "result": "failed",
-                "error_type": type(error).__name__,
+                "error_type": error_type(error),
+                "diagnostics": failure_evidence(error, diagnostics),
             }
         results.append(result)
         print("FOREGROUND_ACTIVITY_QA", case, result["result"], flush=True)

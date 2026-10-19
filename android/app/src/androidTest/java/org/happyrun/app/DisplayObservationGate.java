@@ -6,6 +6,12 @@ final class DisplayObservationGate {
         return expectedDisplay >= 0 && systemDefaultDisplay >= 0
             && expectedDisplay == systemDefaultDisplay;
     }
+    /** A missing display during attach is pending, never a successful binding. */
+    static boolean shouldAwaitViewport(Snapshot s, int display, int task, long deadline) {
+        return s.task == task && s.taskCount == 1 && s.finished < deadline
+            && (s.display == -1 || s.display == display)
+            && !(s.display == display && s.window && s.controls);
+    }
     static final class Snapshot {
         String observationId, packageName, activity, signature;
         int display = -1, task = -1, taskCount, dumpExit;

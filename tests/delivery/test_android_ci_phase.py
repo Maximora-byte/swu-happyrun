@@ -59,6 +59,7 @@ def test_other_context_is_not_authorized(key, value):
     "key,value",
     [
         ("before", "b" * 40),
+        ("before", "005bb79058d434d9897a266868a1fbd5bae566b4"),
         ("before", "b4ca97743f64a52b4981fbcf338899de008b52bc"),
         ("before", "09b67d1f839d4b17d5b06114698cb18ec9fa0d7d"),
         ("before", "2107bf7d10c6318652622bde0e35fc60efb920ea"),
@@ -180,4 +181,6 @@ def test_dirty_checkout_rejected_before_provenance(monkeypatch, tmp_path):
 def test_exact_final_matrix_only(job, api):
     env, event = grant()
     env.update(GITHUB_JOB=job, HAPPYRUN_ANDROID_API=api)
-    assert phase.authorized(env, event)
+    assert phase.authorized(env, event) == (
+        (job, api) in {("android-apk", "31"), ("remote-https", "35")}
+    )

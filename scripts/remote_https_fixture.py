@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import secrets
 import socket
 import ssl
 import subprocess
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -19,6 +21,129 @@ import uvicorn
 
 from swu_happyrun.server.app import create_app
 from swu_happyrun.server.settings import ServerSettings
+
+ERROR_TYPES = frozenset(
+    {
+        "AssertionError",
+        "RuntimeError",
+        "ReadTimeout",
+        "ConnectTimeout",
+        "ConnectError",
+        "HTTPStatusError",
+        "TimeoutExpired",
+        "CalledProcessError",
+        "OSError",
+        "ValueError",
+        "FixtureLifecycleError",
+    }
+)
+STACK_ALLOWLIST = {
+    "remote_https_fixture.py": {"server_fixture", "__call__", "checked_send"},
+    "app.py": {"tick_loop", "lifespan", "safe_failures"},
+    "store.py": {"connection", "get", "create"},
+    "leases.py": {"expire", "claim", "renew", "event", "stop_ack"},
+    "scheduler.py": {"tick"},
+    "server.py": {"run", "serve", "_serve", "main_loop", "on_tick", "shutdown"},
+    "base_events.py": {"_run_once", "run_forever", "run_until_complete"},
+    "selectors.py": {"select"},
+    "threading.py": {"run", "wait", "join", "_bootstrap", "_bootstrap_inner"},
+    "queue.py": {"get"},
+}
+
+
+def error_type(error):
+    if error is None:
+        return None
+    name = type(error).__name__
+    return name if name in ERROR_TYPES else "other_exception"
+
+
+class FixtureLifecycleError(RuntimeError):
+    def __init__(self, phase):
+        assert phase in {"startup", "shutdown"}
+        self.phase = phase
+        super().__init__("fixture_lifecycle_failed")
+
+
+def thread_evidence(thread):
+    """Read only fixed source coordinates; never arguments, locals, paths or source text."""
+    frame = sys._current_frames().get(thread.ident)
+    result = []
+    omitted = 0
+    while frame is not None:
+        name = Path(frame.f_code.co_filename).name
+        function = frame.f_code.co_name
+        if function in STACK_ALLOWLIST.get(name, set()):
+            result.append({"file": name, "function": function, "line": frame.f_lineno})
+        else:
+            omitted += 1
+        frame = frame.f_back
+    return {
+        "alive": thread.is_alive(),
+        "frames": result[:24],
+        "omitted_frames": omitted,
+    }
+
+
+def project_thread_evidence():
+    """Capture only known project frames, including SQLite/scheduler worker positions."""
+    results = []
+    project_files = {"app.py", "store.py", "leases.py", "scheduler.py"}
+    for frame in sys._current_frames().values():
+        frames = []
+        while frame is not None:
+            name = Path(frame.f_code.co_filename).name
+            function = frame.f_code.co_name
+            if name in project_files and function in STACK_ALLOWLIST[name]:
+                frames.append({"file": name, "function": function, "line": frame.f_lineno})
+            frame = frame.f_back
+        if frames:
+            results.append(frames[:16])
+    return results[:16]
+
+
+def instrumentation_evidence(output):
+    combined = "\n".join(output)
+    markers = []
+    for line in output:
+        if re.fullmatch(
+            r"FOREGROUND_QA (?:WAITING|RUNNING|LATCHED|RECONNECTED|RAPID_DONE|TWO_DONE|"
+            r"STOPPED starts=[012]|PASS starts=[012] stopped=true)",
+            line,
+        ):
+            markers.append(line.removeprefix("FOREGROUND_QA "))
+    # These are controlled Java assertion labels, never raw exception text.
+    labels = (
+        "Main entry did not open remote page",
+        "Back stopped old Activity",
+        "Home really backgrounded Activity",
+        "worker session reference released",
+        "first rapid session exits",
+        "explicit reconnect waiting",
+        "new executor work really starts",
+        "new work completes visibly",
+        "visible idle wait",
+        "Automatic reconnect after leave",
+        "Driver not stopped",
+        "Credential persisted in app private data",
+    )
+    return {
+        "markers": markers[:12],
+        "junit_ok_one": len(re.findall(r"OK \(1 test\)", combined)),
+        "platform_failure": bool(
+            re.search(r"FAILURES|INSTRUMENTATION_(?:FAILED|ABORTED)", combined)
+        ),
+        "known_assertions": [label for label in labels if label in combined],
+    }
+
+
+def failure_evidence(error, diagnostics):
+    chain = []
+    current = error
+    while current is not None and len(chain) < 6:
+        chain.append(error_type(current))
+        current = current.__cause__ or current.__context__
+    return {"error_chain": chain, **diagnostics}
 
 
 def issue_certificates(directory: Path) -> dict[str, Path]:
@@ -64,7 +189,10 @@ def issue_certificates(directory: Path) -> dict[str, Path]:
         "-addext",
         "keyUsage=critical,keyCertSign,cRLSign",
     )
-    for name, san in (("server", "IP:127.0.0.1,IP:10.0.2.2"), ("wrong", "DNS:wrong.invalid")):
+    for name, san in (
+        ("server", "IP:127.0.0.1,IP:10.0.2.2"),
+        ("wrong", "DNS:wrong.invalid"),
+    ):
         openssl(
             "req",
             "-newkey",
@@ -144,7 +272,11 @@ class RequestEvidence:
             self.event_count += 1
         if scope["path"].endswith("/renew"):
             self.renew_count += 1
-            if self.renew_count == 4 and self.scenario in {"cancel", "lost_renew", "restart"}:
+            if self.renew_count == 4 and self.scenario in {
+                "cancel",
+                "lost_renew",
+                "restart",
+            }:
                 self.barrier.set()
                 if self.scenario == "cancel":
                     deadline = time.monotonic() + 3
@@ -211,7 +343,11 @@ class RequestEvidence:
 
 @contextmanager
 def server_fixture(
-    directory: Path, certificates: dict[str, Path], certificate="server", scenario="normal"
+    directory: Path,
+    certificates: dict[str, Path],
+    certificate="server",
+    scenario="normal",
+    diagnostics=None,
 ):
     """Run the actual candidate app over TLS on host loopback, with synthetic ownership."""
     if certificate not in {"server", "wrong", "other"}:
@@ -238,12 +374,18 @@ def server_fixture(
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics["fixture_phase"] = "startup"
+    primary = None
     try:
         deadline = time.monotonic() + 10
         while not server.started and thread.is_alive() and time.monotonic() < deadline:
             time.sleep(0.01)
         if not server.started:
-            raise RuntimeError("TLS fixture failed startup")
+            diagnostics["fixture_startup_code"] = "startup_failed"
+            diagnostics["server_thread"] = thread_evidence(thread)
+            raise FixtureLifecycleError("startup")
+        diagnostics["fixture_phase"] = "body"
         yield {
             "origin": f"https://127.0.0.1:{port}",
             "android_origin": f"https://10.0.2.2:{port}",
@@ -255,12 +397,28 @@ def server_fixture(
             "app": app,
             "port": port,
         }
+    except BaseException as error:
+        primary = error
+        raise
     finally:
+        diagnostics["fixture_primary_phase"] = diagnostics["fixture_phase"]
+        diagnostics["fixture_body_error_type"] = (
+            error_type(primary) if diagnostics["fixture_phase"] == "body" else None
+        )
+        diagnostics["fixture_primary_error_type"] = error_type(primary)
+        diagnostics["fixture_phase"] = "shutdown"
         server.should_exit = True
         thread.join(timeout=10)
         sock.close()
         if thread.is_alive():
-            raise RuntimeError("TLS fixture did not stop")
+            diagnostics["fixture_shutdown_code"] = "shutdown_failed"
+            diagnostics["server_thread"] = thread_evidence(thread)
+            diagnostics["project_thread_stacks"] = project_thread_evidence()
+            diagnostics["server_started"] = bool(server.started)
+            diagnostics["connections"] = len(server.server_state.connections)
+            diagnostics["tasks"] = len(server.server_state.tasks)
+            raise FixtureLifecycleError("shutdown") from primary
+        diagnostics["fixture_phase"] = "closed"
 
 
 def trusted_client(ca: Path) -> httpx.Client:
@@ -270,7 +428,14 @@ def trusted_client(ca: Path) -> httpx.Client:
 
 
 def redact_report(path: Path, result: dict) -> None:
-    allowed = {"case", "result", "server_state", "driver_starts", "driver_stopped", "request_count"}
+    allowed = {
+        "case",
+        "result",
+        "server_state",
+        "driver_starts",
+        "driver_stopped",
+        "request_count",
+    }
     if set(result) - allowed:
         raise ValueError("unapproved report field")
     path.write_text(json.dumps(result, sort_keys=True) + "\n", encoding="utf-8")
