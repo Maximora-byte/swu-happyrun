@@ -166,14 +166,14 @@ def test_readonly_command_keeps_space_path_one_argument(monkeypatch, path_type):
     assert calls[0][1]["shell"] is False
 
 
-def test_private_output_refuses_outside_local_and_symlinks(tmp_path):
+def test_private_output_refuses_outside_local_and_symlinks(tmp_path, symlink_or_skip):
     module = collector()
     with pytest.raises(ProbeError):
         module.write_private(tmp_path / "public.json", {"raw": "private"}, root=tmp_path)
     (tmp_path / "local").mkdir()
     module.write_private(tmp_path / "local" / "context.json", {"raw": "private"}, root=tmp_path)
     assert json.loads((tmp_path / "local" / "context.json").read_text()) == {"raw": "private"}
-    (tmp_path / "local" / "link").symlink_to(tmp_path, target_is_directory=True)
+    symlink_or_skip(tmp_path / "local" / "link", tmp_path, target_is_directory=True)
     with pytest.raises(ProbeError):
         module.write_private(tmp_path / "local" / "link" / "leak.json", {}, root=tmp_path)
 
