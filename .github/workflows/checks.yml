@@ -129,7 +129,7 @@ jobs:
         if: >-
           steps.runtime_gate.outputs.authorized == 'true' &&
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == '2107bf7d10c6318652622bde0e35fc60efb920ea' &&
+          github.event.before == '09b67d1f839d4b17d5b06114698cb18ec9fa0d7d' &&
           github.event_name == 'push' && github.ref == 'refs/heads/dot/android-foreground-agent' &&
           github.event.after == github.sha
         env:
@@ -251,7 +251,7 @@ jobs:
         if: >-
           steps.runtime_gate.outputs.authorized == 'true' &&
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == '2107bf7d10c6318652622bde0e35fc60efb920ea' &&
+          github.event.before == '09b67d1f839d4b17d5b06114698cb18ec9fa0d7d' &&
           github.event_name == 'push' && github.ref == 'refs/heads/dot/android-foreground-agent' &&
           github.event.after == github.sha
         env:

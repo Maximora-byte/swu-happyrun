@@ -95,6 +95,109 @@ ASSERTIONS = {
 
 # Exact structural allowlist. Output labels are constants, never captured class/method text.
 LAUNCH_FRAMES = {
+    ("com.android.server.wm.Task", "startActivityLocked", "Task.java"): "server_task_start_locked",
+    ("com.android.server.wm.Task", "addChild", "Task.java"): "server_task_add_child",
+    ("com.android.server.wm.Task", "setIntent", "Task.java"): "server_task_set_intent",
+    (
+        "com.android.server.wm.TaskLaunchParamsModifier",
+        "onCalculate",
+        "TaskLaunchParamsModifier.java",
+    ): "server_modifier_on_calculate",
+    (
+        "com.android.server.wm.TaskLaunchParamsModifier",
+        "calculate",
+        "TaskLaunchParamsModifier.java",
+    ): "server_modifier_calculate",
+    (
+        "com.android.server.wm.TaskLaunchParamsModifier",
+        "getPreferredLaunchTaskDisplayArea",
+        "TaskLaunchParamsModifier.java",
+    ): "server_modifier_preferred_area",
+    (
+        "com.android.server.wm.TaskLaunchParamsModifier",
+        "getFallbackDisplayAreaForActivity",
+        "TaskLaunchParamsModifier.java",
+    ): "server_modifier_fallback_area",
+    (
+        "com.android.server.wm.LaunchParamsController",
+        "calculate",
+        "LaunchParamsController.java",
+    ): "server_launch_params_calculate",
+    (
+        "com.android.server.wm.RootWindowContainer",
+        "getLaunchRootTask",
+        "RootWindowContainer.java",
+    ): "server_container_launch_root",
+    (
+        "com.android.server.wm.RootWindowContainer",
+        "anyTaskForId",
+        "RootWindowContainer.java",
+    ): "server_container_task_id",
+    (
+        "com.android.server.wm.AppTaskImpl",
+        "startActivity",
+        "AppTaskImpl.java",
+    ): "server_app_task_start",
+    (
+        "com.android.server.wm.ActivityStarter",
+        "execute",
+        "ActivityStarter.java",
+    ): "server_starter_execute",
+    (
+        "com.android.server.wm.ActivityStarter",
+        "executeRequest",
+        "ActivityStarter.java",
+    ): "server_starter_request",
+    (
+        "com.android.server.wm.ActivityStarter",
+        "startActivityUnchecked",
+        "ActivityStarter.java",
+    ): "server_starter_unchecked",
+    (
+        "com.android.server.wm.ActivityStarter",
+        "startActivityInner",
+        "ActivityStarter.java",
+    ): "server_starter_inner",
+    (
+        "com.android.server.wm.ActivityStarter",
+        "computeLaunchingTaskFlags",
+        "ActivityStarter.java",
+    ): "server_starter_task_flags",
+    (
+        "com.android.server.wm.ActivityStarter",
+        "setInitialState",
+        "ActivityStarter.java",
+    ): "server_starter_initial",
+    (
+        "com.android.server.wm.ActivityStarter",
+        "computeLaunchParams",
+        "ActivityStarter.java",
+    ): "server_starter_launch_params",
+    (
+        "com.android.server.wm.ActivityStarter",
+        "isAllowedToStart",
+        "ActivityStarter.java",
+    ): "server_starter_allowed",
+    (
+        "com.android.server.wm.ActivityStarter",
+        "getLaunchRootTask",
+        "ActivityStarter.java",
+    ): "server_starter_root_task",
+    (
+        "com.android.server.wm.ActivityStarter",
+        "computeTargetTask",
+        "ActivityStarter.java",
+    ): "server_starter_target_task",
+    (
+        "com.android.server.wm.ActivityStarter",
+        "addOrReparentStartingActivity",
+        "ActivityStarter.java",
+    ): "server_starter_reparent",
+    (
+        "com.android.server.wm.ActivityStarter",
+        "handleStartResult",
+        "ActivityStarter.java",
+    ): "server_starter_result",
     ("android.app.IAppTask$Stub$Proxy", "startActivity", "IAppTask.java"): "app_task_binder_proxy",
     (
         "android.app.Instrumentation",
@@ -163,6 +266,7 @@ def diagnostics(text: str, code: int):
         "runner_marker": "none",
         "exception_kind": "unknown",
         "launch_frames": [],
+        "remote_stack_marker": "Remote stack trace:\n" in text,
     }
     for marker, category in (
         ("INSTRUMENTATION_FAILED", "failed"),
@@ -193,7 +297,9 @@ def diagnostics(text: str, code: int):
         if frame and len(result["launch_frames"]) < 12:
             label = LAUNCH_FRAMES.get(frame.group(1, 2, 3))
             if label is not None:
-                result["launch_frames"].append({"frame": label, "line": int(frame.group(4))})
+                entry = {"frame": label, "line": int(frame.group(4))}
+                if entry not in result["launch_frames"]:
+                    result["launch_frames"].append(entry)
         if line.startswith("INSTRUMENTATION_STATUS: ") and "=" in line:
             key, value = line.removeprefix("INSTRUMENTATION_STATUS: ").split("=", 1)
             value = value.strip()

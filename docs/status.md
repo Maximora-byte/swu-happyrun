@@ -274,3 +274,7 @@ baseIntent 精确身份校验，随后停在 `launch` / `NullPointerException`�
 本次仅增加固定白名单栈帧标签及有界行号，拒绝异常消息、任意类名与对象值；
 Android 行为及接受条件未变。继续只在精确 before2107 的普通 API31 采证，
 其他 Android runtime 明确 not_run。修复及最终全矩阵仍待实际结果。
+
+### 09b 远端栈诊断
+
+09b67d1f839d4b17d5b06114698cb18ec9fa0d7d 的普通 API31 安全栈确认异常经 Parcel/Binder 返回，仍未定位服务端精确行。本轮只补固定服务端栈帧标签、去重与 remote marker 布尔，最多 12 帧；不含异常消息或对象值，Android 行为与接受条件不变。精确 before09b 的单普通31用于最后一次纯结构化栈采证，其他 runtime 未执行。若服务端栈缺失，不将猜测写成根因。
