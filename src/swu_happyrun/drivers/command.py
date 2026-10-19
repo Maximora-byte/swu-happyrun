@@ -1,4 +1,4 @@
-"""Bounded read-only child capture with safe, fixed diagnostic errors.
+"""Bounded process capture and a read-only text wrapper with fixed errors.
 
 This is host process control, never physical-device stop confirmation. A child
 may leave descendants holding pipes; unconfirmed cleanup must not report success.
@@ -50,7 +50,25 @@ def _read_pipe(pipe, target: bytearray, failed: threading.Event, reasons: list[s
 
 
 def run_readonly(path: Path, *args: str, timeout: float = 5) -> str:
-    """One in-flight capture; refuse new children while prior cleanup is unknown."""
+    """Return strict UTF-8 stdout with the original text-mode newline contract."""
+    stdout, _stderr, returncode = _run_bounded_bytes(path, *args, timeout=timeout)
+    if returncode != 0:
+        raise ProbeError("command_failed")
+    try:
+        text = stdout.decode("utf-8", errors="strict")
+        return text.replace("\r\n", "\n").replace("\r", "\n")
+    except UnicodeDecodeError:
+        raise ProbeError("command_encoding_invalid") from None
+
+
+def _run_bounded_bytes(
+    path: Path, *args: str, timeout: float = 5, before_spawn=None, cancel_event=None
+) -> tuple[bytes, bytes, int]:
+    """Internal process capture; bytes never establish device application or stop.
+
+    One shared capture, including read-only and controlled-native consumers.
+    The trusted pre-spawn guard runs under this lock and the original deadline.
+    """
     global _PENDING_CAPTURE
     if not _CAPTURE_LOCK.acquire(blocking=False):
         raise ProbeError("command_capture_busy")
@@ -64,16 +82,20 @@ def run_readonly(path: Path, *args: str, timeout: float = 5) -> str:
             if not finished:
                 raise ProbeError("command_cleanup_unconfirmed", primary_code=primary)
             _PENDING_CAPTURE = None
-        return _capture(path, *args, timeout=timeout)
+        return _capture(
+            path, *args, timeout=timeout, before_spawn=before_spawn, cancel_event=cancel_event
+        )
     finally:
         _CAPTURE_LOCK.release()
 
 
-def _capture(path: Path, *args: str, timeout: float) -> str:
+def _capture(
+    path: Path, *args: str, timeout: float, before_spawn=None, cancel_event=None
+) -> tuple[bytes, bytes, int]:
     """Capture both pipes under one deadline and a separate cleanup budget.
 
-    Successful UTF-8 stdout is returned only after both readers and the direct
-    child finish. On failure no partial/raw output escapes. OS process creation
+    Raw bytes return only after both readers and the direct child finish.
+    On capture failure no partial/raw output escapes. OS process creation
     and scheduling are not hard real-time guarantees. Never retries a command.
     """
     global _PENDING_CAPTURE
@@ -93,6 +115,15 @@ def _capture(path: Path, *args: str, timeout: float) -> str:
     process = None
     reason = "ok"
     cleanup_confirmed = True
+    # Guard exceptions (including Cancelled/LeaseLost RuntimeError subclasses)
+    # must propagate unchanged; they are not process/reader failures. The outer
+    # shared-capture finally still releases its lock when this callback raises.
+    if before_spawn is not None:
+        before_spawn()
+    if cancel_event is not None and cancel_event.is_set():
+        raise ProbeError("command_cancelled")
+    if time.monotonic() >= deadline:
+        raise ProbeError("command_timeout")
     try:
         process = subprocess.Popen(
             [str(path), *args],
@@ -110,10 +141,18 @@ def _capture(path: Path, *args: str, timeout: float) -> str:
                 daemon=True,
                 name="happyrun-readonly-capture",
             )
-            thread.start()
-            threads.append(thread)
-            owned_pipes.append(getattr(process, name))
+            try:
+                thread.start()
+            finally:
+                # start() can be interrupted after the OS thread has started.
+                # Retain that reader before cleanup; never close its pipe here.
+                if thread.ident is not None:
+                    threads.append(thread)
+                    owned_pipes.append(getattr(process, name))
         while True:
+            if cancel_event is not None and cancel_event.is_set():
+                reason = "command_cancelled"
+                break
             if failed.is_set():
                 reason = reasons[0]
                 break
@@ -125,6 +164,8 @@ def _capture(path: Path, *args: str, timeout: float) -> str:
             if process.poll() is not None and all(not t.is_alive() for t in threads):
                 break
             failed.wait(min(0.01, remaining))
+    except ProbeError:
+        raise
     except FileNotFoundError:
         reason = "executable_missing"
     except OSError:
@@ -162,11 +203,4 @@ def _capture(path: Path, *args: str, timeout: float) -> str:
         raise ProbeError("command_cleanup_unconfirmed", primary_code=reason) from None
     if reason != "ok":
         raise ProbeError(reason) from None
-    if process.returncode != 0:
-        raise ProbeError("command_failed")
-    try:
-        text = data["stdout"].decode("utf-8", errors="strict")
-        # Preserve the previous subprocess text=True universal-newline contract.
-        return text.replace("\r\n", "\n").replace("\r", "\n")
-    except UnicodeDecodeError:
-        raise ProbeError("command_encoding_invalid") from None
+    return bytes(data["stdout"]), bytes(data["stderr"]), process.returncode
