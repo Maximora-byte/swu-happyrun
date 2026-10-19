@@ -71,3 +71,12 @@ python -m swu_happyrun.cli mumu replay --instance $Instance --route $PrivateRout
 wheel 校验另核 pyproject 中的 Name/Version/Requires-Python、依赖/extras、命令入口，唯一 dist-info、纯 Python WHEEL 标记和完整 RECORD 哈希；Git index 的 assume-unchanged/skip-worktree 不能藏住产品文件改动，忽略规则不能藏新增源码。验证工具需要 dev/build 环境中的 packaging。
 
 Windows 源目录也必须保持原 Git blob 字节。该产品 `.gitattributes` 已指定 LF；如果旧 checkout 曾转成 CRLF，raw blob 校验会拒绝，请另建准确提交的干净 checkout，保留原目录，不强制覆盖未提交文件。需要时可在创建新 checkout 的单次 Git 命令中使用 `-c core.autocrlf=false`；不改系统 codepage 或全局 Git 配置。下载 ZIP/复制但没有 Git 身份的目录不能用于 schema2。
+
+例如在未存在的独立目录建立产品 checkout，以下配置只作用于这两次命令：
+
+```powershell
+git -c core.autocrlf=false clone --no-checkout https://github.com/Maximora-byte/swu-happyrun.git $Product
+git -C $Product -c core.autocrlf=false checkout --detach 25aea0177020eef34449764ddc5e3bf0e5afdd24
+```
+
+`source_git_blob_mismatch` 表示实际工作区字节与固定 tree 不一致，即使 Git status 干净也拒绝；不要归一化后跳过验证或修改清单。保留原目录，在新的目录按上述方式重建再验证。仓库属性若指定其他转换，仍需逐字节通过校验，命令成功本身不等于通过。

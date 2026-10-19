@@ -43,11 +43,12 @@ def source(tmp_path):
     adapter = root / legacy.ADAPTER_PATH
     adapter.parent.mkdir(parents=True)
     adapter.write_bytes(b"// synthetic adapter, no device execution\n")
-    (root / ".gitignore").write_text("build/\n__pycache__/\n", encoding="utf-8")
+    (root / ".gitignore").write_text("build/\n__pycache__/\n", encoding="utf-8", newline="\n")
     (root / "pyproject.toml").write_text(
         '[project]\nname="swu-happyrun"\nversion="0.1.0"\nrequires-python=">=3.11"\n'
         '[project.scripts]\nswu-happyrun="swu_happyrun.cli:main"\n',
         encoding="utf-8",
+        newline="\n",
     )
     git(root, "init", "--quiet")
     git(root, "add", ".")
@@ -453,3 +454,23 @@ def test_wheel_duplicate_member_rejected(source, tmp_path):
             archive.writestr("swu_happyrun/__init__.py", b"duplicate")
     with pytest.raises(ValueError):
         v2.inspect_wheel(wheel, source[0])
+
+
+def test_git_fixture_is_byte_exact_under_windows_text_defaults(tmp_path, monkeypatch):
+    original = Path.write_text
+
+    def windows_write_text(path, data, encoding=None, errors=None, newline=None):
+        return original(
+            path,
+            data,
+            encoding=encoding,
+            errors=errors,
+            newline="\r\n" if newline is None else newline,
+        )
+
+    monkeypatch.setattr(Path, "write_text", windows_write_text)
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.autocrlf")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "true")
+    root, head, tree = source.__wrapped__(tmp_path)
+    assert v2.source_identity(root, head, tree) == {"commit": head, "tree": tree}
