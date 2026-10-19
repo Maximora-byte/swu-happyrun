@@ -1,10 +1,14 @@
 # SWU HappyRun
 
-已交付原生 APK 的首阶段构建来自 [PR #35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 的 `28871b2d599a8ec8335570effb3207d2564639ab`：本地模式无需 PC 服务；远程模式由用户显式连接可信 HTTPS 服务，一次连接最多领取一个合成模拟任务。官方 API31/35 的准确 push 验收已通过，范围与未解决问题见[当前状态](docs/status.md)和[APK 安装边界](docs/android-apk.md)。本轮按 [七任务计划](docs/superpowers/plans/2026-10-19-next-stage.md) 纳入最新 main QA、PR39/40 修复、持续前台多任务与原生持久完成恢复。新增 Android 验收待同 HEAD CI；精确结果与阻塞见[统一候选验收记录](docs/acceptance.md)，MuMu完整闭环/学校记录不在已通过范围。
+已交付原生 APK 的首阶段构建来自 [PR #35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 的 `28871b2d599a8ec8335570effb3207d2564639ab`：本地模式无需 PC 服务；远程模式由用户显式连接可信 HTTPS 服务，一次连接最多领取一个合成模拟任务。官方 API31/35 的准确 push 验收已通过，范围与未解决问题见[当前状态](docs/status.md)和[APK 安装边界](docs/android-apk.md)。本轮按 [七任务计划](docs/superpowers/plans/2026-10-19-next-stage.md) 纳入最新 main QA、PR39/40 修复、持续前台多任务与原生持久完成恢复。005bb 单 API31 已实际通过 display7、native15 与 namespace3；最终统一候选的完整 Android 矩阵待同 HEAD CI；精确结果与阻塞见[统一候选验收记录](docs/acceptance.md)，MuMu完整闭环/学校记录不在已通过范围。
 
 西南大学步道乐跑适配项目：共享控制协议、Python 调度服务器、可恢复执行代理和可替换设备驱动。
 
 **当前交付是软件候选，不是学校有效记录或真实设备兼容性验收。** MuMu Android 15、vivo 无 Root、具体乐跑版本与纯业务接口仍需本地证据；未知规则、点位、应用页面和能力安全拒绝执行。fake `completed` 不表示真实记录 `succeeded`。
+
+## 资源细化 R1–R5 统一候选
+
+本候选纳入实例绑定、合成定位/传感器校准边界、空注册表的应用/记录适配接口、MuMu driver 合成协议链与三份研究材料。真实 backend 默认关闭，模拟仍只声明 fake 能力；实际乐跑版本选择器、真实停止证明与学校记录尚未具备。见[资源驱动计划](docs/superpowers/plans/2026-10-19-resource-guided-adaptation.md)、[R4 边界](docs/acceptance-r4-boundary.md)和[本地输入门槛](docs/onboarding.md)。最终下载请以本 PR 的准确 HEAD 和同构建 app/test 配对清单为准。
 
 ## 本轮实现与版本选择
 

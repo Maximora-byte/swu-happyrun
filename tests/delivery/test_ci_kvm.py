@@ -36,7 +36,7 @@ def setup(monkeypatch, tmp_path):
     event.write_text(
         json.dumps(
             {
-                "before": "b4ca97743f64a52b4981fbcf338899de008b52bc",
+                "before": "005bb79058d434d9897a266868a1fbd5bae566b4",
                 "after": "a" * 40,
                 "ref": "refs/heads/dot/android-foreground-agent",
                 "repository": {"full_name": "Maximora-byte/swu-happyrun"},
@@ -75,10 +75,8 @@ def setup(monkeypatch, tmp_path):
         ("RUNNER_ENVIRONMENT", "self-hosted"),
         ("RUNNER_OS", "Windows"),
         ("HAPPYRUN_ANDROID_API", "30"),
-        ("HAPPYRUN_ANDROID_API", "35"),
-        ("GITHUB_JOB", "android-self-probe"),
-        ("GITHUB_JOB", "remote-https"),
         ("GITHUB_JOB", ""),
+        ("GITHUB_JOB", "unreviewed-job"),
     ],
 )
 def test_unapproved_environment_never_calls_acl(setup, monkeypatch, key, value):
@@ -124,7 +122,7 @@ def test_missing_device_or_failed_verification_blocks(setup, monkeypatch, kind):
 
 def test_workflow_gate_binds_exact_single_transition():
     workflow = (ROOT / ".github/workflows/checks.yml").read_text(encoding="utf-8")
-    assert "github.event.before == 'b4ca97743f64a52b4981fbcf338899de008b52bc'" in workflow
+    assert "github.event.before == '005bb79058d434d9897a266868a1fbd5bae566b4'" in workflow
     assert "github.ref == 'refs/heads/dot/android-foreground-agent'" in workflow
     assert "github.event_name == 'push'" in workflow
     assert "workflow_dispatch:" not in workflow
@@ -279,6 +277,25 @@ def test_previous_server_stack_parent_is_consumed(setup, monkeypatch):
     event_path = Path(PROBE.os.environ["GITHUB_EVENT_PATH"])
     event = json.loads(event_path.read_text(encoding="utf-8"))
     event["before"] = "09b67d1f839d4b17d5b06114698cb18ec9fa0d7d"
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        PROBE.main()
+    assert not setup[1]
+
+
+@pytest.mark.parametrize("job", ["android-apk", "android-self-probe", "remote-https"])
+@pytest.mark.parametrize("api", ["31", "35"])
+def test_exact_final_matrix_acl_is_current_uid_only(setup, monkeypatch, job, api):
+    monkeypatch.setenv("GITHUB_JOB", job)
+    monkeypatch.setenv("HAPPYRUN_ANDROID_API", api)
+    assert PROBE.main() == 0
+    assert setup[1][0] == ["sudo", "-n", "setfacl", "-n", "-m", "u:1001:rw", "/dev/kvm"]
+
+
+def test_previous_restore_parent_is_consumed(setup, monkeypatch):
+    event_path = Path(PROBE.os.environ["GITHUB_EVENT_PATH"])
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+    event["before"] = "b4ca97743f64a52b4981fbcf338899de008b52bc"
     event_path.write_text(json.dumps(event), encoding="utf-8")
     with pytest.raises(SystemExit):
         PROBE.main()

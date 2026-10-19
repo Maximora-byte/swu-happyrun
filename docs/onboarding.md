@@ -67,3 +67,74 @@ states 是必须核对的状态清单，不证明已取得这些页面；须同�
 - [vivo 无 Root](research/vivo-noroot.md)：保持现有安全设置。
 - [纯接口](research/direct-protocol.md)：等待合法协议语义，不使用其他学校协议。
 - [控制协议](contracts/control-plane-v1.md)：现有状态与证据绑定为唯一运行契约。
+
+## R1：MuMu 实例绑定与私有只读取样
+
+本轮工具只做指定实例的元数据采集和本地证据结构校验，不合并 MuMu/ADB 的随机
+UUID，不启动应用、不安装、不点击、不读取账号会话/token、不写位置或传感器。
+ADB 本身可能隐式启动已有 host daemon；工具不执行 connect/pair，也没有任意
+命令或网关 URL 参数。真实 Windows/MuMu 仍由 Codex 现场验收。
+
+在已安装本项目及其依赖的 checkout 根目录，用已核实的本机路径替换示例：
+
+```powershell
+python scripts/collect_device_context.py --manager "C:\Program Files\MuMu\nx_main\MuMuManager.exe" --adb "C:\Program Files\MuMu\nx_main\adb.exe" --instance 0 --serial "<现场确认的serial>" --package org.happyrun.app --private-output local/context-001.json
+```
+
+实例、serial、package 必须显式填写；示例路径和 serial 不是自动发现结果。
+工具复用 MuMuManager.inspect 与 AdbClient.inspect，只查询元数据；stdout 仅输出
+固定 reason/missing 项，不含真实 serial、package、版本、UUID、路径或稳定 digest。
+私有输出只允许此 checkout 的 local/ 下新建文件，拒绝覆盖、越界及符号链接。
+POSIX 文件以 0600 创建；Windows 仍须先由操作者确认 local/ 继承的 ACL 仅允许
+本人，禁止放到共享/自动同步目录。工具不能代替 Windows ACL 审核。
+
+未指定 --private-output 时不保存采样。底层完整 dumpsys 输出在内存解析后丢弃；
+保存的私有文件仅含选择参数及两个现有适配器的结构化元数据。不采集原始页面、
+屏幕截图、路由、数据库或会话信息。不可把私有文件作为公开附件上传。
+
+成功读取元数据也返回 exit 2、binding_evidence_required，并列出还缺的当前别名
+映射、host/engine版本、boot身份及display/task证据。这是预期的保守结果，不能
+把两个读命令成功当成同一实例证明；命令非零/超时同样不能获得能力。
+
+R1 复用 Task5 scripts/check_mumu_observation.py 的 accepted 纯解析入口：
+collect_device_context.validate_display_replay 只解析现有私有回执，不调用其 main，
+不自动运行 am instrument。Task5 的独立自身应用观测仍按原先隔离测试要求执行。
+该回执不会证明目标乐跑页面或学校记录。多 task 必须明确当前 display/task；无法
+唯一关联时不能绑定。现场操作者还须核对 index 到 serial 的依据，不能猜 ADB 端口。
+
+本地 resolve_binding 的 observation 使用严格字段集合：instance_index、adb_serial、
+host_version、engine_version、app_version、package、display_id、task_id、boot_id、
+observation_id（UUID）、observed_at（带时区ISO时间）、mapping_source（local_review）、
+mapped_instance_index、mapped_adb_serial、observed_display_id、observed_task_id、
+matching_task_count（必须为1）。缺失或额外字段（包括 token/session/raw/url/command）
+一律拒绝且错误不回显值。时间窗为30秒，未来时间也拒绝；assert_current 先验证新观测
+的新鲜度，再核对稳定 identity_digest（实例/serial/boot/版本/package/display/task）。
+同身份的新观测ID/时间允许刷新；旧缓存超时、实例重启或版本/display/task变化拒绝。
+完整 digest 仍包含最初观测ID/时间，作为原始校准证据锚点，不因刷新偷偷重写；
+identity_digest 与完整 digest 都仅限本地，不公开。R2/R4 应保留校准所锚定的原
+MumuBinding，在每次写前对该对象调用 assert_current(本次新观测)，不能用新
+binding 替换旧证据来规避校准检查；身份改变后须重新采样、审阅与校准。
+
+该结构校验不认证手工输入的来源，也不是通用DLP；可信调用者必须提供本次实际
+观察并持续重新检查 boot 身份与上下文，不能重放缓存。MumuBinding 仅本地使用，
+capabilities 恒为空，不增加 wire 字段；即使结构有效也不授予执行权限或证实定位、
+传感器、真实页面、有效记录。R2/R4 仍需独立执行 guard 与现场证据。
+
+## R3：离线版本与记录拒绝门槛
+
+本轮 `drivers/budao` 只提供 L3 接口和离线拒绝检查。真实版本注册表为空；无版本选择器、无 ADB 调用、无真实开始/结束/上传能力，也不发出 `app_record`。全部新增夹具均是合成负例。即使所有候选字段匹配，仍返回 `unknown / needs_samples`。库存 metadata 检查通过不能激活此适配器。
+
+页面观察必须包含精确 package、versionName、正整数 versionCode、带时区的采集时间、本人授权、当前会话和动态点确认。30 秒及以上或未来页面拒绝；候选状态标签和布尔确认不构成实际观察的证明。成功 toast 不是记录页。当前适配器不把任何候选标签解释为可信状态。
+
+记录离线检查拒绝 pending、invalid、未知状态、旧记录、错误会话、缺 app 会话关联、缺 identity/namespace。即使候选会话和时间相同，也不能证明记录由本次执行产生；截图 hash、调用方附加的 job/session ID 均不能替代稳定记录身份。当前没有已验证的规范化 artifact/namespace 算法，因此结果始终没有记录证据。
+
+后续真实样本最小清单（本地私有保存，勿上传原页面/账号）：
+- 精确 package/versionName/versionCode 及实际观测来源
+- 开始前、运行中、结束确认、上传待定、记录详情和未知页面的脱敏结构
+- 本人授权、学校配置 revision、规则及当前会话动态点来源/CRS
+- 当前开始观察与应用会话、最终记录之间可验证的关联规则
+- 稳定 record namespace/identity 与 canonical artifact 规则；时间和 pending→valid 变化不能改变身份
+
+样本齐全后先在 Issue #9 固定来源、选择器、版本和关联规则，另行实现并验收真实版本。页面回放、设备 UI 流程、学校最终记录分别报告，不能相互替代。
+
+R4 接线建议：由现有 `DeviceDriver` 组合此 `BudaoAdapter`，沿用共享 `SchoolProfile` 和 `VerificationResult`。代理继续负责持久 intent、lease/fence 与恢复授权；未来每次写入前执行 guard 并限制 transport 时间。不得将此离线适配器直接注册成具有 app_ui/record_read/location_write 的物理驱动。`finish()` 不是取消时的 `stop()`；停止须由现有驱动独立保证，不能因页面/版本门禁阻止停机。verify_only 不调用 start/finish；真实记录关联缺失仍保持 needs_attention。

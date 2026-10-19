@@ -291,3 +291,26 @@ b4 单机安全栈出现 `server_task_add_child:1725`，说明异常经服务端
 用于实际验证；其他 runtime 明确未执行，完整矩阵仍待后续验收。隔离官方 AVD
 额外保存限定公开 guest build 字段和镜像 revision，缺失写 unknown；不采集设备
 序列号、账户或全量 getprop，不将此入口用于用户设备自动采集。
+
+### 最终资源统一候选（源与软件验证阶段）
+
+以 `005bb79058d434d9897a266868a1fbd5bae566b4` 为准确基线，保留已通过的
+普通 API31 display7/native15/namespace3 修订，叠加以下独立受审资源来源的
+21 个 owned 路径：
+
+- R1 `3694b340d10776193d9b36822cf82fdabf211890`
+- R2 / PR49 `6b66c2e20da808d920bc34a2f773d4888468e33b`
+- R3 / PR48 `7ead96e12839d4baadd864cae8e397c918844809`
+- R4 / PR51 `a341d214ea18b259c443aa9ff7d603e3233eddc3`
+- R5 / PR50 `4dbc9ec1e1e034f9633930f9c6aae889a069039a`
+
+旧 onboarding/vivo/direct 文档按全文前缀核验追加，无覆盖近期 Windows、
+RESTORE、诊断或 CI 修复。真实适配注册表仍为空，真实 MuMu 能力默认关闭；
+校准/绑定和 runner 协议链的软件测试不能证明实际位置、传感器、物理停止
+或学校记录。旧间歇 HTTP/TLS 调查继续保留，不能用后续一次绿消除失败史。
+
+完成原批准矩阵的精确门禁为本分支下一次 before005bb 的可信 push，三个
+指定 job（ordinary/optional/HTTPS）各 API31/35，其他事件 runtime 未执行。
+新 HEAD 的完整软件/设备结果见 PR 正文和 Actions；此处不预填通过结果。
+普通 APK 与 instrumentation APK 必须同构建同签名配对；debug 签名跨次
+可能不同，签名冲突不得自动卸载抹除数据。

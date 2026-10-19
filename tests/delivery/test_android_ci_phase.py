@@ -44,10 +44,8 @@ def test_consumed_exact_grant_only():
         ("GITHUB_REF", "refs/heads/main"),
         ("RUNNER_ENVIRONMENT", "self-hosted"),
         ("HAPPYRUN_ANDROID_API", "34"),
-        ("HAPPYRUN_ANDROID_API", "35"),
-        ("GITHUB_JOB", "android-self-probe"),
-        ("GITHUB_JOB", "remote-https"),
         ("GITHUB_JOB", ""),
+        ("GITHUB_JOB", "unreviewed-job"),
         ("GITHUB_SHA", "b" * 40),
     ],
 )
@@ -61,6 +59,7 @@ def test_other_context_is_not_authorized(key, value):
     "key,value",
     [
         ("before", "b" * 40),
+        ("before", "b4ca97743f64a52b4981fbcf338899de008b52bc"),
         ("before", "09b67d1f839d4b17d5b06114698cb18ec9fa0d7d"),
         ("before", "2107bf7d10c6318652622bde0e35fc60efb920ea"),
         ("before", "b3642f7215135fb90230b13ff1bdcfb5930ae227"),
@@ -174,3 +173,11 @@ def test_dirty_checkout_rejected_before_provenance(monkeypatch, tmp_path):
     monkeypatch.setattr(phase.subprocess, "check_output", lambda *a, **k: " M src/file.py\n")
     with pytest.raises(ValueError, match="dirty_checkout"):
         phase.context({}, tmp_path, "debug")
+
+
+@pytest.mark.parametrize("job", ["android-apk", "android-self-probe", "remote-https"])
+@pytest.mark.parametrize("api", ["31", "35"])
+def test_exact_final_matrix_only(job, api):
+    env, event = grant()
+    env.update(GITHUB_JOB=job, HAPPYRUN_ANDROID_API=api)
+    assert phase.authorized(env, event)
