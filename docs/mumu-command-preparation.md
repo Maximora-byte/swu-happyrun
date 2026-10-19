@@ -58,3 +58,40 @@ acceptance. Killing a process or joining a thread cannot confirm device stop.
 This change does not operate MuMu, a third-party app or school services, and does
 not establish a real location, sensor, running record or school acceptance result.
 The current PR46 baseline's own-app HTTPS acceptance is separate evidence.
+
+## Read-only subprocess capture (independent follow-up)
+
+The existing `drivers.command.run_readonly` used by MuMuManager information and
+ADB diagnostics now bounds each binary output stream to 1 MiB, preserving the
+five-second default call timeout. Both pipes are drained concurrently; successful
+return requires direct-child exit and reader EOF inside one monotonic deadline.
+Strict UTF-8 is required for returned stdout; malformed stdout is not silently
+replaced. Stderr is bounded bytes and discarded, preserving compatibility with
+local-codepage diagnostics when exit status and stdout are valid. Exceeding the output cap, invalid timeout, failed readers, launch errors,
+nonzero exit and timeout produce fixed `ProbeError` codes without raw output.
+The output cap is local policy, not a MuMu limit. There are no automatic retries.
+
+Cleanup has a separate, shared 0.5-second budget for waiting on the direct child
+and joining both readers. Only the direct child is killed. Descendants can remain
+alive or hold inherited pipes; in that case the function reports
+`command_cleanup_unconfirmed`, with its original safe reason in `primary_code`.
+A process-local nonblocking lock allows only one capture at a time; concurrent
+calls fail with `command_capture_busy`. After unconfirmed cleanup, no new child
+may start until the old direct child has exited AND every reader has finished.
+The pending object retains the original safe reason; there is no override/reset.
+Thus repeated diagnostics cannot accumulate child processes or reader threads.
+Readers own their pipe close operation and may remain as daemon threads until EOF;
+this avoids blocking the caller on a pipe lock held by an inherited-pipe reader.
+The bounds apply to captured bytes and explicit waits, not an absolute real-time
+promise about OS process creation, kill, scheduling or arbitrary descendants.
+Nothing here confirms device stop or queue empty, and the physical gate is unchanged.
+
+Tests execute isolated Python children for stdout/stderr flood, dual streams,
+UTF-8, literal argument passing, timeout, nonzero exit and inherited pipes; the
+known test descendant exits naturally. Parser fixture stubs use binary completed
+child pipes; they do not replace the actual-process acceptance cases. Windows
+behavior still requires exact-source CI and local independent acceptance.
+
+Read-only stdout retains the prior universal-newline return contract: after
+strict UTF-8 decoding, CRLF and lone CR become LF. Capture byte limits apply
+to the original bytes, before this normalization.
