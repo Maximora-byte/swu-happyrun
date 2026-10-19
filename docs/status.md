@@ -2,6 +2,14 @@
 
 更新日期：2026-10-18（Asia/Shanghai）。当前结论以下方“当前交付候选”为准；末尾保存旧快照用于追溯，不能将旧“未接单/未开始”作为本轮状态。
 
+## 原生 APK 新阶段（2026-10-19）
+
+用户最新目标是在 MuMu 内安装 APK 直接使用。本阶段新增无需 PC 服务的原生 Java/Android SDK 本地应用；旧计划“不做独立 APK”已由本次明确需求覆盖，旧软件证据保留。构建、安装与签名限制见[APK 交付说明](android-apk.md)。当前 APK/官方 emulator 结果必须按本轮集成 HEAD 的 Actions 单独核对，不借用此前 Python/网页测试通过结论。真实 MuMu、应用执行和学校有效记录仍未验收；Root/LSPosed 仅保留可选能力架构，不默认安装或配置。
+
+本轮将原生UI、持久化本地simulation、只读能力诊断、独立本地状态边界和APK构建/测试脚本组合；本地simulation不伪装服务端JobView或AGENT。未知能力不启用真实执行，needs_attention须明确停止确认后才能新建模拟；历史任务保留。Python分发保护另经合成文件RED→GREEN验证，排除新增Android目录里的local.properties、签名材料和构建缓存，保留审查源码；旧已交付包没有这些敏感文件。
+
+本轮初次冻结组合 Linux/Python3.12.14 完整 **564 passed**（90.58秒，1条继承warning）；frozen依赖、Schema/Android边界防漂移、Ruff、旧web Node生产脚本harness、Bash语法和4份XML解析通过。46个Python package/静态资源文件与f3d基线逐字节一致。上述结果不包含Android编译或仪器执行。
+
 ## 当前交付候选
 
 Dot 已承担主要实现与修复；本地 Codex 负责 Windows、真实设备与集成独立验收。此分工覆盖旧计划中的负责人，详见 [冲刺交接](handoffs/2026-10-18-dot-lead-sprint.md) 与 [Issue #16](https://github.com/Maximora-byte/swu-happyrun/issues/16)。本文不宣称全部 v1 已验收，也不把提交、局部测试、软件联调、设备观测和学校有效记录合并为同一种“完成”。
@@ -131,3 +139,7 @@ Dot 已承担主要实现与修复；本地 Codex 负责 Windows、真实设备�
 | [#11 R0 vivo/纯接口研究](https://github.com/Maximora-byte/swu-happyrun/issues/11) | 本地 Codex，Dot 评审接口样本 | 实际设备版本、连接和脱敏样本 |
 
 本轮交付仅包含设计、协议草案、实施计划和协作任务。Markdown 相对链接、占位符扫描及 Git 空白检查通过；没有业务代码，因此未运行产品测试，也没有生成设备验收结论。
+
+最后追加仅Android持久化故障锁存及UI/真实SQLite trigger回归：存储失败停止模拟、显示未保存状态并禁止继续开始/停止；不能把旧持久running当成仍在执行。另增加已核包名的只读PackageInfo诊断。Android CI分别运行API31/35官方AVD，记录debug签名指纹；这些均不能代替MuMu或目标应用执行验收。此前完整Python结果按原快照保留，最后变更另做目标测试/静态/分发检查。
+
+最终五路更新后的Python目标检查（Android契约与delivery）**14 passed**，Schema/边界防漂移、Ruff、旧web Node、脚本/XML/接口静态检查和分发隐私检查通过；Python生产模块仍与f3d相同。APK构建与11项Android测试尚未在本地运行，须取同HEAD的API31/35 Actions证据。

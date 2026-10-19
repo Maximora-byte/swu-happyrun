@@ -31,6 +31,7 @@ jobs:
       - run: uv run --no-sync python -m pytest -q
       - run: uv run --no-sync python scripts/export_schema.py --check
       - run: uv build
+      - run: uv run --no-sync python scripts/check_distribution_privacy.py
       - run: uv run --no-sync python scripts/check_install.py
       - name: Checksum candidate distributions
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
@@ -81,5 +82,82 @@ jobs:
             qa/console-browser/mobile-390.png
             qa/console-browser/failure-*.png
             qa/console-browser/results.json
+          if-no-files-found: error
+          retention-days: 7
+
+  android-apk:
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [31, 35]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Select preinstalled JDK 17 and official Android SDK
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          test -d "$ANDROID_HOME/licenses"
+          # EOF rejects new interactive license agreements; never pipe yes.
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools' 'emulator' </dev/null || { echo 'SDK install failed; review any missing/new license explicitly.' >&2; exit 1; }
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+          test -x "$ANDROID_HOME/build-tools/35.0.0/apksigner"
+      - name: Build and test native Android candidate
+        run: bash scripts/android_gradle.sh lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
+      - name: Verify debug APK signing and checksum
+        run: |
+          set -euo pipefail
+          mkdir -p qa/android
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee qa/android/signature.txt
+          sha256sum android/app/build/outputs/apk/debug/app-debug.apk > qa/android/SHA256SUMS
+      - name: Enable current-account KVM for single approved push transition
+        if: ${{ github.event_name == 'push' && github.repository == 'Maximora-byte/swu-happyrun' && github.ref == 'refs/heads/dot/android-app' && github.event.before == '629f2e9b86d7a72502f528abd1c1edf999d6a842' }}
+        env:
+          HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: |
+          set -euo pipefail
+          mkdir -p qa/android
+          python scripts/check_ci_kvm.py 2>&1 | tee qa/android/kvm-check.txt
+      - name: Install and exercise APK on official Android emulator
+        env:
+          HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+        run: bash scripts/android_emulator_test.sh
+      - name: Upload native APK and synthetic QA evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-debug-candidate-api${{ matrix.api }}-${{ github.sha }}
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/reports/lint-results-debug.html
+            android/app/build/test-results/testDebugUnitTest/*.xml
+            qa/android/SHA256SUMS
+            qa/android/signature.txt
+            qa/android/emulator.log
+            qa/android/kvm-check.txt
+            qa/android/launch.txt
+            qa/android/launch-activity.txt
+            qa/android/launch-window.txt
+            qa/android/launch-logcat.txt
+            qa/android/launch-pid.txt
+            qa/android/launch-ui.xml
+            qa/android/launch-screen.png
+            qa/android/launch-verification.txt
+            qa/android/launched.png
+            qa/android/native_ui.txt
+            qa/android/prepare_completed.txt
+            qa/android/completed_persistence.txt
+            qa/android/prepare_interruption.txt
+            qa/android/recover_without_replay.txt
+            qa/android/storage_FirstIntentFailureIsVisibleWithoutTask.txt
+            qa/android/storage_NewIntentFailurePreservesPreviousCompletion.txt
+            qa/android/storage_TickAndAttentionWriteFailureNeverClaimsSavedOrStopped.txt
+            qa/android/report.json
+            qa/android/android-onboarding.png
+            qa/android/android-completed.png
           if-no-files-found: error
           retention-days: 7

@@ -1,5 +1,7 @@
 # SWU HappyRun
 
+原生 APK 新阶段：按最新需求新增无需 PC 服务的 Android 本地模式，见[APK 安装与能力边界](docs/android-apk.md)。候选构建与 emulator 验证以对应 Actions 为准，尚不代表 MuMu/学校有效记录验收。
+
 西南大学步道乐跑适配项目：共享控制协议、Python 调度服务器、可恢复执行代理和可替换设备驱动。
 
 **当前交付是软件候选，不是学校有效记录或真实设备兼容性验收。** MuMu Android 15、vivo 无 Root、具体乐跑版本与纯业务接口仍需本地证据；未知规则、点位、应用页面和能力安全拒绝执行。fake `completed` 不表示真实记录 `succeeded`。
