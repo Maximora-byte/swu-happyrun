@@ -15,7 +15,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_android_manifest_has_no_privileged_permissions():
     manifest = ET.parse(ROOT / "android/app/src/main/AndroidManifest.xml").getroot()
-    assert not manifest.findall("uses-permission")
+    assert [
+        node.attrib["{http://schemas.android.com/apk/res/android}name"]
+        for node in manifest.findall("uses-permission")
+    ] == ["android.permission.INTERNET"]
+    assert not manifest.findall("uses-permission-sdk-23")
     queries = manifest.findall("queries/package")
     assert [q.attrib["{http://schemas.android.com/apk/res/android}name"] for q in queries] == [
         "com.lptiyu.tanke"
@@ -26,8 +30,14 @@ def test_android_manifest_has_no_privileged_permissions():
     assert application.attrib[android + "allowBackup"] == "false"
     assert application.attrib[android + "usesCleartextTraffic"] == "false"
     activities = application.findall("activity")
-    assert len(activities) == 1
-    assert activities[0].attrib[android + "name"] == ".MainActivity"
+    assert {node.attrib[android + "name"] for node in activities} == {
+        ".MainActivity",
+        ".RemoteAgentActivity",
+    }
+    remote = next(
+        node for node in activities if node.attrib[android + "name"] == ".RemoteAgentActivity"
+    )
+    assert remote.attrib[android + "exported"] == "false"
 
 
 def test_android_local_state_excluded_from_source_distribution():

@@ -1,0 +1,87 @@
+name: android-remote-https
+on:
+  push:
+    branches: [dot/android-remote-agent]
+permissions:
+  contents: read
+jobs:
+  remote-https:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [31, 35]
+    env:
+      HAPPYRUN_ANDROID_API: ${{ matrix.api }}
+      HAPPYRUN_REMOTE_PRIVATE_DIR: ${{ runner.temp }}/happyrun-remote-api${{ matrix.api }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: '0.12.19'
+          python-version: '3.11'
+      - name: Prepare installed Python server and official preinstalled JDK
+        run: |
+          set -euo pipefail
+          uv sync --extra server --extra agent --extra dev --frozen
+          uv build
+          uv pip install --python .venv/bin/python --no-deps --reinstall dist/*.whl
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          test -d "$ANDROID_HOME"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools' 'emulator' </dev/null || { echo 'SDK install failed; review any missing/new license explicitly.' >&2; exit 1; }
+      - name: Generate temporary QA-only certificate
+        run: |
+          python scripts/check_remote_https_android.py prepare --private-dir "$HAPPYRUN_REMOTE_PRIVATE_DIR" --ca-resource android/app/build/generated/remoteQa/res/raw/remote_qa_ca.pem
+      - name: Build normal packages and isolated remote QA variant
+        run: |
+          set -euo pipefail
+          bash scripts/android_gradle.sh verifySelfProbeApi lintDebug lintSelfProbe testDebugUnitTest testSelfProbeUnitTest assembleDebug assembleSelfProbe assembleRelease
+          bash scripts/android_gradle.sh -PremoteQaInstrumentation lintRemoteQa assembleRemoteQa assembleRemoteQaAndroidTest
+          python scripts/check_remote_qa_packaging.py --analyzer "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" --ca "$HAPPYRUN_REMOTE_PRIVATE_DIR/certificates/ca.pem" --qa android/app/build/outputs/apk/remoteQa/app-remoteQa.apk android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/selfProbe/app-selfProbe.apk android/app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Enable this explicitly approved temporary KVM transition
+        if: >-
+          github.repository == 'Maximora-byte/swu-happyrun' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/dot/android-remote-agent' &&
+          github.event.before == '77494e21756e514f53e51b3a2c72f22555f0aae6' &&
+          github.event.after == github.sha
+        env:
+          HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
+        run: python scripts/check_ci_kvm.py
+      - name: Actual Android HTTPS and journal recovery acceptance
+        env:
+          HAPPYRUN_ANDROID_LAUNCH_PROFILE: wizard
+          HAPPYRUN_ANDROID_APK: ${{ github.workspace }}/android/app/build/outputs/apk/remoteQa/app-remoteQa.apk
+          HAPPYRUN_ANDROID_TEST_APK: ${{ github.workspace }}/android/app/build/outputs/apk/androidTest/remoteQa/app-remoteQa-androidTest.apk
+          HAPPYRUN_ANDROID_ACCEPTANCE_SCRIPT: ${{ github.workspace }}/scripts/android_remote_https_test.sh
+        run: bash scripts/android_emulator_test.sh
+      - name: Upload bounded synthetic remote HTTPS evidence only
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-remote-https-api${{ matrix.api }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            qa/android-remote/report.json
+            qa/android/emulator.log
+            qa/android/launch-report.json
+            qa/android/launch-screen.png
+            qa/android/launch-ui.xml
+            qa/android/launch-activity.txt
+            qa/android/launch-window.txt
+            qa/android/launch-logcat.txt
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove disposable private TLS and server material
+        if: always()
+        run: |
+          python - <<'PY'
+          import os, pathlib, shutil
+          path = pathlib.Path(os.environ['HAPPYRUN_REMOTE_PRIVATE_DIR']).resolve()
+          assert path.parent == pathlib.Path(os.environ['RUNNER_TEMP']).resolve()
+          assert path.name.startswith('happyrun-remote-api')
+          shutil.rmtree(path, ignore_errors=True)
+          PY

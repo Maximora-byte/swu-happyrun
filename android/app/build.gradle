@@ -22,7 +22,25 @@ android {
             signingConfig signingConfigs.debug
         }
     }
-    testBuildType project.hasProperty('probeInstrumentation') ? 'selfProbe' : 'debug'
+    // remoteQa is never a downloadable user candidate; its CA is generated per job.
+    buildTypes {
+        remoteQa {
+            initWith selfProbe
+            matchingFallbacks = ['selfProbe', 'debug']
+            signingConfig signingConfigs.debug
+        }
+    }
+    sourceSets {
+        remoteQa {
+            java.srcDir 'src/selfProbe/java'
+            assets.srcDir 'src/selfProbe/assets'
+            res.srcDir 'src/selfProbe/res'
+            res.srcDir layout.buildDirectory.dir('generated/remoteQa/res')
+        }
+        androidTestRemoteQa.java.srcDir 'src/remoteQaAndroidTest/java'
+    }
+    testBuildType project.hasProperty('remoteQaInstrumentation') ? 'remoteQa' :
+        (project.hasProperty('probeInstrumentation') ? 'selfProbe' : 'debug')
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -58,3 +76,6 @@ tasks.configureEach {
     if (name == 'preSelfProbeBuild') dependsOn verifySelfProbeApi
 }
 
+
+configurations.remoteQaCompileOnly.extendsFrom(configurations.selfProbeCompileOnly)
+tasks.configureEach { if (name == 'preRemoteQaBuild') dependsOn verifySelfProbeApi }

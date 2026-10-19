@@ -2,6 +2,7 @@ package org.happyrun.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -226,6 +227,11 @@ public final class MainActivity extends Activity {
         blocked.setEnabled(false);
         requirements.addView(blocked, buttonParams());
         addSpace(content, 24);
+        Button remote = new Button(this);
+        remote.setId(R.id.remote_entry);
+        remote.setText(R.string.remote_title);
+        remote.setOnClickListener(v -> startActivity(new Intent(this, RemoteAgentActivity.class)));
+        content.addView(remote, buttonParams());
         content.addView(text(getString(R.string.footer_note), 12, MUTED, false));
     }
 

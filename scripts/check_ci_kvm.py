@@ -22,7 +22,7 @@ def main() -> int:
         raise SystemExit("KVM grant refused: only this API31/35 acceptance matrix")
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
     repository = "Maximora-byte/swu-happyrun"
-    branch = "dot/android-onboarding"
+    branch = "dot/android-remote-agent"
     event_name = os.environ.get("GITHUB_EVENT_NAME")
     push = (
         event_name == "push"
@@ -30,24 +30,13 @@ def main() -> int:
         and os.environ.get("GITHUB_REF") == "refs/heads/" + branch
         and event.get("after") == os.environ.get("GITHUB_SHA")
     )
-    pr = event.get("pull_request", {})
-    synchronize = (
-        event_name == "pull_request"
-        and event.get("action") == "synchronize"
-        and event.get("number") == 33
-        and os.environ.get("GITHUB_REF") == "refs/pull/33/merge"
-        and pr.get("head", {}).get("repo", {}).get("full_name") == repository
-        and pr.get("base", {}).get("repo", {}).get("full_name") == repository
-        and pr.get("head", {}).get("ref") == branch
-        and event.get("after") == pr.get("head", {}).get("sha")
-    )
     if (
-        event.get("before") != "491019d0b68802fdcf0c67fbe4bd3b846a9eae82"
+        event.get("before") != "77494e21756e514f53e51b3a2c72f22555f0aae6"
         or event.get("repository", {}).get("full_name") != repository
         or not isinstance(event.get("after"), str)
         or len(event["after"]) != 40
         or any(c not in "0123456789abcdef" for c in event["after"])
-        or not (push or synchronize)
+        or not push
     ):
         raise SystemExit("KVM grant refused: not the single reviewed branch transition")
     device = Path("/dev/kvm")

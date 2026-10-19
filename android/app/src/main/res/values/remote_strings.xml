@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item type="id" name="remote_entry" />
+    <string name="remote_title">连接服务端模拟</string>
+    <string name="remote_intro">仅前台 fake AGENT 合成模拟，不操作真实跑步或学校记录。需已有可信 HTTPS 服务与绑定的 AGENT 身份。每次连接只领取一个任务，离开页面会停止本地模拟；重连不会自动恢复旧任务。未知配置拒绝执行。</string>
+    <string name="remote_endpoint">HTTPS 服务地址（不含路径）</string>
+    <string name="remote_agent_id">服务端绑定的 agent UUID</string>
+    <string name="remote_device_id">登记的 device UUID</string>
+    <string name="remote_token">AGENT token（仅本次内存）</string>
+    <string name="remote_connect">手动连接并领取一次模拟任务</string>
+    <string name="remote_stop">停止本地模拟并尝试上报</string>
+    <string name="remote_offline">未连接。不会自动联网。</string>
+    <string name="remote_connecting">正在连接并领取一次模拟任务。此页面需保持前台。</string>
+    <string name="remote_stopping">已请求本地停止，正在有限等待上报结果；尚不代表服务端确认。</string>
+    <string name="remote_left">页面已离开，本地停止已请求。重新连接需重新输入 token，不会自动恢复旧任务。</string>
+    <string name="remote_invalid">输入无效：请检查可信 HTTPS 地址、两个规范 UUID 与 AGENT token。不会忽略证书错误。</string>
+    <string name="remote_failed">本次会话已结束，本地模拟已停止。服务端状态未确认，请在控制台核对；不会自动重试。</string>
+    <string name="remote_idle">服务端没有返回可领取任务，本次连接已结束。</string>
+    <string name="remote_result">本次会话已结束。本地模拟已停止。最后确认的服务端状态：%1$s；任务：%2$s。此结果不证明真实设备或学校记录有效。</string>
+    <string name="remote_storage_failed">本地模拟已停止，执行日志不可用或写入未获确认。已禁止新任务，请人工检查存储与服务端状态，不要清除日志后重跑。</string>
+</resources>
