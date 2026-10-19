@@ -64,3 +64,11 @@ def test_report_rejects_credentials(tmp_path):
     with pytest.raises(ValueError):
         FIXTURE.redact_report(tmp_path / "report.json", {"agent_token": "synthetic"})
     assert not (tmp_path / "report.json").exists()
+
+
+def test_certificate_chain_passes_strict_tls_verification(tmp_path, certificates):
+    context = ssl.create_default_context(cafile=str(certificates["ca.pem"]))
+    context.verify_flags |= ssl.VERIFY_X509_STRICT
+    with FIXTURE.server_fixture(tmp_path, certificates) as fixture:
+        with httpx.Client(verify=context, trust_env=False, timeout=5) as client:
+            assert client.get(fixture["origin"] + "/api/v1/ready").status_code == 200

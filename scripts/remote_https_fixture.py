@@ -61,6 +61,8 @@ def issue_certificates(directory: Path) -> dict[str, Path]:
         paths["ca.pem"],
         "-addext",
         "basicConstraints=critical,CA:TRUE",
+        "-addext",
+        "keyUsage=critical,keyCertSign,cRLSign",
     )
     for name, san in (("server", "IP:127.0.0.1,IP:10.0.2.2"), ("wrong", "DNS:wrong.invalid")):
         openssl(
@@ -76,7 +78,7 @@ def issue_certificates(directory: Path) -> dict[str, Path]:
             paths[name + ".csr"],
         )
         paths[name + ".ext"].write_text(
-            "basicConstraints=critical,CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\n"
+            "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n"
             "extendedKeyUsage=serverAuth\nsubjectAltName=" + san + "\n",
             encoding="utf-8",
         )

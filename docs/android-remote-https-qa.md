@@ -18,7 +18,7 @@ D的3项界面输入/生命周期测试单独计数。原native15、wizard4、in
 
 ## 本轮权限、成本与证据
 
-用户2026-10-19明确批准新一轮Android12/15临时runner KVM，仅当前测试uid、保留旧ACL mask。根确认本轮包括旧四Android回归job与新两个HTTPSjob；唯一函数check_ci_kvm.py限定仓库、dot/android-remote-agent、push before774、真实after==GITHUB_SHA、hosted Linux及API31/35。未知PR编号不获授权；任何别的父提交/分支/事件拒绝。不执行本地ACL，不自动接受SDK协议。最终发布前根复核准确HEAD。
+用户2026-10-19明确批准新一轮Android12/15临时runner KVM，仅当前测试uid、保留旧ACL mask。根确认本轮包括旧四Android回归job与新两个HTTPSjob；唯一函数check_ci_kvm.py限定仓库、dot/android-remote-agent、本轮修复重试push before e5b3b973f9e055fc8bcb4a9e3261cf6320568787、真实after==GITHUB_SHA、hosted Linux及API31/35。未知PR编号不获授权；任何别的父提交/分支/事件拒绝。不执行本地ACL，不自动接受SDK协议。最终发布前根复核准确HEAD。
 
 03:53:32UTC只读GitHub仓库API显示private=false、visibility=public；与初始私有预期不同，本轮没有改变可见性。官方说明标准公开仓库runner计算使用免费，但账户用量/存储账单不可见，不能承诺总账单零费用。无购买额度、付费大runner或新服务部署。
 
@@ -30,3 +30,7 @@ D的3项界面输入/生命周期测试单独计数。原native15、wizard4、in
 - https://developer.android.com/studio/run/emulator-networking-address
 - https://developer.android.com/privacy-and-security/security-config
 - https://docs.github.com/en/billing/concepts/product-billing/github-actions
+
+## 首次 CI 发现与同轮修复
+
+e5b3b973 的普通 Android 构建已通过；新增 HTTPS workflow 被 GitHub 拒绝 job 级 runner.temp 表达式，未执行该两个 job。Python 3.13 严格 TLS 检查发现测试 CA 缺 keyUsage。修订将临时路径在 runner 步骤内写 GITHUB_ENV，给 CA 添加 critical keyCertSign/cRLSign、叶证书 critical digitalSignature/keyEncipherment，保留 serverAuth/SAN 和严格证书验证。两个新回归均对旧文件失败、修订通过；真实 CI 重试结果尚待确认。

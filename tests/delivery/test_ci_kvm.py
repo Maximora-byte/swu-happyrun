@@ -35,7 +35,7 @@ def setup(monkeypatch, tmp_path):
     event.write_text(
         json.dumps(
             {
-                "before": "77494e21756e514f53e51b3a2c72f22555f0aae6",
+                "before": "e5b3b973f9e055fc8bcb4a9e3261cf6320568787",
                 "after": "a" * 40,
                 "ref": "refs/heads/dot/android-remote-agent",
                 "repository": {"full_name": "Maximora-byte/swu-happyrun"},
@@ -119,7 +119,7 @@ def test_missing_device_or_failed_verification_blocks(setup, monkeypatch, kind):
 
 def test_workflow_gate_binds_exact_single_transition():
     workflow = (ROOT / ".github/workflows/checks.yml").read_text(encoding="utf-8")
-    assert "github.event.before == '77494e21756e514f53e51b3a2c72f22555f0aae6'" in workflow
+    assert "github.event.before == 'e5b3b973f9e055fc8bcb4a9e3261cf6320568787'" in workflow
     assert "github.ref == 'refs/heads/dot/android-remote-agent'" in workflow
     assert "github.event_name == 'push'" in workflow
     assert "workflow_dispatch:" not in workflow
@@ -130,6 +130,7 @@ def test_workflow_gate_binds_exact_single_transition():
     "field,value",
     [
         ("before", "b" * 40),
+        ("before", "77494e21756e514f53e51b3a2c72f22555f0aae6"),
         ("before", "491019d0b68802fdcf0c67fbe4bd3b846a9eae82"),
         ("before", "6427e91b7099cdf2233983ff55a5bcf9718e6b61"),
         ("before", None),

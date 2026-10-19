@@ -116,7 +116,7 @@ jobs:
       - name: Enable explicitly approved one-transition KVM access
         if: >-
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == '77494e21756e514f53e51b3a2c72f22555f0aae6' &&
+          github.event.before == 'e5b3b973f9e055fc8bcb4a9e3261cf6320568787' &&
           github.event_name == 'push' && github.ref == 'refs/heads/dot/android-remote-agent' &&
           github.event.after == github.sha
         env:
@@ -203,7 +203,7 @@ jobs:
       - name: Enable explicitly approved one-transition KVM access
         if: >-
           github.repository == 'Maximora-byte/swu-happyrun' &&
-          github.event.before == '77494e21756e514f53e51b3a2c72f22555f0aae6' &&
+          github.event.before == 'e5b3b973f9e055fc8bcb4a9e3261cf6320568787' &&
           github.event_name == 'push' && github.ref == 'refs/heads/dot/android-remote-agent' &&
           github.event.after == github.sha
         env:

@@ -14,7 +14,6 @@ jobs:
         api: [31, 35]
     env:
       HAPPYRUN_ANDROID_API: ${{ matrix.api }}
-      HAPPYRUN_REMOTE_PRIVATE_DIR: ${{ runner.temp }}/happyrun-remote-api${{ matrix.api }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -26,6 +25,7 @@ jobs:
       - name: Prepare installed Python server and official preinstalled JDK
         run: |
           set -euo pipefail
+          echo "HAPPYRUN_REMOTE_PRIVATE_DIR=$RUNNER_TEMP/happyrun-remote-api$HAPPYRUN_ANDROID_API" >> "$GITHUB_ENV"
           uv sync --extra server --extra agent --extra dev --frozen
           uv build
           uv pip install --python .venv/bin/python --no-deps --reinstall dist/*.whl
@@ -47,7 +47,7 @@ jobs:
         if: >-
           github.repository == 'Maximora-byte/swu-happyrun' &&
           github.event_name == 'push' && github.ref == 'refs/heads/dot/android-remote-agent' &&
-          github.event.before == '77494e21756e514f53e51b3a2c72f22555f0aae6' &&
+          github.event.before == 'e5b3b973f9e055fc8bcb4a9e3261cf6320568787' &&
           github.event.after == github.sha
         env:
           HAPPYRUN_KVM_APPROVED_THIS_RUN: 'true'
