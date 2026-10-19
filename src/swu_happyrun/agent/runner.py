@@ -143,18 +143,21 @@ class AgentRunner:
                 evidence=[],
                 resume_phase=None,
             )
-            self.job = self.client.events(self.job.job_id, self.lease, event)
+            self._accept_view(self.client.events(self.job.job_id, self.lease, event))
         event_id = self.journal.stop_ack_intent(
             self.job.job_id, self.lease.fence, self.job.revision
         )
         revision = self.job.revision
         try:
-            self.job = self.client.stop_ack(self.job.job_id, self.lease, event_id, revision)
+            updated = self.client.stop_ack(self.job.job_id, self.lease, event_id, revision)
         except ControlError:
             # This is an exact idempotent acknowledgment replay, never a device action.
             if self.clock.monotonic() >= self._lease_deadline:
                 raise
-            self.job = self.client.stop_ack(self.job.job_id, self.lease, event_id, revision)
+            updated = self.client.stop_ack(self.job.job_id, self.lease, event_id, revision)
+
+        # Invalid identity is not a lost response and must not trigger a replay.
+        self._accept_view(updated)
 
     def _attention(self, reason):
         settled = {"completed", "succeeded", "failed", "cancelled", "needs_attention"}

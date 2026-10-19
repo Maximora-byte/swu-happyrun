@@ -560,3 +560,87 @@ def test_renew_latency_cannot_advance_route_past_budget(rig):
     assert result.state == "needs_attention"
     assert result.reason_code == "simulation_incomplete"
     assert max(elapsed) <= runner.run_seconds
+
+
+@pytest.mark.parametrize("response_stage", ["cancelling", "stop_ack", "stop_ack_retry"])
+@pytest.mark.parametrize("changed_field", ["job_id", "fence", "run_session_id", "spec"])
+def test_cancel_rejects_changed_response_identity(rig, response_stage, changed_field):
+    runner, client, driver, journal, clock = rig
+    client.cancel = True
+    original_job = client.job
+    original_events = client.events
+    acknowledgments = []
+    reads = []
+
+    def changed(view):
+        value = {
+            "job_id": str(uuid4()),
+            "fence": view.fence + 1,
+            "run_session_id": str(uuid4()),
+            "spec": view.spec.model_copy(update={"profile_revision": "c" * 64}),
+        }[changed_field]
+        return view.model_copy(update={changed_field: value})
+
+    def get_job(job_id):
+        reads.append(job_id)
+        if len(reads) > 1:
+            # Reconciliation is unavailable: retain the last validated view.
+            raise ControlError("connection unavailable")
+        return client.job
+
+    def events(job_id, lease, event):
+        result = original_events(job_id, lease, event)
+        if event.state == "cancelling" and response_stage == "cancelling":
+            return changed(result)
+        return result
+
+    def ack(job_id, lease, event_id, revision):
+        assert driver.calls == ["stop"]
+        acknowledgments.append((job_id, lease, event_id, revision))
+        if response_stage == "stop_ack_retry" and len(acknowledgments) == 1:
+            raise ControlError("response lost")
+        result = client.job.model_copy(update={"state": type(client.job.state).CANCELLED})
+        return changed(result) if response_stage != "cancelling" else result
+
+    client.get_job, client.events, client.stop_ack = get_job, events, ack
+    result = runner.run_once()
+    assert driver.calls == ["stop"]
+    assert result.job_id == original_job.job_id
+    assert result.fence == original_job.fence
+    assert result.run_session_id == original_job.run_session_id
+    assert result.spec == original_job.spec
+    assert result.state != "cancelled"
+    assert not journal.has_intent(original_job.job_id, "start")
+    assert not journal.has_intent(original_job.job_id, "upload")
+    expected_acks = {"cancelling": 0, "stop_ack": 1, "stop_ack_retry": 2}
+    assert len(acknowledgments) == expected_acks[response_stage]
+    assert all(item[0] == original_job.job_id for item in acknowledgments)
+    if len(acknowledgments) == 2:
+        assert acknowledgments[0] == acknowledgments[1]
+
+
+@pytest.mark.parametrize("lose_first_response", [False, True])
+def test_cancel_accepts_valid_terminal_ack_without_repeating_device_actions(
+    rig, lose_first_response
+):
+    runner, client, driver, journal, clock = rig
+    client.cancel = True
+    acknowledgments = []
+
+    def ack(job_id, lease, event_id, revision):
+        assert driver.calls == ["stop"]
+        assert event_id == journal.stop_ack_intent(job_id, lease.fence, revision)
+        acknowledgments.append((job_id, lease, event_id, revision))
+        if lose_first_response and len(acknowledgments) == 1:
+            raise ControlError("response lost")
+        return client.job.model_copy(update={"state": type(client.job.state).CANCELLED})
+
+    client.stop_ack = ack
+    result = runner.run_once()
+    assert result.state == "cancelled"
+    assert driver.calls == ["stop"]
+    assert len(acknowledgments) == 1 + lose_first_response
+    assert all(item == acknowledgments[0] for item in acknowledgments)
+    assert acknowledgments[0][0] == result.job_id
+    assert not journal.has_intent(result.job_id, "start")
+    assert not journal.has_intent(result.job_id, "upload")
