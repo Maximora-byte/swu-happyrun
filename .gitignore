@@ -22,3 +22,11 @@ artifacts/private/
 *.mp4
 *.pem
 *.key
+
+# Android local state and signing material
+.gradle/
+.kotlin/
+local.properties
+*.keystore
+*.jks
+qa/

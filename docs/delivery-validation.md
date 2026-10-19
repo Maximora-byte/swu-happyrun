@@ -114,3 +114,18 @@ Windows/Python3.11取消/停止失败测试的start_count=0已通过真实TCP可
 这是 CI 配置的预期行为，尚未据此宣称已经产生可下载包。发布/评审时须核查该不可变 HEAD 的实际 Actions run 和 artifact，下载后验证 SHA256；不创建 GitHub Release。
 
 校验文件中的路径以仓库根目录为基准，形如 `dist/<文件名>`。下载 artifact 后将其内容放进独立验收目录的 `dist/`，从该目录运行 `sha256sum -c dist/SHA256SUMS`；Windows 可逐项用 `Get-FileHash -Algorithm SHA256` 对比。不要把路径布局差异当作哈希验证已通过。
+
+## 原生 Android 本地应用集成（2026-10-19）
+
+准确基线 `f3d0699d8923ce7d2325abedcb680fc70f650f4a`，只按五路owned清单组合原生runtime、UI、契约边界、打包和instrumentation，未加入暂停的Windows portable。保留原Python/web实现和测试。Android本地simulation不是控制协议JobView/AGENT，不生成学校记录；真实执行按钮受限。
+
+原配置风险在独立副本加入纯合成Android目录后复现：sdist会收录local.properties、.keystore和.gradle缓存。新打包排除规则复测通过，源码/Gradle配置保留。该实验没有生成真实私钥，原f3d已交付包未泄漏任何此类文件。
+
+本地没有Android SDK/adb/emulator，未编译Activity、未生成或安装APK、未执行instrumentation。实际构建、debug签名、安装启动和11项专用instrumentation必须以同一HEAD的android-apk Actions结果为准。纯Java/Node/Python或XML检查不能替代Android执行；官方AVD通过也不能替代MuMu/目标应用/学校记录验收。
+
+本轮初次冻结组合 Linux/Python3.12.14 完整 **564 passed**（90.58秒，1条继承warning）；frozen依赖、Schema/Android边界防漂移、Ruff、旧web Node生产脚本harness、Bash语法和4份XML解析通过。46个Python package/静态资源文件与f3d基线逐字节一致。上述结果不包含Android编译或仪器执行。
+
+
+最后追加仅Android持久化故障锁存及UI/真实SQLite trigger回归：存储失败停止模拟、显示未保存状态并禁止继续开始/停止；不能把旧持久running当成仍在执行。另增加已核包名的只读PackageInfo诊断。Android CI分别运行API31/35官方AVD，记录debug签名指纹；这些均不能代替MuMu或目标应用执行验收。此前完整Python结果按原快照保留，最后变更另做目标测试/静态/分发检查。
+
+最终五路更新后的Python目标检查（Android契约与delivery）**14 passed**，Schema/边界防漂移、Ruff、旧web Node、脚本/XML/接口静态检查和分发隐私检查通过；Python生产模块仍与f3d相同。APK构建与11项Android测试尚未在本地运行，须取同HEAD的API31/35 Actions证据。
