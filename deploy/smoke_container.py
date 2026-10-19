@@ -7,6 +7,7 @@ is removed. Reports contain fixed check names, never tokens, logs, or databases.
 import importlib.util
 import json
 import os
+import re
 import secrets
 import socket
 import subprocess
@@ -151,6 +152,43 @@ class Container:
                 break
             require(time.monotonic() < deadline, "Docker HEALTHCHECK did not become healthy")
             time.sleep(0.5)
+
+    def provenance(self):
+        cid = self.command("ps", "--quiet", "server").strip()
+        image = self.run(
+            ["docker", "inspect", "--format", "{{.Image}}", cid],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        require(
+            image.returncode == 0
+            and re.fullmatch(r"sha256:[0-9a-f]{64}", image.stdout.strip()) is not None,
+            "Invalid local image digest observation",
+        )
+        version = self.run(
+            ["docker", "version", "--format", "{{.Server.Version}}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        require(
+            version.returncode == 0
+            and len(version.stdout.strip()) <= 64
+            and re.fullmatch(
+                r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+.][A-Za-z0-9.-]+)?", version.stdout.strip()
+            )
+            is not None,
+            "Invalid Docker version observation",
+        )
+        # A local image configuration digest is not a published registry manifest digest.
+        return {
+            "image_id": image.stdout.strip(),
+            "docker_server_version": version.stdout.strip(),
+            "registry_digest": None,
+        }
 
     def cleanup(self):
         self.command("down", "--volumes", "--remove-orphans", "--timeout", "10")
@@ -428,6 +466,7 @@ def run():
             container.start()
             checks = exercise(api, root, env, agent_id, device_id, container.recreate)
             container.runtime_checks()
+            provenance = container.provenance()
             logs = container.previous_logs + container.command("logs", "--no-color", "server")
             require(
                 all(t not in logs for t in api.tokens.values()), "Container log credential leak"
@@ -438,6 +477,7 @@ def run():
     return {
         "status": "passed",
         "container_verified": True,
+        "provenance": provenance,
         "mode": "simulation",
         "checks": checks + ["nonroot_hardening", "sqlite_integrity_schema3", "log_redaction"],
         "device_verified": False,

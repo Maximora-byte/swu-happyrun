@@ -27,7 +27,8 @@ agent 的真实 HTTP 链路。不接生产、真实设备、学校账号或学�
 - 实际 UID10001、只读根文件系统、drop ALL、非 privileged、
   no-new-privileges、仅 127.0.0.1:8080 映射及 SQLite integrity/schema。
 - 两次容器日志只在内存检查 token 不泄漏；不上传日志、inspect、环境、
-  配置、数据库或代理 journal。只上传固定字段的合成结果摘要。
+  配置、数据库或代理 journal。只上传固定字段的合成结果摘要，以及严格校验的本地image ID（sha256）/Docker服务版本。
+  image ID是本地构建配置digest；镜像未推送registry，不虚构registry manifest digest。
 
 清理只针对本轮随机 project 的容器、网络、卷，不执行全局 prune。
 测试命名卷可删除，因为它只含本轮生成的合成资料；日常部署不应照抄该清理。

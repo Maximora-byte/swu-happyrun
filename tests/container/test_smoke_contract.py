@@ -129,3 +129,53 @@ def test_real_container_hardening_observations_fail_closed(tmp_path, changed, va
             container.runtime_checks()
     else:
         container.runtime_checks()
+
+
+def test_image_provenance_is_exact_bounded_digest_not_private_inspect(tmp_path):
+    import subprocess
+
+    calls = []
+
+    def fake(args, **kwargs):
+        calls.append(args)
+        if "ps" in args:
+            out = "owned-container"
+        elif "inspect" in args:
+            out = "sha256:" + "a" * 64
+        else:
+            out = "28.5.1"
+        return subprocess.CompletedProcess(args, 0, out, "")
+
+    result = smoke.Container(tmp_path, {}, run=fake).provenance()
+    assert result == {
+        "image_id": "sha256:" + "a" * 64,
+        "docker_server_version": "28.5.1",
+        "registry_digest": None,
+    }
+    assert all("{{json .Config}}" not in args for args in calls)
+
+
+def test_image_provenance_rejects_unexpected_or_sensitive_output(tmp_path):
+    import subprocess
+
+    def fake(args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, "private-output", "")
+
+    with pytest.raises(smoke.SmokeFailure):
+        smoke.Container(tmp_path, {}, run=fake).provenance()
+
+
+def test_image_provenance_rejects_unbounded_version(tmp_path):
+    import subprocess
+
+    def fake(args, **kwargs):
+        if "ps" in args:
+            out = "owned-container"
+        elif "inspect" in args:
+            out = "sha256:" + "a" * 64
+        else:
+            out = "1.2.3-" + "x" * 5000
+        return subprocess.CompletedProcess(args, 0, out, "")
+
+    with pytest.raises(smoke.SmokeFailure, match="Invalid Docker version"):
+        smoke.Container(tmp_path, {}, run=fake).provenance()
