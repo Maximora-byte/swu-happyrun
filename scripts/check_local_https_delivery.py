@@ -181,7 +181,9 @@ def run(
         error = ValueError("external_process_" + reason)
         error.capture = report
         raise error from None
-    return decoded["stdout"]
+    # Text consumers accept LF and Windows CRLF; raw evidence above stays exact.
+    # Do not strip whitespace or translate lone CR (malformed signer lines must fail).
+    return decoded["stdout"].replace("\r\n", "\n")
 
 
 def local_host(value):

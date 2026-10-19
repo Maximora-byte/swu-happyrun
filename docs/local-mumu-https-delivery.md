@@ -110,3 +110,18 @@ check_manifest函数，不再隐蔽启动第二次apkanalyzer。共享脚本旧�
 文本捕获不在本次交付链中；本修订不宣称已处理全仓所有子进程输出。私有路径先词法
 消除`.`/`..`，再拒绝路径父链的symlink并检查源码/交付包包含关系，不通过resolve
 跟随链接绕过限制。
+
+
+## Windows SDK CRLF 文本边界（Issue #80）
+
+二进制捕获仍逐字节保留私有 stdout/stderr、size 与 SHA256。严格解码后的
+stdout 文本接口仅把 CRLF 转为 LF；不会 trim、删除空白或转换孤立 CR。
+apksigner 的单一签名行、app/test 与两组证书一致性门槛保持原样。SDK XML、
+aapt2 资源表及 OpenSSL 公有输出也经过相同文本边界，内容不作其他转换。
+所有机器输出仍严格 UTF-8；显式 GBK 仅限 Gradle stderr。
+
+原机反馈已确认 Gradle 捕获正反例与版本 guard 有效，但旧 60d0 的 CRLF
+签名解析使完整交付/预检失败，六项 HTTPS 全部 not_run。修后应首先用新工具
+重新校验此前完整且已接受的原 bundle；无需生成新 CA、重签 APK、改写 manifest
+或重新安装。失败的部分构建目录不能当作交付包。新的本机预检及 HTTPS 验收
+仍须独立执行，合成输出测试不能代替真实 SDK/MuMu 结果。
