@@ -111,10 +111,11 @@ def test_actual_instrumentation_preserves_strict_failure(output, code):
         ),
         "command": lambda *a: ["PRIVATE_TOKEN"],
         "summarize": load().summarize,
+        "hello_evidence": lambda _: {"count": 0, "observations": []},
         "re": re,
     }
     with pytest.raises(RuntimeError):
-        host_function("instrumentation", ns)({}, "lost_event", diagnostics)
+        host_function("instrumentation", ns)({"evidence": None}, "lost_event", diagnostics)
     assert diagnostics["phase"] == "instrumentation"
     assert diagnostics["instrumentation"]["returncode"] == code
     assert "PRIVATE_TOKEN" not in json.dumps(diagnostics)
@@ -129,9 +130,10 @@ def test_actual_instrumentation_pass_retains_observation():
         ),
         "command": lambda *a: [],
         "summarize": load().summarize,
+        "hello_evidence": lambda _: {"count": 0, "observations": []},
         "re": re,
     }
-    assert host_function("instrumentation", ns)({}, "lost_renew") == {
+    assert host_function("instrumentation", ns)({"evidence": None}, "lost_renew") == {
         "android_state": "running",
         "driver_starts": 1,
         "driver_stopped": True,
@@ -150,11 +152,12 @@ def test_timeout_preserves_safe_partial_phase_and_raises_original():
         "subprocess": SimpleNamespace(run=run, TimeoutExpired=subprocess.TimeoutExpired),
         "command": lambda *a: [],
         "summarize": load().summarize,
+        "hello_evidence": lambda _: {"count": 0, "observations": []},
         "re": re,
     }
     diagnostics = {}
     with pytest.raises(subprocess.TimeoutExpired) as actual:
-        host_function("instrumentation", ns)({}, "lost_event", diagnostics)
+        host_function("instrumentation", ns)({"evidence": None}, "lost_event", diagnostics)
     assert actual.value is failure
     assert diagnostics["instrumentation"]["phases"] == ["worker_join_begin"]
     assert "PRIVATE_TOKEN" not in json.dumps(diagnostics)
@@ -247,6 +250,7 @@ def test_extracted_java_diagnostic_cannot_replace_original_failure(tmp_path):
     ]
     harness = (
         """import java.util.*;
+import org.happyrun.app.remote.transport.ControlException;
 public final class DiagnosticCheck {
  static class Bundle {String value;void putString(String key,String value){this.value=value;}}
  final List<String> output=new ArrayList<>();boolean unavailable;
@@ -268,6 +272,16 @@ public final class DiagnosticCheck {
        "ERROR kind=AssertionError phase=assert_worker"))throw new RuntimeException("missing code");
    if(check.output.toString().contains("PRIVATE_TOKEN"))throw new RuntimeException("leak");
   }
+  DiagnosticCheck control=new DiagnosticCheck();control.phase("hello_begin");
+  control.diagnosticError(new ControlException("request_timeout",0,true,true),"hello_begin");
+  if(!control.output.get(2).contains("CONTROL code=request_timeout status=0 retryable=true"))
+    throw new RuntimeException("missing control fields");
+  control.diagnosticPhaseStartedNanos=System.nanoTime()-61000000000L;
+  control.diagnosticError(new ControlException("PRIVATE_TOKEN",999,false,false),"hello_begin");
+  String last=control.output.get(control.output.size()-1);
+  if(!last.contains("code=control_failure status=other") || !last.contains("elapsed_ms=60000")
+      || !last.contains("elapsed_capped=true"))throw new RuntimeException("unsafe control");
+  if(control.output.toString().contains("PRIVATE_TOKEN"))throw new RuntimeException("control leak");
  }
 }
 """
@@ -285,6 +299,11 @@ public final class DiagnosticCheck {
             "-d",
             str(tmp_path),
             str(file),
+            str(
+                ROOT
+                / "android/app/src/main/java/org/happyrun/app/remote/transport"
+                / "ControlException.java"
+            ),
         ],
         check=True,
         capture_output=True,
