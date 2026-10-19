@@ -1,5 +1,12 @@
 # 协作状态
 
+## 当前 request-close 实验候选
+
+基线6dda保留已接受#65；仅纳PR68 `3f00b27a33ce7073cd85c0bddc6b00b1eaab2e89` 三路径与本轮精确门禁。每请求Connection: close改变连接复用策略，原TLS验证/请求预算/业务和退出验收不变。独立oversize、normal两次TLS失败未定，后来单次normal通过不覆盖；旧首次stderr缺失只保留回顾性记录。实现者HTTP/1.1配对旧9.868s、新0.131s均自然退出，不称旧超时RED。
+
+本轮仅remote-https/API35、精确before6dda；其他runtime not_run。ba990 UI3+原15通过，two_jobs业务通过后fixture退出失败，后13因污染未运行。新Android仍待此HEAD实际结果，不宣称#57已修。以下历史状态保留，#36/#52/#53已独立关闭，#58入口已接受；尚未纳入#62及最新main地图资料。
+
+
 更新：2026-10-19（Asia/Shanghai）。Dot 主导实现和修复；本地 Codex 负责独立测试、设备观测和集成审核。本轮只使用 GitHub，没有发送 Matrix 消息。
 
 ## 下一轮执行入口
