@@ -12,10 +12,12 @@ SOURCE = (
     / "android/app/src/remoteQaAndroidTest/java/org/happyrun/app/remoteqa"
     / "RemoteMumuHttpsAcceptanceTest.java"
 )
+RUN_ID = "11111111-1111-4111-8111-111111111111"
 
 
-def test_namespace_helper_rejects_reuse_symlinks_and_foreign_recovery(tmp_path):
-    source = SOURCE.read_text()
+@pytest.fixture(scope="module")
+def namespace_harness(tmp_path_factory):
+    source = SOURCE.read_text(encoding="utf-8")
     assert "// BEGIN HOST_TESTABLE_NAMESPACE" in source, (
         "extractable real namespace helper required"
     )
@@ -26,6 +28,7 @@ def test_namespace_helper_rejects_reuse_symlinks_and_foreign_recovery(tmp_path):
     java = shutil.which("java")
     if java is None:
         pytest.skip("JVM unavailable; not Android validation")
+    directory = tmp_path_factory.mktemp("namespace-jvm")
     harness = """
 import java.nio.file.*;
 import java.nio.*;
@@ -35,40 +38,49 @@ import java.util.*;
 public class NamespaceHarness {
 HELPER
 interface Checked { void run() throws Exception; }
-static void rejected(Checked action) throws Exception {
-    try { action.run(); } catch (Exception expected) { return; }
+static void rejected(Class<? extends Exception> type, String message, Checked action)
+        throws Exception {
+    try { action.run(); } catch (Exception actual) {
+        if (!type.isInstance(actual)
+                || message != null && !message.equals(actual.getMessage())) throw actual;
+        return;
+    }
     throw new AssertionError("unsafe namespace accepted");
 }
 public static void main(String[] args) throws Exception {
     Path files = Paths.get(args[0]);
+    String mode = args[1];
     byte[] owner = "synthetic-owner".getBytes(StandardCharsets.UTF_8);
     String run = "11111111-1111-4111-8111-111111111111";
-    Path journal = ownedDirectory(files, run, owner, false);
-    if (!ownedDirectory(files,run,owner,true).equals(journal)) throw new AssertionError();
-    rejected(() -> ownedDirectory(files,run,owner,false));
-    rejected(() -> ownedDirectory(files,run,"other".getBytes(StandardCharsets.UTF_8),true));
-    rejected(() -> ownedDirectory(files,"../other",owner,false));
-    rejected(() -> ownedDirectory(files,"22222222-2222-4222-8222-222222222222",owner,true));
-    Path ownerPath = journal.getParent().resolve("owner");
-    Files.write(ownerPath,new byte[4097]);
-    rejected(() -> ownedDirectory(files,run,owner,true));
-    Files.write(ownerPath,owner);
-    try {
-      Path outside = files.resolve("outside"); Files.write(outside,owner);
-      Files.delete(ownerPath); Files.createSymbolicLink(ownerPath,outside);
-      rejected(() -> ownedDirectory(files,run,owner,true));
-      Files.delete(ownerPath); Files.write(ownerPath,owner);
-      Files.createSymbolicLink(journal.resolve("journal.bin"),outside);
-      rejected(() -> ownedDirectory(files,run,owner,true));
-      Files.delete(journal.resolve("journal.bin"));
-      Files.delete(journal); Files.createSymbolicLink(journal,files);
-      rejected(() -> ownedDirectory(files,run,owner,true));
-    } catch (UnsupportedOperationException unavailable) { }
-    System.out.println("namespace-behavior-passed");
+    if (mode.equals("core")) {
+        Path journal = ownedDirectory(files, run, owner, false);
+        if (!ownedDirectory(files,run,owner,true).equals(journal)) throw new AssertionError();
+        rejected(FileAlreadyExistsException.class, null,
+            () -> ownedDirectory(files,run,owner,false));
+        rejected(IllegalStateException.class, "owner_mismatch",
+            () -> ownedDirectory(files,run,"other".getBytes(StandardCharsets.UTF_8),true));
+        rejected(IllegalArgumentException.class, null,
+            () -> ownedDirectory(files,"../other",owner,false));
+        rejected(IllegalStateException.class, "unsafe_run_directory",
+            () -> ownedDirectory(files,"22222222-2222-4222-8222-222222222222",owner,true));
+        Path ownerPath = journal.getParent().resolve("owner");
+        Files.write(ownerPath,new byte[4097]);
+        rejected(IllegalStateException.class, "owner_limit",
+            () -> ownedDirectory(files,run,owner,true));
+    } else if (mode.equals("prepare")) {
+        ownedDirectory(files, run, owner, false);
+    } else if (mode.equals("symlink")) {
+        rejected(IllegalStateException.class, args[2],
+            () -> ownedDirectory(files,run,owner,true));
+    } else {
+        throw new AssertionError("unknown harness mode");
+    }
+    System.out.println("namespace-" + mode + "-passed");
 }
 }
 """.replace("HELPER", helper)
-    (tmp_path / "NamespaceHarness.java").write_text(harness)
+    harness_path = directory / "NamespaceHarness.java"
+    harness_path.write_text(harness, encoding="utf-8")
     compiled = subprocess.run(
         [
             java,
@@ -79,30 +91,76 @@ public static void main(String[] args) throws Exception {
             "17",
             "-target",
             "17",
-            str(tmp_path / "NamespaceHarness.java"),
+            str(harness_path),
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=45,
     )
     if "com.sun.tools.javac.Main" in compiled.stderr and "Could not find" in compiled.stderr:
         pytest.skip("JDK compiler unavailable")
     assert compiled.returncode == 0, compiled.stderr
+
+    def run(private, mode, expected=""):
+        result = subprocess.run(
+            [
+                java,
+                "-Xmx64m",
+                "-XX:ActiveProcessorCount=2",
+                "-cp",
+                str(directory),
+                "NamespaceHarness",
+                str(private),
+                mode,
+                expected,
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == f"namespace-{mode}-passed"
+
+    return run
+
+
+def test_namespace_helper_rejects_reuse_and_foreign_recovery(tmp_path, namespace_harness):
+    """Core ownership/UUID/recovery checks never depend on symlink capability."""
     private = tmp_path / "private"
     private.mkdir()
-    result = subprocess.run(
-        [
-            java,
-            "-Xmx64m",
-            "-XX:ActiveProcessorCount=2",
-            "-cp",
-            str(tmp_path),
-            "NamespaceHarness",
-            str(private),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "namespace-behavior-passed"
+    namespace_harness(private, "core")
+
+
+@pytest.mark.parametrize(
+    ("relative", "expected", "is_directory"),
+    [
+        ("owner", "unsafe_owner_file", False),
+        ("journal/journal.bin", "unsafe_journal_file", False),
+        ("journal", "unsafe_journal_directory", True),
+    ],
+)
+def test_namespace_helper_rejects_symlinks(
+    tmp_path, namespace_harness, symlink_or_skip, relative, expected, is_directory
+):
+    private = tmp_path / "private"
+    private.mkdir()
+    namespace_harness(private, "prepare")
+    link = private / "mumu-https-qa" / RUN_ID / relative
+    if link.is_dir():
+        link.rmdir()
+    elif link.exists():
+        link.unlink()
+    outside = tmp_path / "outside"
+    if is_directory:
+        outside.mkdir()
+    else:
+        outside.write_bytes(b"synthetic-owner")
+    # The native error code classifies fixture availability before Java consumes it.
+    # Arbitrary I/O and every Java rejection/assertion failure remain failures.
+    symlink_or_skip(link, outside, target_is_directory=is_directory)
+    assert link.is_symlink()
+    namespace_harness(private, "symlink", expected)

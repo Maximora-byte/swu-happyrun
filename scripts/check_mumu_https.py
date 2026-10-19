@@ -170,17 +170,33 @@ def instrument_command(args, binding, fixture, case, run_id, stage="run"):
     return [*command, PACKAGE + ".test/android.test.InstrumentationTestRunner"]
 
 
+def canonical_android_release(value):
+    """1–3 ASCII components, 0..999; positive major; only trailing zeros collapse."""
+    if (
+        not isinstance(value, str)
+        or len(value) > 11
+        or re.fullmatch(r"[1-9][0-9]{0,2}(?:\.(?:0|[1-9][0-9]{0,2})){0,2}", value) is None
+    ):
+        raise RuntimeError("android_release_format_unknown")
+    components = tuple(int(part) for part in value.split("."))
+    while len(components) > 1 and components[-1] == 0:
+        components = components[:-1]
+    return components
+
+
 def validate_current(binding, pair, observed):
     expected = {
         "state": "device",
         "boot": binding.boot,
-        "engine_version": binding.engine_version,
+        "engine_version": canonical_android_release(binding.engine_version),
         "host_version": binding.host_version,
         "instance_running": True,
         "app_sha256": pair["app"]["sha256"],
         "test_sha256": pair["test"]["sha256"],
     }
-    if observed != expected:
+    comparable = dict(observed)
+    comparable["engine_version"] = canonical_android_release(observed.get("engine_version"))
+    if comparable != expected:
         raise RuntimeError("current_instance_or_installed_pair_mismatch")
 
 
@@ -297,7 +313,6 @@ def refresh_binding(args, binding, pair, adb):
         and instances[0].index == binding.instance
         and instances[0].android_started
         and instances[0].process_started
-        and instances[0].android_version == binding.engine_version
     )
     observed = {
         "state": adb.query("get-state"),
@@ -308,6 +323,19 @@ def refresh_binding(args, binding, pair, adb):
         "app_sha256": adb.installed_hash(PACKAGE),
         "test_sha256": adb.installed_hash(PACKAGE + ".test"),
     }
+    # Keep source observations distinct; normalization never rewrites evidence or running flags.
+    binding.engine_version_evidence = {
+        "manager": {"raw": instances[0].android_version if len(instances) == 1 else None},
+        "adb": {"raw": observed["engine_version"]},
+        "binding": {"raw": binding.engine_version},
+    }
+    for evidence in binding.engine_version_evidence.values():
+        evidence["canonical"] = canonical_android_release(evidence["raw"])
+    if (
+        binding.engine_version_evidence["manager"]["canonical"]
+        != binding.engine_version_evidence["binding"]["canonical"]
+    ):
+        raise RuntimeError("manager_android_release_mismatch")
     validate_current(binding, pair, observed)
     # A fresh set of reads on the unchanged identity, NOT a rewritten local-review timestamp.
     binding.checked_at = time.monotonic()

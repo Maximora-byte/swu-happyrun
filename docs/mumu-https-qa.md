@@ -61,3 +61,12 @@ python scripts/check_mumu_https.py --bundle "$bundle" --ca-cert "$ca" --server-c
 宿主机单测、合成 localhost TLS 和 JVM namespace helper 只能证明实现层边界，不能证明 MuMu已连通或安装过此候选。完整 Android Gradle编译、MuMu实际执行与独立接受各自记录准确 commit、adapter hash、命令和退出码。旧 API35 归档不代替本候选的新构建或本机运行；未运行和中断都不是 passed。
 
 专用 `mumu-adapter-build-only.yml` 只在 `dot/mumu-own-https-runner` 的 push 或同仓库该分支 PR 编译新增 adapter，使用官方 SDK35/build-tools35.0.0、现有固定 Gradle8.9/AGP8.7.3 和预装 JDK17。其一次性 CA 只用于编译资源，私钥与公有资源在 shell 退出时清理，不上传任何产物；该作业不能提供用户本地 HTTPS 服务用的成套交付或设备运行证据。最终以准确 head 的 CI 编译退出结果为准。
+
+
+## 现场格式差异修订（#78）
+
+2026-10-19 本机验收已完成短期证书、同组四 APK 构建/配对、公有预检和隔离 MuMu 安装，记录见 [PR #79](https://github.com/Maximora-byte/swu-happyrun/pull/79)。旧入口 db685 在 HTTPS 前把 Manager `15.0` 与 ADB release `15` 误判，instrumentation/fixture/HTTPS 均为零；此失败不能称为网络或服务端故障。
+
+host 入口现在只在比较 Android release 时规范化：1–3 个 ASCII 十进制组件，各组件 0–999，主版本必须正，无前导零、空白、后缀或缺失；只删除尾部零组件。因此 `15`、`15.0`、`15.0.0` 等价，`15.1` 与 `15`、`14` 与 `15` 仍拒绝。Manager、ADB、binding 原值及各自规范 tuple 保留于本轮内存 `engine_version_evidence`；不改写原始版本或用户 binding，不将版本差异合成为运行状态。实例数量/index/真实 started flags、boot、安装 APK hash、host 版本与 Android 内 SDK/task/signature guard 保持原规则。
+
+本修订不改变 Java adapter/产品/测试 CA。原配对 APK 仅在重新验证产品、adapter hash、公有 CA、签名和安装 hash 全一致后可复用；必须重新真实观测新鲜 binding，再由本地验收者复测。此代码修复本身不是 MuMu HTTPS 通过证据。
