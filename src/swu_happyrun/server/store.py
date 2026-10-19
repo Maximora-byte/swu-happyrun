@@ -24,7 +24,9 @@ class SqliteJobStore(LeaseOperations):
     def connection(self, *, write: bool = False):
         db = None
         try:
-            db = sqlite3.connect(self.path, timeout=5.0, isolation_level=None)
+            # Bound each SQLite lock wait below the clients' 5s HTTP timeout.
+            # This is not a deadline for the entire request or transaction.
+            db = sqlite3.connect(self.path, timeout=1.0, isolation_level=None)
             db.row_factory = sqlite3.Row
             db.execute("PRAGMA foreign_keys = ON")
             if write:
