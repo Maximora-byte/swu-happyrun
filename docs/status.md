@@ -357,3 +357,18 @@ fixture退出失败后余下case明确not_run且suite失败，避免遗留线程
 下一次仅本分支精确beforef705f914可信push的remote-https/API35运行原完整顺序；
 其余组合构建/静态检查，runtime明确not_run。当前候选仍非最终验收，
 真实MuMu当前版本及真实学校记录未由这些模拟软件结果证明。
+
+### a449 原始协议仪器失败与 PR63 安全诊断
+
+a449 精确 push 的 checks/container 成功（含 Windows 两版本）；唯一 HTTPS35
+先通过3项UI，原15项协议中14通过、lost_event 在统一仪器检查失败。
+因此后续前台14项及恢复未运行，不能认定原 Back/Home 根因已修。
+原始 artifact12174531050 SHA256
+fd231527a19d7a9bfd9872f62bb157c34ae6827e110110ea6be68cb6780895e6。
+
+本次仅纳 PR63 fdd71853 的五文件安全诊断，保留原成功条件和预算，
+增加固定阶段/JUnit标记/已知断言类别及受限状态；不保存raw/token。
+另更新同轮仅 remote-https/API35 的精确 beforea449 门禁；旧父事件拒绝。
+PR63普通分支CI不编译remoteQa专属仪器类，本候选现有remoteQa构建将先
+实际编译再验收。当前没有该修订ART通过或lost_event根因结论。
+#58/#59 与 main 后续QA资料属于独立工作，未混入此采证树。

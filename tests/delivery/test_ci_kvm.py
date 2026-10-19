@@ -36,7 +36,7 @@ def setup(monkeypatch, tmp_path):
     event.write_text(
         json.dumps(
             {
-                "before": "f705f91409df88df9614aa4dd53c136dd00ed8a0",
+                "before": "a449955b26c6461adf99fcb981a04b7a39812900",
                 "after": "a" * 40,
                 "ref": "refs/heads/dot/android-foreground-agent",
                 "repository": {"full_name": "Maximora-byte/swu-happyrun"},
@@ -122,7 +122,7 @@ def test_missing_device_or_failed_verification_blocks(setup, monkeypatch, kind):
 
 def test_workflow_gate_binds_exact_single_transition():
     workflow = (ROOT / ".github/workflows/checks.yml").read_text(encoding="utf-8")
-    assert "github.event.before == 'f705f91409df88df9614aa4dd53c136dd00ed8a0'" in workflow
+    assert "github.event.before == 'a449955b26c6461adf99fcb981a04b7a39812900'" in workflow
     assert "github.ref == 'refs/heads/dot/android-foreground-agent'" in workflow
     assert "github.event_name == 'push'" in workflow
     assert "workflow_dispatch:" not in workflow
@@ -351,6 +351,16 @@ def test_previous_5eb_parent_is_consumed(setup):
     event_path = Path(PROBE.os.environ["GITHUB_EVENT_PATH"])
     event = json.loads(event_path.read_text(encoding="utf-8"))
     event["before"] = "5eb00e27f59a7fe927dff389e4cdd6d8d8665a55"
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        PROBE.main()
+    assert not setup[1]
+
+
+def test_previous_f705_parent_is_consumed(setup):
+    event_path = Path(PROBE.os.environ["GITHUB_EVENT_PATH"])
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+    event["before"] = "f705f91409df88df9614aa4dd53c136dd00ed8a0"
     event_path.write_text(json.dumps(event), encoding="utf-8")
     with pytest.raises(SystemExit):
         PROBE.main()

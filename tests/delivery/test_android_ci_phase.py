@@ -206,3 +206,9 @@ def test_previous_5eb_transition_is_consumed():
     env, event = grant()
     event["before"] = "5eb00e27f59a7fe927dff389e4cdd6d8d8665a55"
     assert not phase.authorized(env, event)
+
+
+def test_previous_f705_transition_is_consumed():
+    env, event = grant()
+    event["before"] = "f705f91409df88df9614aa4dd53c136dd00ed8a0"
+    assert not phase.authorized(env, event)
