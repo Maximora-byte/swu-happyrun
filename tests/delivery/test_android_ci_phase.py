@@ -13,6 +13,7 @@ spec.loader.exec_module(phase)
 def grant():
     env = dict(
         GITHUB_ACTIONS="true",
+        GITHUB_JOB="android-apk",
         RUNNER_ENVIRONMENT="github-hosted",
         RUNNER_OS="Linux",
         GITHUB_REPOSITORY=phase.REPOSITORY,
@@ -43,6 +44,10 @@ def test_consumed_exact_grant_only():
         ("GITHUB_REF", "refs/heads/main"),
         ("RUNNER_ENVIRONMENT", "self-hosted"),
         ("HAPPYRUN_ANDROID_API", "34"),
+        ("HAPPYRUN_ANDROID_API", "35"),
+        ("GITHUB_JOB", "android-self-probe"),
+        ("GITHUB_JOB", "remote-https"),
+        ("GITHUB_JOB", ""),
         ("GITHUB_SHA", "b" * 40),
     ],
 )
@@ -56,6 +61,7 @@ def test_other_context_is_not_authorized(key, value):
     "key,value",
     [
         ("before", "b" * 40),
+        ("before", "481098f124f0fb5ea054180d1ecb845008348003"),
         ("before", "28871b2d599a8ec8335570effb3207d2564639ab"),
         ("after", None),
         ("after", "z" * 40),

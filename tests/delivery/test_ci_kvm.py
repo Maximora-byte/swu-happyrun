@@ -21,6 +21,7 @@ def setup(monkeypatch, tmp_path):
     for key, value in {
         "HAPPYRUN_KVM_APPROVED_THIS_RUN": "true",
         "GITHUB_ACTIONS": "true",
+        "GITHUB_JOB": "android-apk",
         "GITHUB_EVENT_NAME": "push",
         "GITHUB_REF": "refs/heads/dot/android-foreground-agent",
         "GITHUB_SHA": "a" * 40,
@@ -35,7 +36,7 @@ def setup(monkeypatch, tmp_path):
     event.write_text(
         json.dumps(
             {
-                "before": "481098f124f0fb5ea054180d1ecb845008348003",
+                "before": "af3f2a089da594941bc752c88734fedd660de739",
                 "after": "a" * 40,
                 "ref": "refs/heads/dot/android-foreground-agent",
                 "repository": {"full_name": "Maximora-byte/swu-happyrun"},
@@ -74,6 +75,10 @@ def setup(monkeypatch, tmp_path):
         ("RUNNER_ENVIRONMENT", "self-hosted"),
         ("RUNNER_OS", "Windows"),
         ("HAPPYRUN_ANDROID_API", "30"),
+        ("HAPPYRUN_ANDROID_API", "35"),
+        ("GITHUB_JOB", "android-self-probe"),
+        ("GITHUB_JOB", "remote-https"),
+        ("GITHUB_JOB", ""),
     ],
 )
 def test_unapproved_environment_never_calls_acl(setup, monkeypatch, key, value):
@@ -119,7 +124,7 @@ def test_missing_device_or_failed_verification_blocks(setup, monkeypatch, kind):
 
 def test_workflow_gate_binds_exact_single_transition():
     workflow = (ROOT / ".github/workflows/checks.yml").read_text(encoding="utf-8")
-    assert "github.event.before == '481098f124f0fb5ea054180d1ecb845008348003'" in workflow
+    assert "github.event.before == 'af3f2a089da594941bc752c88734fedd660de739'" in workflow
     assert "github.ref == 'refs/heads/dot/android-foreground-agent'" in workflow
     assert "github.event_name == 'push'" in workflow
     assert "workflow_dispatch:" not in workflow
@@ -228,3 +233,13 @@ def test_previous_288_transition_cannot_reuse_acl(setup, monkeypatch):
     with pytest.raises(SystemExit):
         PROBE.main()
     assert setup[1] == []
+
+
+def test_previous_af3_parent_is_consumed(setup, monkeypatch):
+    event_path = Path(PROBE.os.environ["GITHUB_EVENT_PATH"])
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+    event["before"] = "481098f124f0fb5ea054180d1ecb845008348003"
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        PROBE.main()
+    assert not setup[1]

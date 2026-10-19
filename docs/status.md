@@ -238,3 +238,17 @@ Dot 已承担主要实现与修复；本地 Codex 负责 Windows、真实设备�
 最后追加仅Android持久化故障锁存及UI/真实SQLite trigger回归：存储失败停止模拟、显示未保存状态并禁止继续开始/停止；不能把旧持久running当成仍在执行。另增加已核包名的只读PackageInfo诊断。Android CI分别运行API31/35官方AVD，记录debug签名指纹；这些均不能代替MuMu或目标应用执行验收。此前完整Python结果按原快照保留，最后变更另做目标测试/静态/分发检查。
 
 最终五路更新后的Python目标检查（Android契约与delivery）**14 passed**，Schema/边界防漂移、Ruff、旧web Node、脚本/XML/接口静态检查和分发隐私检查通过；Python生产模块仍与f3d相同。APK构建与11项Android测试尚未在本地运行，须取同HEAD的API31/35 Actions证据。
+
+### af3 后的单机显示诊断候选
+
+`af3f2a089da594941bc752c88734fedd660de739` 的 Windows 3.11/3.13 push
+均实际通过（各 888 passed、9 skipped）；普通 Android API31/35 的 debug 和
+optional job 均在首次 display observation 失败。安全报告显示安装包、版本、
+签名及唯一 task 匹配，随后停在 `base_activity` 的断言，尚不能区分空组件与
+非预期组件；未到后续 native / wizard 验收，不把构建成功当运行通过。
+
+本次仅增加两个布尔诊断和精确断言分类，保留原严格条件。临时诊断权限仅限
+同分支、精确 before `af3f2a089da594941bc752c88734fedd660de739` 的下一次
+可信 push、`android-apk` job、API31。其余 Android job 仍构建和静态检查，
+runtime 显式 `not_run`。本次单机采证不能替代最终完整矩阵，也不表示已修复
+显示问题。实际运行结果以新提交的 Actions 为准。

@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.Instrumentation;
 import android.content.Context;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
@@ -85,9 +86,13 @@ public final class DisplayObservationTest extends InstrumentationTestCase {
         assertEquals("Do not guess among same-package tasks", 1, tasks.size());
         phase("task_id", "observed_task_id", tasks.get(0).getTaskInfo().taskId);
         assertEquals("Task must be selected by independent observation", task, tasks.get(0).getTaskInfo().taskId);
-        phase("base_activity");
-        assertNotNull(tasks.get(0).getTaskInfo().baseActivity);
-        assertEquals(MainActivity.class.getName(), tasks.get(0).getTaskInfo().baseActivity.getClassName());
+        ComponentName baseActivity = tasks.get(0).getTaskInfo().baseActivity;
+        phase("base_activity", "base_activity_present", baseActivity != null ? 1 : 0);
+        phase("base_activity", "base_activity_is_expected", baseActivity != null
+            && MainActivity.class.getName().equals(baseActivity.getClassName()) ? 1 : 0);
+        assertNotNull("Base activity must be present", baseActivity);
+        assertEquals("Base activity must match MainActivity", MainActivity.class.getName(),
+            baseActivity.getClassName());
         long started = SystemClock.elapsedRealtime();
         Instrumentation.ActivityMonitor monitor = getInstrumentation().addMonitor(MainActivity.class.getName(), null, false);
         Activity activity = null;

@@ -70,9 +70,13 @@ METRICS = frozenset(
         "controls_visible",
         "signature_matches",
         "installed_version_code",
+        "base_activity_present",
+        "base_activity_is_expected",
     }
 )
 ASSERTIONS = {
+    "Base activity must be present": "base_activity_missing",
+    "Base activity must match MainActivity": "base_activity_mismatch",
     "Requires a disposable instance with no personal data": "isolation_missing",
     "API29+ is required for explicit task/display binding": "api_unsupported",
     "Use a fresh UUID for each invocation": "observation_id_invalid",
@@ -109,6 +113,7 @@ def diagnostics(text: str, code: int):
             break
     for kind in (
         "AssertionFailedError",
+        "ComparisonFailure",
         "SecurityException",
         "IllegalArgumentException",
         "NullPointerException",
@@ -136,9 +141,12 @@ def diagnostics(text: str, code: int):
             if value in {"-3", "-2", "-1", "0", "1", "2"}:
                 result["status_codes"] = (result["status_codes"] + [int(value)])[-16:]
         # Only classify our own fixed assertion messages; never return the matched line.
-        if "AssertionFailedError:" in line:
+        if "AssertionFailedError:" in line or "ComparisonFailure:" in line:
             for message, reason in ASSERTIONS.items():
-                if "AssertionFailedError: " + message in line:
+                if any(
+                    kind + ": " + message in line
+                    for kind in ("AssertionFailedError", "ComparisonFailure")
+                ):
                     result["assertion_code"] = reason
                     break
     return result
