@@ -65,6 +65,9 @@ public final class HttpsAgentClient implements AgentClient {
                     connection.setRequestProperty("Authorization","Bearer "+requestToken);
                     connection.setRequestProperty("Accept","application/json");
                     connection.setRequestProperty("Accept-Encoding","identity");
+                    // Foreground ownership excludes platform-pooled idle HTTP/1.1 sockets.
+                    // Request-local policy; never change process-global keep-alive or TLS settings.
+                    connection.setRequestProperty("Connection","close");
                     if(payload!=null) {
                         byte[] bytes=StrictJson.write(payload).getBytes(StandardCharsets.UTF_8);
                         if(bytes.length>MAX_BYTES)throw failure("invalid_response",0,false,false);
