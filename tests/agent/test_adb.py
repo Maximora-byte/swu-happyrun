@@ -9,7 +9,12 @@ from swu_happyrun.drivers.command import ProbeError
 
 
 def adb_stub(
-    monkeypatch, *, state="device\n", version="15\n", ui="<hierarchy/>", package="versionName=1.0\n"
+    stub_command_process,
+    *,
+    state="device\n",
+    version="15\n",
+    ui="<hierarchy/>",
+    package="versionName=1.0\n",
 ):
     calls = []
 
@@ -25,12 +30,12 @@ def adb_stub(
             value = ui
         return subprocess.CompletedProcess(args, 0, value, "")
 
-    monkeypatch.setattr(subprocess, "run", run)
+    stub_command_process(run)
     return calls
 
 
-def test_adb_always_selects_explicit_serial(monkeypatch, tmp_path):
-    calls = adb_stub(monkeypatch)
+def test_adb_always_selects_explicit_serial(stub_command_process, tmp_path):
+    calls = adb_stub(stub_command_process)
     result = AdbClient(tmp_path / "adb.exe", "fixture-serial").inspect()
     assert all(args[1:3] == ["-s", "fixture-serial"] for args in calls)
     assert result.backend == "android"
@@ -40,21 +45,21 @@ def test_adb_always_selects_explicit_serial(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("state", ["unauthorized", "offline", "", "unknown"])
-def test_unusable_adb_is_not_success(monkeypatch, tmp_path, state):
-    calls = adb_stub(monkeypatch, state=state)
+def test_unusable_adb_is_not_success(stub_command_process, tmp_path, state):
+    calls = adb_stub(stub_command_process, state=state)
     with pytest.raises(ProbeError, match="adb_not_ready"):
         AdbClient(tmp_path / "adb.exe", "fixture").inspect()
     assert len(calls) == 1
 
 
-def test_empty_android_version_is_error(monkeypatch, tmp_path):
-    adb_stub(monkeypatch, version="")
+def test_empty_android_version_is_error(stub_command_process, tmp_path):
+    adb_stub(stub_command_process, version="")
     with pytest.raises(ProbeError, match="invalid_response"):
         AdbClient(tmp_path / "adb.exe", "fixture").inspect()
 
 
-def test_package_version_lookup_is_explicit_and_readonly(monkeypatch, tmp_path):
-    calls = adb_stub(monkeypatch)
+def test_package_version_lookup_is_explicit_and_readonly(stub_command_process, tmp_path):
+    calls = adb_stub(stub_command_process)
     client = AdbClient(tmp_path / "adb.exe", "fixture", package="example.fixture")
     assert client.inspect().app_version == "1.0"
     assert calls[-1][-3:] == ["dumpsys", "package", "example.fixture"]
