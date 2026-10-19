@@ -12,6 +12,8 @@
 
 本机9534 HTTPS接续已实际完成短期CA/leaf、#75四APK编译/配对/预检及全新MuMu安装；#76入口在HTTPS前因Manager `15.0` /ADB `15`的字符串guard误判失败，已交[#78](https://github.com/Maximora-byte/swu-happyrun/issues/78)。另复现#75的Gradle GBK stderr读线程异常和#76的普通Windows/JDK17 symlink夹具失败：聚焦201通过/1失败/1权限跳过/6 subtests通过，exit1。详见[本机HTTPS回执](qa/2026-10-19-local-mumu-https-attempt.md)。#75/#76暂不接受合并，实际HTTPS场景运行0项，#57仍开放；#74/#77未叠入本次产品，不能称完整验收完成。
 
+新#75/60d0fee与#76/784649d已原机接续：实际15.0/15只读guard通过，Gradle默认拒绝/显式GBK首次捕获正反例通过，但新二进制文本保留CRLF使真实apksigner解析失败（[#80](https://github.com/Maximora-byte/swu-happyrun/issues/80)）；另有默认GBK读UTF-8源码的新测试失败。聚焦271通过/1失败/4权限skip/6 subtests通过、exit1；新版入口预检拒绝，六项全not_run。详见[修订复测](qa/2026-10-19-local-mumu-https-retest-v2.md)。原APK/CA和来源manifest未变，#75/#76仍未接受，#57/#78保持开放，实例已恢复停止。
+
 ## 已合入 main
 
 | 范围 | PR / 准确 HEAD | 独立验收 |
