@@ -6,7 +6,7 @@
 
 需要另外构建含 `RemoteMumuHttpsAcceptanceTest.java` 的配对 remoteQa app/test APK。普通 APK 和没有 adapter 的 9534 remoteQa APK不能用于此入口。产品源码与新增测试 adapter 分开追溯：交付 manifest 保留产品 commit/tree，另外记录 adapter source commit、唯一文件路径和 SHA256；入口再核对当前受审 adapter 文件内容。不能把 adapter 构建称为未经修改的旧 9534 测试 APK。
 
-交付工具 `build_local_https_delivery.py` / `check_local_https_delivery.py` 是前置依赖，来自独立 [PR #75](https://github.com/Maximora-byte/swu-happyrun/pull/75)，固定工具提交 `3ac878f0e62869705f81007f72ae2bcf0a55083e`；此入口不重复构建或签名。请使用同一审核组合中的工具和源码，不从旧 APK拼装配对。
+交付工具 `build_local_https_delivery.py` / `check_local_https_delivery.py` 是前置依赖，来自独立 [PR #75](https://github.com/Maximora-byte/swu-happyrun/pull/75)，固定为已接受的工具提交 `0cea241776c0233cd222213c475dec25aaf04be9`；此入口不重复构建或签名。请使用同一审核组合中的工具和源码，不从旧 APK拼装配对。
 
 本入口只操作 `org.happyrun.app` / `org.happyrun.app.test`，驱动为产品现有 `RemoteFakeDriver`。不操作第三方乐跑、定位/传感器、学校接口或学校记录。不安装/卸载 APK，不清 app 数据，不点击 UI，不启动模拟器，不修改 Root、防火墙、系统 CA、TLS hostname verifier 或网络设置。
 
@@ -36,10 +36,24 @@ Activity/UI生命周期、显示器 viewport、真实传感器/第三方目标�
 
 先构建并验证包含受审 adapter 的交付包。以下参数值都由本地观察/交付工具提供，示例不提供猜测的 serial 或 MuMu地址。
 
+使用三个分开的、已核对准确提交的 checkout：`$productCheckout` 是上述 9534 产品，`$toolsCheckout` 是上述 0cea241 工具，`$runnerCheckout` 是本次待验收准确 HEAD 的 MuMu 入口及受审 adapter。先将这些变量设为对应的本机路径，再在同一个 PowerShell 会话中执行：
+
+```powershell
+$product = (Resolve-Path -LiteralPath $productCheckout).Path
+$tools = (Resolve-Path -LiteralPath $toolsCheckout).Path
+$runner = (Resolve-Path -LiteralPath $runnerCheckout).Path
+Set-Location -LiteralPath $product
+$env:PYTHONPATH = "$tools/scripts;$runner/scripts;$product/src"
+```
+
+预检和实际执行均保持产品 checkout 为工作目录，使用下面的模块入口。Windows 的 `PYTHONPATH` 用分号，顺序必须是工具 scripts、入口 scripts、产品 src，并替换而非追加未知的旧 `PYTHONPATH`。`check_local_https_delivery` / `check_remote_qa_packaging` 应来自工具 checkout，`check_mumu_https` / `mumu_https_fixture` 来自入口 checkout，`swu_happyrun` 来自产品 src。其他平台按本机路径分隔符设置相同顺序。
+
+[Issue #82](https://github.com/Maximora-byte/swu-happyrun/issues/82) / [PR #83](https://github.com/Maximora-byte/swu-happyrun/pull/83) 的入口差异由合成三 checkout 子进程回归保留：直接按脚本路径启动会把入口 scripts 插到搜索路径首位，遮蔽工具 checkout 中较新的 `check_remote_qa_packaging`，即使原 `PYTHONPATH` 已把工具排在最前也无效。因此不能把下面的 `python -m check_mumu_https` 改成脚本路径调用，也不能在入口 scripts 目录运行。该回归只验证导入来源，不是 APK、公有预检或 MuMu HTTPS 通过证据。
+
 纯公有材料/产物预检（不会调用 ADB、不会读取私钥）：
 
 ```powershell
-python scripts/check_mumu_https.py --bundle "$bundle" --ca-cert "$ca" --server-cert "$leaf" --host "$observedHost" --openssl "$openssl" --apksigner "$apksigner" --apkanalyzer "$apkanalyzer" --aapt2 "$aapt2" --output "$newPreflightReport"
+python -m check_mumu_https --bundle "$bundle" --ca-cert "$ca" --server-cert "$leaf" --host "$observedHost" --openssl "$openssl" --apksigner "$apksigner" --apkanalyzer "$apkanalyzer" --aapt2 "$aapt2" --output "$newPreflightReport"
 ```
 
 无 adapter / 哈希不匹配 / 信任不匹配时 exit2、全部 not_run。正确预检 exit0 只表示预检通过，`runtime_status` 仍为 `not_run`。
@@ -47,7 +61,7 @@ python scripts/check_mumu_https.py --bundle "$bundle" --ca-cert "$ca" --server-c
 实际本机执行必须显式确认以下三个开关；尤其 force-stop 会停止该隔离实例中的自身包进程（包括重启用例与失败清理），但不会清数据：
 
 ```powershell
-python scripts/check_mumu_https.py --bundle "$bundle" --ca-cert "$ca" --server-cert "$leaf" --host "$observedHost" --port $port --openssl "$openssl" --apksigner "$apksigner" --apkanalyzer "$apkanalyzer" --aapt2 "$aapt2" --adb "$adb" --manager "$manager" --serial "$observedSerial" --instance "$observedIndex" --binding "$freshBinding" --server-key "$localPrivateKey" --private-dir "$existingPrivateDirectory" --execute-own-app-simulation --allow-own-package-force-stop --isolated-no-personal-data --output "$newRuntimeReport"
+python -m check_mumu_https --bundle "$bundle" --ca-cert "$ca" --server-cert "$leaf" --host "$observedHost" --port $port --openssl "$openssl" --apksigner "$apksigner" --apkanalyzer "$apkanalyzer" --aapt2 "$aapt2" --adb "$adb" --manager "$manager" --serial "$observedSerial" --instance "$observedIndex" --binding "$freshBinding" --server-key "$localPrivateKey" --private-dir "$existingPrivateDirectory" --execute-own-app-simulation --allow-own-package-force-stop --isolated-no-personal-data --output "$newRuntimeReport"
 ```
 
 `--output` 必须是新文件，位于已有非 symlink父目录、交付包外，不能别名到任何输入。入口以独占方式新建，不能覆盖已有报告或私钥。所有工具输出和 instrumentation 原文只在本机内存中处理；公开报告仅有固定阶段/错误类别、布尔、计数与已核 source摘要，不含 token、路径、serial、账号、原始日志或截图。
@@ -70,3 +84,17 @@ python scripts/check_mumu_https.py --bundle "$bundle" --ca-cert "$ca" --server-c
 host 入口现在只在比较 Android release 时规范化：1–3 个 ASCII 十进制组件，各组件 0–999，主版本必须正，无前导零、空白、后缀或缺失；只删除尾部零组件。因此 `15`、`15.0`、`15.0.0` 等价，`15.1` 与 `15`、`14` 与 `15` 仍拒绝。Manager、ADB、binding 原值及各自规范 tuple 保留于本轮内存 `engine_version_evidence`；不改写原始版本或用户 binding，不将版本差异合成为运行状态。实例数量/index/真实 started flags、boot、安装 APK hash、host 版本与 Android 内 SDK/task/signature guard 保持原规则。
 
 本修订不改变 Java adapter/产品/测试 CA。原配对 APK 仅在重新验证产品、adapter hash、公有 CA、签名和安装 hash 全一致后可复用；必须重新真实观测新鲜 binding，再由本地验收者复测。此代码修复本身不是 MuMu HTTPS 通过证据。
+
+## 停止后的 recent task 身份（#82）
+
+[PR #83 现场回执](https://github.com/Maximora-byte/swu-happyrun/pull/83)记录了旧 adapter 首例的真实失败：host 按已授权流程 force-stop 自身包后，instrumentation 读取到唯一且 task ID 一致的 recent task，但 `baseActivity == null`。Android hello/renew 均为 0，后五例未运行。现场未验证后面的 baseIntent、isRunning、numActivities 或 topActivity，不能推断这些字段已满足新检查。
+
+旧检查把 Activity 仍然存活作为 task 归属的必要条件，与主动停包的测试生命周期不一致。[Android TaskInfo 文档](https://developer.android.com/reference/android/app/TaskInfo)区分 baseIntent 与运行中的 Activity；[Android 15 Task 源码](https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-15.0.0_r1/services/core/java/com/android/server/wm/Task.java)和 [TaskInfoHelper](https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-15.0.0_r1/services/core/java/com/android/server/wm/ActivityTaskSupervisor.java)也分别保留任务的 baseIntent、计算非 finishing Activity 信息。此依据说明旧生命周期假设错误，不证明某台 OEM 设备的新字段必然合法。
+
+修订仍要求唯一自身 task、原 task ID、boot、双签名、包名、display 存在和显式模拟许可。baseIntent 必须有显式自身 component，PackageManager 必须能找到已注册 Activity，且其包、类名和 application UID 与目标应用一致。只有 `baseActivity == null`、`isRunning == false`、`numActivities == 0`、`topActivity == null` 同时成立，才接受没有 Activity 记录的 recent task。活动态则要求 running、正数 Activity 计数和自身包的 base/top Activity；矛盾或身份缺失一律拒绝。此判断只验证任务归属，不声称当前焦点、viewport 或 Activity/UI 生命周期通过。
+
+本次 Java adapter 内容发生变化，旧 SHA256 `9a5094a55681c34dfae4bfc6015c16cbbf6d774156e52863ae44ab512cfa9c74` 的已安装 test APK不能代表修订。新 adapter SHA256 为 `7e172abd370a1380da9a3ebe0e89dff77bb1620218e5c11565cc8f39c2479eaf`；交付时还须使用最终受审 commit，并等该 commit 的 SDK35 build-only 编译通过。
+
+技术上本次只影响 remoteQa test APK；产品 app、普通 pair、CA/leaf 均没有源码改动。现有受审 builder 没有单 test 重配功能，稳妥路径是保留旧 bundle，复用用户已有 CA/leaf 与本机签名环境，在**新输出目录**运行现有完整构建并生成新的配对 manifest，随后严格验证。无需重做证书，也不能手工改旧 manifest 的 adapter/hash 字段来冒充新构建。若新 manifest 中 remoteQa app SHA256 与已安装 app 读回值完全相同且签名/版本匹配，本地验收者可只更新匹配的新 test APK；若 app hash 不同，必须使用新 manifest 对应的同签名 app/test 配对，不能把旧 app 当成新 manifest 的产物。构建和安装由本地验收者执行，保留数据，不自动清库/卸载；重新真实观测 binding 后再运行。
+
+新增 JVM 测试抽取 adapter 的实际 task 检查语句，以合成 Android 字段/PackageManager 返回做正反例；它验证判定逻辑，不模拟 Android 系统生命周期，也不替代 SDK 编译或原机 HTTPS 接续。#82 的现场失败保留，直到原机独立接受才决定关闭。

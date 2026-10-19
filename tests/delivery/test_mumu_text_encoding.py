@@ -17,6 +17,8 @@ OWNED = (
     "tests/delivery/test_mumu_namespace_portability.py",
     "tests/delivery/test_mumu_version_binding.py",
     "tests/delivery/test_mumu_text_encoding.py",
+    "tests/delivery/test_mumu_task_identity.py",
+    "tests/delivery/test_mumu_checkout_entry.py",
 )
 
 

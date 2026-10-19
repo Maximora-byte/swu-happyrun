@@ -2,6 +2,7 @@ package org.happyrun.app.remoteqa;
 
 import android.app.ActivityManager;
 import android.content.Context;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
@@ -87,12 +88,31 @@ public final class RemoteMumuHttpsAcceptanceTest extends InstrumentationTestCase
         List<ActivityManager.AppTask> tasks = ((ActivityManager)context.getSystemService(Context.ACTIVITY_SERVICE)).getAppTasks();
         assertEquals("Own task must be unambiguous", 1, tasks.size());
         ActivityManager.RecentTaskInfo task = tasks.get(0).getTaskInfo();
+        assertNotNull("Own task snapshot missing", task);
         assertEquals("Own task changed", taskId, task.taskId);
-        assertNotNull(task.baseActivity);
-        assertEquals(PACKAGE, task.baseActivity.getPackageName());
-        assertNotNull(task.baseIntent);
-        assertNotNull(task.baseIntent.getComponent());
+        assertNotNull("Own task base intent missing", task.baseIntent);
+        assertNotNull("Own task must have an explicit component", task.baseIntent.getComponent());
         assertEquals(PACKAGE, task.baseIntent.getComponent().getPackageName());
+        ActivityInfo activity = context.getPackageManager().getActivityInfo(
+            task.baseIntent.getComponent(), 0);
+        assertNotNull("Own task activity not registered", activity);
+        assertEquals(PACKAGE, activity.packageName);
+        assertEquals(task.baseIntent.getComponent().getClassName(), activity.name);
+        assertNotNull("Own task application identity missing", activity.applicationInfo);
+        assertEquals("Own task UID mismatch", context.getApplicationInfo().uid, activity.applicationInfo.uid);
+        // AOSP API35 retains the recent task/baseIntent after its Activity records are removed.
+        // This is a task-ownership check, not a claim that a stopped task is visible or focused.
+        if (task.baseActivity == null) {
+            assertFalse("Missing base activity on a running task", task.isRunning);
+            assertEquals("Stopped task still has activities", 0, task.numActivities);
+            assertNull("Stopped task still has a top activity", task.topActivity);
+        } else {
+            assertTrue("Activity present on a non-running task", task.isRunning);
+            assertTrue("Running task must contain activities", task.numActivities > 0);
+            assertEquals(PACKAGE, task.baseActivity.getPackageName());
+            assertNotNull("Running task top activity missing", task.topActivity);
+            assertEquals(PACKAGE, task.topActivity.getPackageName());
+        }
         // No UI action is made: a display existing is not reported as viewport/UI validation.
     }
     private Path directory(String scenario, boolean recover) throws Exception {
