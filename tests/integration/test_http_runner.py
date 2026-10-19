@@ -110,10 +110,12 @@ def test_budget_exhaustion_is_attention_not_fake_completion(runtime):
         client.close()
 
 
-@pytest.mark.parametrize("scenario", ["start_crash", "upload_uncertain"])
-def test_uncertainty_and_verify_recovery_never_restarts(runtime, scenario):
+@pytest.mark.parametrize(
+    "scenario, budget", [("start_crash", 2), ("upload_uncertain", 2), ("normal", 0.05)]
+)
+def test_uncertainty_and_verify_recovery_never_restarts(runtime, scenario, budget):
     s, root, created = runtime
-    runner, driver, journal, client = make_runner(s, root, scenario=scenario)
+    runner, driver, journal, client = make_runner(s, root, scenario=scenario, run_seconds=budget)
     try:
         result = runner.run_once()
         assert result.state == "needs_attention"
@@ -125,7 +127,12 @@ def test_uncertainty_and_verify_recovery_never_restarts(runtime, scenario):
             admin=True,
         )
         assert response.status_code == 200, response.text
+        counts = driver.start_count, driver.tick_count, driver.stop_count
+        journal.close()
+        client.close()
+        runner, driver, journal, client = make_runner(s, root, scenario=scenario)
         recovered = runner.run_once()
+        assert (driver.start_count, driver.tick_count, driver.stop_count) == counts
         assert recovered.state == "needs_attention"  # Unknown is not fabricated completion.
         assert driver.start_count == 1
         assert not journal.has_intent(created["job_id"], "upload")
@@ -380,6 +387,81 @@ def test_cancel_stop_failure_reports_attention_immediately(runtime, fixture_age_
         assert current["state"] == "needs_attention"
         assert current["desired_state"] == "cancel"
         assert current["reason_code"] == "stop_unconfirmed"
+    finally:
+        journal.close()
+        client.close()
+
+
+def test_finished_stopped_simulation_recovers_completed_without_motion(runtime):
+    """Real child exits after durable stop/verify, before reporting completion."""
+    s, root, created = runtime
+    program = """
+import os, sys
+from pathlib import Path
+from swu_happyrun.agent.client import ControlClient
+from swu_happyrun.agent.journal import RunJournal
+from swu_happyrun.agent.runner import AgentRunner
+from swu_happyrun.core.clock import SystemClock
+from swu_happyrun.core.profiles import LocalProfileStore
+from swu_happyrun.drivers.fake import FakeDriver
+class CrashBeforeCompletion(FakeDriver):
+    def verify(self, job):
+        result = super().verify(job)
+        assert result.reason_code == 'simulation_only' and not result.evidence
+        os._exit(73)
+root = Path(sys.argv[2])
+d = CrashBeforeCompletion(sys.argv[3], LocalProfileStore(root/'profiles'),
+    state_path=root/'fake.json', route_speed_mps=2)
+r = AgentRunner(ControlClient(sys.argv[1], 'integration-agent'), d,
+    RunJournal(root/'journal.sqlite3'), SystemClock(), device_id=sys.argv[3],
+    run_seconds=2, tick_seconds=.05)
+r.run_once()
+"""
+    crashed = subprocess.run(
+        [sys.executable, "-c", program, s.url, str(root), DEVICE_ID],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert crashed.returncode == 73, crashed.stderr
+    before = s.get("jobs/" + created["job_id"]).json()
+    assert before["state"] == "verifying"
+    s.clock.advance(31)
+    assert s.claim().status_code == 204
+    attention = s.get("jobs/" + created["job_id"]).json()
+    assert attention["state"] == "needs_attention"
+    assert (
+        s.post(
+            "jobs/" + created["job_id"] + "/resume",
+            {"action": "verify_only", "expected_revision": attention["revision"]},
+            admin=True,
+        ).status_code
+        == 200
+    )
+
+    class NoReplay(FakeDriver):
+        def prepare(self, job):
+            pytest.fail("recovery must not prepare")
+
+        def start(self, job):
+            pytest.fail("recovery must not start")
+
+        def tick(self, job, elapsed):
+            pytest.fail("recovery must not tick")
+
+    runner, driver, journal, client = make_runner(s, root, driver_type=NoReplay)
+    counts = driver.start_count, driver.tick_count, driver.stop_count
+    try:
+        result = runner.run_once()
+        assert result.state == "completed"
+        assert result.run_session_id == before["run_session_id"]
+        assert result.fence > before["fence"]
+        assert result.spec.model_dump(mode="json") == before["spec"]
+        assert (driver.start_count, driver.tick_count, driver.stop_count) == counts
+        assert counts[0] == counts[2] == 1
+        assert not driver.verify(result.spec).evidence
+        assert not journal.has_intent(result.job_id, "upload")
     finally:
         journal.close()
         client.close()

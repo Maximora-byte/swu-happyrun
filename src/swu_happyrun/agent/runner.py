@@ -8,6 +8,7 @@ from uuid import uuid4
 from swu_happyrun.agent.client import ControlError
 from swu_happyrun.agent.journal import UnsafeReplay
 from swu_happyrun.core.models import JobEvent, LeaseCommand
+from swu_happyrun.drivers.fake import FakeDriver
 
 
 class LeaseLost(RuntimeError):
@@ -276,7 +277,14 @@ class AgentRunner:
         self._check()
         if (
             self.job.spec.mode == "simulation"
-            and not recovery
+            and (
+                not recovery
+                or (
+                    isinstance(self.driver, FakeDriver)
+                    and result.status == "unknown"
+                    and self.driver.has_persisted_completion(self.job)
+                )
+            )
             and result.reason_code == "simulation_only"
             and not result.evidence
         ):
