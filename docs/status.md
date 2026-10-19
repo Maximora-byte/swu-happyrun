@@ -10,7 +10,9 @@
 
 用户确认暂时没有现成材料后，已授权安装并取得**步道乐跑4.3.1(231) / com.lptiyu.tanke**的MuMu现场版本：官方应用宝渠道、签名检查、安装APK读回hash及首次启动/未登录页观察完成。仅登录前截图留本机，XML dump139未接受；未登录、认证、开始跑步或上传，实例已恢复停止并保留安装。详见[四项适配输入盘点](qa/2026-10-19-adaptation-input-inventory.md)。当前学期正式规则、本人业务页面/记录、高德/腾讯精确来源仍缺失；三条OSM路线未重采，不阻塞独立软件交付。
 
-MuMu HTTPS最新接续：#75/0cea241的新validator对原完整bundle真实SDK检查及模块公有预检通过，#76/288ab69相关聚焦301通过/4权限skip/6 subtests通过，exit0。#75已按工具范围合入候选merge839faf8，#80按CRLF修复范围关闭。本次运行产品仍冻结9534，原APK/CA及来源manifest不变；真实首例已启动fixture/instrumentation，但Java guard第91行task.baseActivity为null失败，Android hello尚未发送，其他五例not_run，已交[#82](https://github.com/Maximora-byte/swu-happyrun/issues/82)。详见[第三轮现场回执](qa/2026-10-19-local-mumu-https-retest-v3.md)。#76暂不接受，#57/#78继续开放，#74/#77未叠入受测产品，所有实例已恢复停止。
+MuMu HTTPS最新接续：#76新HEAD`6d8fa394`已完成新四APK真实构建、严格SDK验证及原机六组HTTPS自身应用模拟，runtime exit0；聚焦340通过/4权限skip/6 subtests通过。复用原CA/leaf，在新目录生成manifest，新app与原安装hash相同，仅同签名更新test；旧bundle和证书逐hash不变。实际Android hello8/renew30、六fixture均正常退出，实例恢复停止。#76已合入候选merge`e681aaa8ae81c61c8386ca697a2451b4bb7c08e7`，tree9400abf与本地完整受测预览一致：1515通过/23条件skip/1既有warning/6 subtests通过。#78/#82按版本/任务身份阻塞修复范围关闭，#57继续开放。运行产品仍冻结9534，#74/#77未叠入；Activity/UI、物理执行和学校记录均未接受。详见[六组现场验收](qa/2026-10-19-local-mumu-https-acceptance.md)。
+
+历史#75/0cea241 validator与#76/288ab69的第三轮结果完整保留：聚焦301通过/4权限skip/6 subtests通过，但Java guard第91行baseActivity=null、Android hello0/后五例not_run，见[原失败回执](qa/2026-10-19-local-mumu-https-retest-v3.md)及[#82](https://github.com/Maximora-byte/swu-happyrun/issues/82)。本轮新包通过不抹去旧失败，也不覆盖#57旧间歇根因或#77独立数据库修复。
 
 历史[首轮201通过/1失败及guard阻塞](qa/2026-10-19-local-mumu-https-attempt.md)与[第二轮271通过/1失败及CRLF阻塞](qa/2026-10-19-local-mumu-https-retest-v2.md)完整保留；本轮有限通过不覆盖旧失败或代表整体验收。
 
@@ -30,7 +32,7 @@ MuMu HTTPS最新接续：#75/0cea241的新validator对原完整bundle真实SDK�
 - [#35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 的原 CI/TLS 修订为 `28871b2d599a8ec8335570effb3207d2564639ab`；#39/#40合入原候选后为 `2d0fcc550f9c1f6cf8cc6e0106dcafd106cf181a`，整个产品仍待接受。采用版本须重新核对实际 HEAD。
 - [#39](https://github.com/Maximora-byte/swu-happyrun/pull/39) `5d52d78acf6d0f7e7064e1209810746dd05b93d7`：独立接受，merge `0bb9344ddefe8054177101583282c57f27f5b38a` 到原候选分支；[#37](https://github.com/Maximora-byte/swu-happyrun/issues/37) 已关闭。冲突整批回滚、合法精确映射与重传通过；非阻塞错误列断言已交 Dot 改进。
 - [#40](https://github.com/Maximora-byte/swu-happyrun/pull/40) 新修订 `8aef593dd89ca47d63a702ee1cf6952382169bbd`：独立恢复正反例通过，相关222项通过/1权限skip，已合入原候选；[#36](https://github.com/Maximora-byte/swu-happyrun/issues/36)关闭。旧69182c7失败保留在历史QA报告。
-- [#46](https://github.com/Maximora-byte/swu-happyrun/pull/46) 最近完整Windows组合仍对应 `9534f51efe3a557e6b4bda5605426e4004a34783`：已含#62/#69，1298通过/17平台权限跳过/1既有依赖警告，最终tree与本地完整受测组合一致。当前候选已加#75工具merge `839faf87cb0180f0732f2ef4278e4944bf1ccf70`，不将旧全套写成此新树重跑结果。4c已有授权API35归档的协议15/UI3/前台14及两组恢复通过仍仅属其原范围；本机MuMu首例被#82阻塞。#57旧间歇失败未逐项定因，保持开放，完整候选仍Draft，不抹去[历史e490问题](https://github.com/Maximora-byte/swu-happyrun/pull/46#issuecomment-6262758607)。
+- [#46](https://github.com/Maximora-byte/swu-happyrun/pull/46) 当前候选含已接受#75/#76，merge `e681aaa8ae81c61c8386ca697a2451b4bb7c08e7`、tree9400abf与本地完整预览相同，普通Windows/Python3.11.16为1515通过/23条件skip/1既有warning/6 subtests通过。本轮MuMu六组HTTPS自身模拟使用冻结9534产品+0cea工具+6d8 adapter通过；未将候选merge标成APK产品源码。历史9534的1298通过/17skip和4c授权API35协议15/UI3/前台14及两组恢复均保留原范围。#57旧间歇失败未逐项定因，保持开放；#74/#77未接受，完整候选仍Draft，不抹去[历史e490问题](https://github.com/Maximora-byte/swu-happyrun/pull/46#issuecomment-6262758607)。
 - [#55](https://github.com/Maximora-byte/swu-happyrun/pull/55) `98057f986bef87138385d5643d91d19a2bc10aac`：普通Windows账户全套1093通过/15精确跳过，合入原候选merge `5eb00e27f59a7fe927dff389e4cdd6d8d8665a55`，#52关闭。
 - [#56](https://github.com/Maximora-byte/swu-happyrun/pull/56) `090f7eea6479cd5ce094741b4730aec6697543dd`：原失租复现零写入；组合全套1125通过/15跳过，tree与最终merge `f705f91409df88df9614aa4dd53c136dd00ed8a0`一致，#53关闭。两修复的Android CI仅build/static，runtime未授权/未执行，不计设备通过。
 - [#65](https://github.com/Maximora-byte/swu-happyrun/pull/65) `c7e260b7eafe58d06277afc106f167db5dd3a2ba`：Windows聚焦39通过/1skip、准确HEAD全套1177通过/16skip；同源新APK普通/optional实际入口共14项正反例符合预期，实际dump139仍exit1。合入原候选merge `6dda2a4e74e40b92387bcbede2ec4db28abb7662`，#58按自身采证范围关闭。
@@ -59,7 +61,7 @@ MuMu HTTPS最新接续：#75/0cea241的新validator对原完整bundle真实SDK�
 | #7 L1 | 合成profile/fake/离线转换有实现；已取得MuMu6.8.4.0 location/gyro帮助，真实读回/停止/坐标语义仍缺实现和验收，不能由命令帮助授予能力 |
 | #8 L2 | #40模拟恢复已接受；真实驱动接入与恢复继续按新计划任务2–4验收，不新增不确定start/upload |
 | #9 L3 | #69已接受原XML三条离线导入；步道乐跑4.3.1(231)已在MuMu安装/读回/登录前观察，XML139未接受。#64剩高德/腾讯正式来源和交叉核验；正式规则、本人会话及业务记录样本仍缺，真实适配及记录独立接受 |
-| #10 I0 | #52/#53/#58/#59已按范围接受；MuMu历史离线自身模拟通过，4c托管API35协议/前台/两组恢复本次通过，旧间歇失败#57及本机MuMuHTTPS仍待闭环；完整#46保持Draft，真实闭环另按任务2–4验收 |
+| #10 I0 | #52/#53/#58/#59/#78/#82已按范围接受；MuMu离线与本轮六组HTTPS自身模拟通过，4c托管证据保留原范围，旧间歇失败#57和#74/#77继续独立接受；完整#46保持Draft，真实闭环另按任务2–4验收 |
 | #11 R0 | vivo无Root/真实业务纯接口没有有效执行证据，不由fake或其他学校协议推断支持 |
 | #16 冲刺 | 保持开放；软件、设备与学校记录分别验收 |
 
