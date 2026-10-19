@@ -56,6 +56,10 @@ def reject(stage, reason, stdout, stderr, **fields):
 
 
 def run_checked(command, stage, expected):
+    # JDK 19+ standard stream properties are independent of file.encoding.
+    # These are launcher options before the main class, including javac's Main;
+    # -J applies only to the native javac launcher, which we do not invoke.
+    command = [command[0], "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8", *command[1:]]
     try:
         result = subprocess.run(
             command, capture_output=True, check=False, timeout=max(0, deadline - time.monotonic())

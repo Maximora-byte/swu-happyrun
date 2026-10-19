@@ -73,3 +73,62 @@ There is no upload or default raw-output collection. Timeout evidence can be
 partial. Existing-directory/write failures remain failures and never replace
 the original failure with success. Do not attach these files to GitHub.
 Share only the safe JSON stage/stream/category and the tested commit/version.
+
+
+## Revision after ordinary Windows rejection
+
+Codex tested `7aeddd4` on the original ordinary account with Python 3.11.16 and
+Oracle JDK 25.0.4.1: 31 synthetic tests passed, but real compilation failed.
+The old reader-thread warning disappeared; the preserved failure was
+`javac / invalid_utf8 / stderr`, 214 bytes. The independently observed JVM
+properties were `native.encoding=GBK`, `stderr.encoding=GBK`,
+`file.encoding=UTF-8`, and locale zh/CN. The bytes remain private. This is
+reported source evidence, not a guessed decoding fallback or successful
+navigation acceptance. See [Codex's exact report](https://github.com/Maximora-byte/swu-happyrun/issues/59#issuecomment-6264083583).
+
+The revision sets only these two JVM **launch** options on all four commands,
+before their main class (or classpath options):
+
+    java -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 com.sun.tools.javac.Main ...
+    java -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -cp ... <check-main>
+
+These configure output at its source. Captured bytes still undergo strict
+UTF-8 decoding and the same exit, deadline, exact-output, and stderr checks.
+An option's presence is not proof of its effect: malformed bytes still reject.
+No file.encoding, native.encoding, locale, environment variable, system
+codepage, javac source/target/source-encoding option, or budget is changed.
+
+Official basis:
+
+- [JDK 19 release notes](https://www.oracle.com/java/technologies/javase/19-relnote-issues.html)
+  introduce stdout.encoding/stderr.encoding and the launch-time UTF-8 override.
+- [Java 25 System properties](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/System.html#getProperties())
+  specify UTF-8 as the supported override. file.encoding is a separate setting;
+  changing native.encoding on the command line has no effect.
+- [jdk.compiler invocation restrictions](https://docs.oracle.com/en/java/javase/25/docs/api/jdk.compiler/module-summary.html)
+  explain why -J is not supported through legacy Main/API invocation. We invoke
+  java with com.sun.tools.javac.Main, so the JVM options precede that class.
+  A native javac launch would use -J, but this patch does not switch launchers.
+
+JDK 17 predates these standard stream-property guarantees. This revision does
+not claim that setting the property forces all JDK 17 implementations to use
+UTF-8, and does not impose a project-wide JDK upgrade. Strict byte validation
+remains the authority; an older JVM emitting another encoding fails closed.
+
+Regression coverage adds a missing-launch-options RED for all four commands,
+non-ASCII synthetic compiler diagnostics, and rejection of non-ASCII runtime
+output that violates the success protocol. Real installed-JVM probes exercise
+both non-ASCII stdout and stderr through the actual runner, checking bytes
+rather than just property strings. Only these two additional probes explicitly
+skip for a detected JDK older than 19, where this standard guarantee does not
+exist; unknown versions fail and the original real navigation test never
+skips for this reason. Those probes use synthetic Java source
+with Unicode escapes and do not sample private device or host output.
+
+The controlled Linux/JDK21 localized compiler experiment selects zh/CN only
+for its test child, observes actual non-ASCII javac diagnostics, and checks
+strict UTF-8 bytes and all unchanged navigation assertions. This experiment
+is not a production locale override, and does not replace ordinary Windows
+JDK25 acceptance. Codex must retest the new exact repair HEAD before accepting
+#59; do not reuse either the old rejection or Hosted Windows passes as that
+result.
