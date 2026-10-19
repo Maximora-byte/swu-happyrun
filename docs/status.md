@@ -10,6 +10,8 @@
 
 用户确认暂时没有现成材料后，已授权安装并取得**步道乐跑4.3.1(231) / com.lptiyu.tanke**的MuMu现场版本：官方应用宝渠道、签名检查、安装APK读回hash及首次启动/未登录页观察完成。仅登录前截图留本机，XML dump139未接受；未登录、认证、开始跑步或上传，实例已恢复停止并保留安装。详见[四项适配输入盘点](qa/2026-10-19-adaptation-input-inventory.md)。当前学期正式规则、本人业务页面/记录、高德/腾讯精确来源仍缺失；三条OSM路线未重采，不阻塞独立软件交付。
 
+本机9534 HTTPS接续已实际完成短期CA/leaf、#75四APK编译/配对/预检及全新MuMu安装；#76入口在HTTPS前因Manager `15.0` /ADB `15`的字符串guard误判失败，已交[#78](https://github.com/Maximora-byte/swu-happyrun/issues/78)。另复现#75的Gradle GBK stderr读线程异常和#76的普通Windows/JDK17 symlink夹具失败：聚焦201通过/1失败/1权限跳过/6 subtests通过，exit1。详见[本机HTTPS回执](qa/2026-10-19-local-mumu-https-attempt.md)。#75/#76暂不接受合并，实际HTTPS场景运行0项，#57仍开放；#74/#77未叠入本次产品，不能称完整验收完成。
+
 ## 已合入 main
 
 | 范围 | PR / 准确 HEAD | 独立验收 |
