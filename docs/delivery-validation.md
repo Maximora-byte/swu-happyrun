@@ -50,6 +50,29 @@ uv run --no-sync python deploy/smoke_fake.py
 
 完整50项原始设计映射见 [acceptance coverage](acceptance-coverage.md)。这些是软件和合成故障证据；无真实设备/登录/上传/学校有效记录结论。Docker不可用，容器构建与卷重启仍未执行。最终wheel/sdist SHA256和完整archive成员检查随集成PR报告和CI artifact提供；不存在凭据、数据库、日志、虚拟环境或原始截图入包。
 
+## 本轮 CI 测试同步修正验证（2026-10-19）
+
+基线 `4d73f42ec15e0c2cc14371f8a4441ef2101e6e41`；只更新 `tests/agent/test_daemon_process.py`、`tests/server/test_scheduler.py` 和两份结果文档。42个生产Python模块与构建配置逐字节不变。
+
+- 历史 [run39179740749](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39179740749) 的Windows/Python3.13 active-renewal失败保留。独立诊断让父进程在child完成后才检查，旧active轮询确定性失败；此重现不能证明该次CI的唯一根因。新测试预先布置故障，在请求处理时观察持久化active并同步返回503，退出后验证start/stop计数、needs_attention与无renew重试。定向10次重复通过。
+- 中间组合全套 **518 passed / 1 failed** 保留，失败是 readiness 测试直接改状态与后台tick竞争。新测试注入真实scheduler失败并通过队列屏障逐阶段验证成功、503脱敏和恢复；独立20个pytest进程重复通过。
+- 最终完整 **519 passed**（84.96秒），一条继承Starlette/httpx warning。冻结依赖、Schema、lint/format通过。
+- 同一已安装wheel，源码外本轮重跑 **7 daemon passed**（15.48秒）和 **15 scheduler passed**（2.84秒，含新的readiness回归）。子进程使用-I/清PYTHONPATH，生产模块导入site-packages；外部测试副本仅隔离启动路径，场景断言不变。
+- wheel SHA256仍为 `288f97d6460f8693ff343e98bd96c2eb9d8cfb8757590cf0d50dcd135d572329`。前一轮34HTTP、9lifecycle、50边界、CLI smoke和三extras隔离按此相同字节复用，明确不是本轮重跑。sdist因测试/文档改变需使用本轮独立校验值。
+
+最终Hosted CI须绑定新准确HEAD核查，不从本地通过推断；之前CI失败与本地中间红灯均留存。设备、容器和学校有效记录的未验证范围保持不变。
+
+## 本轮信号重入修复验证（2026-10-19）
+
+基于准确候选 `58264f22ba8829ec707f2d1a07617332f42ef48d`，仅产品 lifecycle.py 与对应回归测试变更，另更新两份结果文档。SIGTERM/SIGINT handler 原 Event.set 在 condition 锁内重入会死锁；改为无锁 signum 和单调时钟、最长50ms轮询。旧 wheel 的独立真实子进程回归3秒超时失败，新 wheel 同场景通过。
+
+- Linux x86_64 / Python 3.12.14：**519 passed**（82.91秒），一条继承 Starlette/httpx warning。
+- 源码外准确 wheel：**34真实HTTP**（43.42秒）、**7原daemon场景**（15.84秒）、**9 lifecycle场景**（0.77秒，含新真实信号重入回归）、**50额外边界检查**（0.63秒）通过。外部测试仅使用测试fixture代码；生产模块来自site-packages，禁用PYTHONPATH/pytest pythonpath并使用-I，子进程同样隔离。外部harness差异与逐次导入证明留在验收日志。
+- 同wheel CLI smoke、core/server/agent三extras隔离、frozen依赖、Schema、ruff check/format、构建通过。文档更新后重建，并确认wheel字节仍与已安装测试一致；最终SHA256与archive成员检查随发布证据提供。
+- 原513/34/7与更早400/31结果保留为历史快照，不能替代本轮信号修复证据。最终远端CI须按本轮不可变HEAD单独核查。
+
+环境阻塞已核实：云端无Docker/Podman/nerdctl/containerd/ADB或Docker socket，用户桌面离线、无已保存可用环境。本轮没有设备、容器、真实应用/登录/上传或学校有效记录验证；Linux信号测试也不证明Windows信号行为。
+
 ## 本轮路线完整性与生命周期集成验证
 
 准确基线为 PR #25 `19c15ba7cfad7fc1039b7b552677a3bd3e82cf6b`；叠加 Android PR #26 `5e841d1fa8e231caa33608cdd689f0b79b1f9d8d`、坐标 PR #27 `9db9c8f31567b3300699e79b3a340f7bbaf3c22c`、代理 PR #28 `9c358125a9724fafd3468a64f069e5ec92acab49`，以及冻结路线与 I0 文件。所有输入逐文件 SHA256/Git blob 核对，最终集成提交由 PR/Actions 精确 push HEAD 绑定。
