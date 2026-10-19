@@ -113,7 +113,7 @@ def test_guard_and_binding_checked_for_every_write_and_readback_required():
     location, transport, checks = setup_location()
     location.write(POINT, input_crs="WGS84")
     location.write(POINT, input_crs="WGS84")
-    assert checks == ["binding", "guard", "binding", "guard"]
+    assert checks == ["binding", "guard", "binding", "guard"] * 2
     assert len(transport.writes) == location.write_count == 2
     transport.observed = GeoPoint(longitude=121, latitude=30)
     with pytest.raises(DriverError, match="coordinate_readback_mismatch"):
@@ -316,5 +316,195 @@ def test_real_r1_current_identity_mismatch_stops_before_write(field, value):
     location, transport, _, fresh = bound_r1_location()
     fresh[field] = value
     with pytest.raises(ProbeError):
+        location.write(POINT, input_crs="WGS84")
+    assert transport.writes == []
+
+
+@pytest.mark.parametrize("window", ["calibration", "binding", "final_calibration_time"])
+@pytest.mark.parametrize("event", ["lease_expired", "budget_exhausted", "cancel", "stop"])
+def test_authority_change_during_prewrite_checks_has_zero_writes(window, event):
+    from swu_happyrun.agent.runner import AgentRunner, Cancelled, LeaseLost
+
+    location, transport, _ = setup_location(expires_at=NOW + timedelta(minutes=5))
+    seconds = [0]
+    runner = AgentRunner(
+        None, None, None, SimpleNamespace(monotonic=lambda: seconds[0]), device_id="synthetic"
+    )
+    runner.job = SimpleNamespace(desired_state="run", recovery_action=None)
+    runner._lease_deadline, runner._job_deadline = 30, 600
+    checks = []
+
+    def guard():
+        checks.append(seconds[0])
+        runner._effect_guard()
+
+    def change():
+        if event == "lease_expired":
+            seconds[0] = 31
+        elif event == "budget_exhausted":
+            seconds[0] = 25
+        elif event == "cancel":
+            runner.job.desired_state = "cancel"
+        else:
+            location.stop()
+
+    reads = 0
+
+    def clock():
+        nonlocal reads
+        reads += 1
+        if (window == "calibration" and reads == 2) or (
+            window == "final_calibration_time" and reads == 3
+        ):
+            change()
+        return NOW + timedelta(seconds=seconds[0])
+
+    binding_reads = 0
+
+    def binding_check():
+        nonlocal binding_reads
+        binding_reads += 1
+        if window == "binding" and binding_reads == 2:
+            change()
+
+    location._clock = clock
+    location._binding_check = binding_check
+    location.configure_execution_guard(guard)
+    with pytest.raises((LeaseLost, Cancelled, DriverError)):
+        location.write(POINT, input_crs="WGS84")
+    assert transport.writes == []
+    assert location.write_count == 0
+    assert checks[0] == 0
+    assert runner._lease_deadline == 30  # No renewal to make a slow check pass.
+    location.configure_execution_guard(lambda: None)
+    with pytest.raises(DriverError, match="channel_halted"):
+        location.write(POINT, input_crs="WGS84")
+    location.stop()  # Cleanup remains available without authority.
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("boot_id", "restarted-boot"), ("observed_display_id", 1), ("app_version", "2.0")],
+)
+def test_binding_changed_during_calibration_is_rechecked_before_write(field, value):
+    from swu_happyrun.drivers.command import ProbeError
+
+    location, transport, _, fresh = bound_r1_location()
+    reads = 0
+
+    def clock():
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            fresh[field] = value
+        return NOW + timedelta(seconds=60)
+
+    location._clock = clock
+    with pytest.raises(ProbeError):
+        location.write(POINT, input_crs="WGS84")
+    assert transport.writes == []
+
+
+def test_stop_during_final_guard_has_zero_writes():
+    location, transport, _ = setup_location()
+    checks = 0
+
+    def guard():
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            location.stop()
+
+    location.configure_execution_guard(guard)
+    with pytest.raises(DriverError, match="channel_halted"):
+        location.write(POINT, input_crs="WGS84")
+    assert transport.writes == []
+
+
+def test_calibration_expiry_during_final_binding_check_has_zero_writes():
+    from swu_happyrun.agent.runner import AgentRunner
+
+    location, transport, _ = setup_location(expires_at=NOW + timedelta(seconds=10))
+    seconds = [0]
+    runner = AgentRunner(
+        None, None, None, SimpleNamespace(monotonic=lambda: seconds[0]), device_id="synthetic"
+    )
+    runner.job = SimpleNamespace(desired_state="run", recovery_action=None)
+    runner._lease_deadline, runner._job_deadline = 30, 600
+    reads = 0
+
+    def binding_check():
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            seconds[0] = 10  # Calibration expired, but lease/action budget remains valid.
+
+    location._clock = lambda: NOW + timedelta(seconds=seconds[0])
+    location._binding_check = binding_check
+    location.configure_execution_guard(runner._effect_guard)
+    with pytest.raises(DriverError, match="calibration_unverified"):
+        location.write(POINT, input_crs="WGS84")
+    assert transport.writes == []
+    assert runner._lease_deadline == 30
+
+
+@pytest.mark.parametrize("event", ["calibration_expired", "lease_expired", "cancel", "stop"])
+def test_composed_binding_observation_cannot_outlive_calibration(event):
+    from swu_happyrun.agent.runner import AgentRunner, Cancelled, LeaseLost
+    from swu_happyrun.drivers.mumu.driver import MuMuDriver
+    from swu_happyrun.drivers.mumu.sensors import MuMuSensors
+
+    location, transport, _ = setup_location(expires_at=NOW + timedelta(seconds=10))
+    seconds = [0]
+    clock = SimpleNamespace(monotonic=lambda: seconds[0])
+    runner = AgentRunner(None, None, None, clock, device_id="synthetic")
+    runner.job = SimpleNamespace(desired_state="run", recovery_action=None)
+    runner._lease_deadline, runner._job_deadline = 30, 600
+    observations = 0
+
+    def binding_check():
+        nonlocal observations
+        observations += 1
+        if observations == 2:
+            if event == "calibration_expired":
+                seconds[0] = 10
+            elif event == "lease_expired":
+                seconds[0] = 31
+            elif event == "cancel":
+                runner.job.desired_state = "cancel"
+            else:
+                location.stop()
+
+    location._clock = lambda: NOW + timedelta(seconds=seconds[0])
+    driver = MuMuDriver.for_synthetic_testing(
+        fake=SimpleNamespace(device_id="synthetic", configure_execution_guard=lambda _: None),
+        sensors=MuMuSensors(),
+        binding_check=binding_check,
+        clock=clock,
+        location=location,
+    )
+    driver.configure_execution_guard(runner._effect_guard)
+    with pytest.raises((DriverError, LeaseLost, Cancelled)):
+        location.write(POINT, input_crs="WGS84")
+    assert observations == 2
+    assert transport.writes == []
+    assert runner._lease_deadline == 30
+    location.stop()
+
+
+def test_final_guard_cannot_outlive_calibration():
+    location, transport, _ = setup_location(expires_at=NOW + timedelta(seconds=10))
+    seconds = [0]
+    checks = 0
+
+    def guard():
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            seconds[0] = 10
+
+    location._clock = lambda: NOW + timedelta(seconds=seconds[0])
+    location.configure_execution_guard(guard)
+    with pytest.raises(DriverError, match="calibration_unverified"):
         location.write(POINT, input_crs="WGS84")
     assert transport.writes == []

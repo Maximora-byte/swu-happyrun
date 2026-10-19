@@ -54,9 +54,10 @@ class MuMuDriver:
         self._guard = check
         if self._fake is not None:
             self._fake.configure_execution_guard(self._check)
-            self._sensors.configure_execution_guard(self._check)
+            # Channel observations may block; keep them separate from final authority.
+            self._sensors.configure_execution_guard(check, binding_check=self._binding_check)
             if self._location is not None:
-                self._location.configure_execution_guard(self._check)
+                self._location.configure_execution_guard(check, binding_check=self._binding_check)
 
     def _check(self) -> None:
         self._binding_check()

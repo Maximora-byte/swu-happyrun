@@ -32,6 +32,7 @@ class MuMuLocation:
         self.write_count = 0
         self._transport: SyntheticLocationTransport | None = None
         self._guard: Callable[[], None] = _unguarded
+        self._execution_binding_check: Callable[[], None] | None = None
         self._halted = False
         self._stop_confirmed = False
         self._lock = RLock()
@@ -54,9 +55,15 @@ class MuMuLocation:
         result._clock = clock
         return result
 
-    def configure_execution_guard(self, check: Callable[[], None]) -> None:
+    def configure_execution_guard(
+        self,
+        check: Callable[[], None],
+        *,
+        binding_check: Callable[[], None] | None = None,
+    ) -> None:
         with self._lock:
             self._guard = check
+            self._execution_binding_check = binding_check
 
     def write(self, point: GeoPoint, *, input_crs: str) -> None:
         with self._lock:
@@ -70,10 +77,34 @@ class MuMuLocation:
                     raise DriverError("calibration_crs_mismatch")
                 target = normalize(point, input_crs)
                 self._binding_check()
+                if self._execution_binding_check is not None:
+                    self._execution_binding_check()
                 self._guard()
                 if self._halted:
                     raise DriverError("channel_halted")
                 self._calibration.validate(self._binding, now=self._clock(), channel="synthetic")
+                self._binding_check()
+                if self._execution_binding_check is not None:
+                    self._execution_binding_check()
+                # Fresh observation may itself outlive calibration; retain its time gate
+                # without another external observation or full sample-validation pass.
+                if (
+                    not self._calibration.observed_at
+                    <= self._clock()
+                    < self._calibration.expires_at
+                ):
+                    raise DriverError("calibration_unverified")
+                # Validation/observation callbacks may consume the lease or request stop.
+                # No external observations after final authority: only pure time/flag reads.
+                self._guard()
+                if (
+                    not self._calibration.observed_at
+                    <= self._clock()
+                    < self._calibration.expires_at
+                ):
+                    raise DriverError("calibration_unverified")
+                if self._halted:
+                    raise DriverError("channel_halted")
                 self._transport.write(target)
                 self.write_count += 1
                 observed = normalize(self._transport.read(), "WGS84")
