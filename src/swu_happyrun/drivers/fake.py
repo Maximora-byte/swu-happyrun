@@ -211,6 +211,46 @@ class FakeDriver:
                 reason = "upload_uncertain"
             return VerificationResult(status="unknown", evidence=[], reason_code=reason)
 
+    def has_persisted_completion(self, view: JobView) -> bool:
+        """Read-only recovery proof for this synthetic session, never app evidence.
+
+        Re-open the private state through the same validated loader. An in-memory
+        simulation_only result alone cannot authorize recovery completion.
+        The agent holds the device lock throughout binding and this check.
+        """
+        with self._lock:
+            if self._state_path is None or not self._state_path.exists():
+                return False
+            try:
+                persisted = FakeDriver(
+                    self.device_id,
+                    self.profiles,
+                    clock=self.clock,
+                    app_version=self.app_version,
+                    scenario=self.scenario,
+                    state_path=self._state_path,
+                )
+            except (DriverError, OSError):
+                return False
+            for snapshot in (self, persisted):
+                bound = snapshot._bound_view
+                if (
+                    bound is None
+                    or bound.job_id != view.job_id
+                    or bound.run_session_id != view.run_session_id
+                    or bound.spec != view.spec
+                    or bound.fence != view.fence
+                    or bound.agent_id != view.agent_id
+                    or snapshot._job != view.spec
+                    or snapshot._active
+                    or not snapshot._started
+                    or not snapshot._stopped
+                    or not snapshot._route_finished
+                    or snapshot.scenario == "upload_uncertain"
+                ):
+                    return False
+            return True
+
     def _save_state(self) -> None:
         """Synthetic device state, not a run journal or record acceptance proof.
 

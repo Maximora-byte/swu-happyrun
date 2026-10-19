@@ -447,3 +447,71 @@ def test_cancel_binding_blocks_tick_but_allows_stop(tmp_path):
         driver.tick(job, 1.0)
     driver.stop()
     assert driver.tick_count == 0
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "none",
+        "missing",
+        "corrupt",
+        "session",
+        "spec",
+        "fence",
+        "job",
+        "legacy",
+        "memory",
+        "partial",
+        "active",
+        "uncertain",
+    ],
+)
+def test_recovery_completion_requires_exact_persisted_fake_state(tmp_path, change):
+    import json
+
+    from swu_happyrun.core.profiles import LocalProfileStore
+    from swu_happyrun.drivers.fake import FakeDriver
+
+    job, school, _ = setup_profiles(tmp_path / "profiles")
+    state = tmp_path / "fake.json"
+    driver = FakeDriver(
+        job.device_id,
+        LocalProfileStore(tmp_path / "profiles"),
+        app_version=school.app_version,
+        state_path=state,
+        scenario="upload_uncertain" if change == "uncertain" else "normal",
+    )
+    view = session_view(job)
+    driver.bind_session(view)
+    driver.prepare(job)
+    driver.start(job)
+    if change != "partial":
+        driver.tick(job, 10000)
+        assert driver.route_progress.finished
+    if change != "active":
+        driver.stop()
+    recovery = view.model_copy(update={"fence": 2, "recovery_action": "verify_only"})
+    driver.bind_session(recovery)
+    data = json.loads(state.read_text())
+    if change == "missing":
+        state.unlink()
+    elif change == "corrupt":
+        state.write_text("{")
+    elif change == "memory":
+        driver._state_path = None
+    elif change in {"session", "spec", "fence", "job", "legacy"}:
+        if change == "legacy":
+            del data["route_finished"]
+        elif change == "job":
+            data["bound_view"]["job_id"] = "00000000-0000-0000-0000-000000000099"
+        elif change == "session":
+            data["bound_view"]["run_session_id"] = "00000000-0000-0000-0000-000000000099"
+        elif change == "spec":
+            data["bound_view"]["spec"]["profile_revision"] = "0" * 64
+            data["job"]["profile_revision"] = "0" * 64
+        else:
+            data["bound_view"]["fence"] = 1
+        state.write_text(json.dumps(data))
+    counts = driver.start_count, driver.tick_count, driver.stop_count
+    assert driver.has_persisted_completion(recovery) is (change == "none")
+    assert (driver.start_count, driver.tick_count, driver.stop_count) == counts
