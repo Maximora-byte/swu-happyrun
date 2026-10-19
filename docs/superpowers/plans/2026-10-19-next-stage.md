@@ -10,6 +10,8 @@
 
 **Spec:** [设计](../specs/2026-10-18-swu-happyrun-design.md)、[控制协议v1](../../contracts/control-plane-v1.md)、[最新分工](../../../AGENTS.md)、[上轮独立验收](../../qa/2026-10-19-overnight-review.md)。APK/网页的新增范围沿用 #31–#35 已记录的用户方向，旧设计“不做APK/网页”不再限制当前交付。
 
+**10/19 复测回执：** 见[修复与 MuMu 报告](../../qa/2026-10-19-fix-retest-mumu.md)。任务 1 的 #39 已接受并合入原候选，#37 已关闭；下文开工快照保留历史。任务 2 的 #40 新 HEAD 69182c7 仍有 pre-bind 历史 agent 被覆盖的阻塞，优先补完整重建/runner 负例与校验，不重写已通过的正常恢复。任务 5 已取得 #25 自身模拟完成、重启、中断不重跑及待处理停止的 MuMu 证据；运行中停止仍受慢速 dump 时序限制，匹配签名的 instrumentation 交付仍需推进。复测报告不代表 #35 远程原生或真实学校记录通过。
+
 ## Global Constraints
 
 - Python>=3.11；包名`swu_happyrun`、CLI`swu-happyrun`、API`/api/v1`、协议主版本`1`。
@@ -115,7 +117,7 @@
 - [ ] 在进程内报告实际Activity/display与可见控件；主机不再硬编码display0/第一个task或屏幕点击坐标。无法一致定位时失败并导出最小诊断，不去点击其他应用。
 - [ ] CI交付同一构建、同一临时签名的普通app APK与匹配的instrumentation APK、包名/版本/签名摘要及SHA256SUMS；不把remoteQa信任包发给用户当普通APK。
 - [ ] 给Codex一份可复制执行清单：确认指定实例/已有安装；核对签名与数据保留；普通APK本地8秒20米模拟完成、显式停止、完成后重启、中断后needs_attention且不重启运动。新装/保留旧数据的路径分开，不自动清库/卸载/提权。
-- [ ] Codex在MuMu6.8.4.0/Android15执行并记录现场结果。当前仅安装/首屏通过；完成本任务前不得将多显示器/dump问题武断归因于应用逻辑，也不标真实乐跑device_verified。
+- [ ] Codex在MuMu6.8.4.0/Android15执行并记录现场结果。初次快照仅安装/首屏通过，最新部分模拟证据见复测报告；完成本任务前不得将多显示器/dump问题武断归因于应用逻辑，也不标真实乐跑device_verified。
 
 ## 任务6：统一候选、安装体验与交接
 

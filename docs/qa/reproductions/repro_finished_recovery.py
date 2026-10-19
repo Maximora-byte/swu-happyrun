@@ -2,6 +2,8 @@
 
 Default: print the observed result and check the reproduction's prerequisites.
 --expect-recovery-completed: additionally assert the contract's expected outcome.
+--expect-persisted-agent-rejected: change only a synthetic persisted binding before
+reconstruction; require fail-closed recovery without replacing its provenance.
 All generated profiles, the journal, and fake state use a temporary directory.
 """
 
@@ -18,7 +20,9 @@ from uuid import uuid4
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, required=True)
-    parser.add_argument("--expect-recovery-completed", action="store_true")
+    expectation = parser.add_mutually_exclusive_group()
+    expectation.add_argument("--expect-recovery-completed", action="store_true")
+    expectation.add_argument("--expect-persisted-agent-rejected", action="store_true")
     args = parser.parse_args()
     root = args.source_root.resolve(strict=True)
     sys.dont_write_bytecode = True
@@ -161,6 +165,15 @@ def main():
             first.stop()
             before_restart = first.verify(spec)
             assert before_restart.reason_code == "simulation_only" and not before_restart.evidence
+            persisted_agent = view.agent_id
+            if args.expect_persisted_agent_rejected:
+                # Deliberately inconsistent synthetic input; no real account or device.
+                state_path = options["state_path"]
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+                persisted_agent = str(uuid4())
+                assert persisted_agent != view.agent_id
+                state["bound_view"]["agent_id"] = persisted_agent
+                state_path.write_text(json.dumps(state), encoding="utf-8")
             # Model a restart after finishing/stopping but before reporting completion.
             control = RecoveryControl(
                 JobView.model_validate(
@@ -196,7 +209,13 @@ def main():
                 "start_count": recovered.start_count,
                 "tick_count": recovered.tick_count,
                 "stop_count": recovered.stop_count,
-                "expected": "completed after verify_only; no additional start, tick, or upload",
+                "persisted_agent_before_rebind": persisted_agent,
+                "authorized_agent": view.agent_id,
+                "expected": (
+                    "reject mismatching persisted agent before completion"
+                    if args.expect_persisted_agent_rejected
+                    else "completed after verify_only; no additional start, tick, or upload"
+                ),
             }
             print(json.dumps(observed, sort_keys=True), flush=True)
             assert recovered.start_count == 1 and recovered.tick_count == 1
@@ -205,6 +224,14 @@ def main():
                 assert result.state == "completed", (
                     f"Expected completed for the finished/stopped recovered simulation; "
                     f"observed {result.state.value}/{result.reason_code}"
+                )
+            if args.expect_persisted_agent_rejected:
+                assert result.state != "completed", (
+                    "Mismatching persisted agent was overwritten before completion proof"
+                )
+                persisted = json.loads(options["state_path"].read_text(encoding="utf-8"))
+                assert persisted["bound_view"]["agent_id"] == persisted_agent, (
+                    "Recovery replaced the mismatching historical agent"
                 )
 
 
