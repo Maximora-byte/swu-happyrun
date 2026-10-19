@@ -265,3 +265,12 @@ runtime 显式 `not_run`。本次单机采证不能替代最终完整矩阵，�
 窗口焦点、可见控件、签名与时效门槛全部保留。候选继续只授权精确 before
 `b3642f7215135fb90230b13ff1bdcfb5930ae227` 的普通 API31 验证，后续完整矩阵
 仍待修订实际运行结果。资源 R1–R5 的独立候选未加入本次修订。
+
+### 2107 启动阶段诊断
+
+`2107bf7d10c6318652622bde0e35fc60efb920ea` 普通 API31 实际通过持久
+baseIntent 精确身份校验，随后停在 `launch` / `NullPointerException`。
+现有报告不足以定位框架调用栈，不推定 context 或 options 是根因。
+本次仅增加固定白名单栈帧标签及有界行号，拒绝异常消息、任意类名与对象值；
+Android 行为及接受条件未变。继续只在精确 before2107 的普通 API31 采证，
+其他 Android runtime 明确 not_run。修复及最终全矩阵仍待实际结果。

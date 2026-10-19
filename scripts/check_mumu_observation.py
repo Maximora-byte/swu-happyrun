@@ -93,6 +93,64 @@ ASSERTIONS = {
 }
 
 
+# Exact structural allowlist. Output labels are constants, never captured class/method text.
+LAUNCH_FRAMES = {
+    ("android.app.IAppTask$Stub$Proxy", "startActivity", "IAppTask.java"): "app_task_binder_proxy",
+    (
+        "android.app.Instrumentation",
+        "execStartActivityFromAppTask",
+        "Instrumentation.java",
+    ): "instrumentation_app_task",
+    (
+        "android.app.Instrumentation$ActivityMonitor",
+        "match",
+        "Instrumentation.java",
+    ): "activity_monitor_match",
+    (
+        "android.app.ActivityManager$AppTask",
+        "startActivity",
+        "ActivityManager.java",
+    ): "app_task_start",
+    (
+        "org.happyrun.app.DisplayObservationTest",
+        "testObserveOwnActivity",
+        "DisplayObservationTest.java",
+    ): "own_observation",
+    (
+        "android.content.Intent",
+        "migrateExtraStreamToClipData",
+        "Intent.java",
+    ): "intent_migrate_stream",
+    ("android.content.Intent", "prepareToLeaveProcess", "Intent.java"): "intent_leave_process",
+    ("android.content.Intent", "resolveTypeIfNeeded", "Intent.java"): "intent_resolve_type",
+    ("android.app.ContextImpl", "getOpPackageName", "ContextImpl.java"): "context_op_package",
+    ("android.app.ContextImpl", "getAttributionTag", "ContextImpl.java"): "context_attribution",
+    ("android.app.ContextImpl", "getContentResolver", "ContextImpl.java"): "context_resolver",
+    (
+        "android.app.ActivityThread",
+        "currentActivityThread",
+        "ActivityThread.java",
+    ): "current_activity_thread",
+    (
+        "android.app.ActivityThread",
+        "getInstrumentation",
+        "ActivityThread.java",
+    ): "thread_instrumentation",
+    (
+        "android.app.ActivityThread",
+        "getApplicationThread",
+        "ActivityThread.java",
+    ): "thread_application",
+    ("android.os.Parcel", "readException", "Parcel.java"): "parcel_read_exception",
+    ("android.os.Parcel", "createException", "Parcel.java"): "parcel_create_exception",
+    (
+        "android.os.Parcel",
+        "createExceptionOrNull",
+        "Parcel.java",
+    ): "parcel_create_exception_or_null",
+}
+
+
 def diagnostics(text: str, code: int):
     """Never persist raw stdout, stack traces, exception messages or arbitrary string values."""
     result = {
@@ -104,6 +162,7 @@ def diagnostics(text: str, code: int):
         "instrumentation_finished": "INSTRUMENTATION_CODE: -1" in text,
         "runner_marker": "none",
         "exception_kind": "unknown",
+        "launch_frames": [],
     }
     for marker, category in (
         ("INSTRUMENTATION_FAILED", "failed"),
@@ -127,6 +186,14 @@ def diagnostics(text: str, code: int):
             result["exception_kind"] = kind
             break
     for line in text.splitlines():
+        frame = re.fullmatch(
+            r"\s*at ([A-Za-z0-9_.$]+)\.([A-Za-z0-9_$]+)\(([A-Za-z0-9_]+\.java):([0-9]{1,6})\)\s*",
+            line,
+        )
+        if frame and len(result["launch_frames"]) < 12:
+            label = LAUNCH_FRAMES.get(frame.group(1, 2, 3))
+            if label is not None:
+                result["launch_frames"].append({"frame": label, "line": int(frame.group(4))})
         if line.startswith("INSTRUMENTATION_STATUS: ") and "=" in line:
             key, value = line.removeprefix("INSTRUMENTATION_STATUS: ").split("=", 1)
             value = value.strip()
