@@ -8,6 +8,7 @@ import io
 import json
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -168,19 +169,28 @@ def sdk(monkeypatch, source, tmp_path):
 
     def app_xml(variant):
         metadata = ""
-        if variant == "selfProbe":
-            metadata = (
-                '<meta-data android:name="xposedmodule" android:value="true" />'
-                '<meta-data android:name="xposeddescription" android:value="own probe" />'
-                '<meta-data android:name="xposedminversion" android:value="82" />'
-                '<meta-data android:name="xposedscope" '
-                'android:resource="@array/happyrun_self_probe_scope" />'
+        if variant in {"selfProbe", "remoteQa"} or states.get("ordinary_module"):
+            manifest_variant = "remoteQa" if variant == "ordinary" else variant
+            actual = ET.parse(
+                SCRIPTS.parent / "android/app/src" / manifest_variant / "AndroidManifest.xml"
             )
+            metadata = "".join(
+                ET.tostring(node, encoding="unicode")
+                for node in actual.findall("application/meta-data")
+            )
+        if variant == "remoteQa" and states.get("module_fault") == "missing_metadata":
+            metadata = ""
         trust = ' android:networkSecurityConfig="@7f010001"' if variant == "remoteQa" else ""
         permission = '<uses-permission android:name="android.permission.INTERNET" />'
+        if variant == "selfProbe":
+            actual = ET.parse(SCRIPTS.parent / "android/app/src/selfProbe/AndroidManifest.xml")
+            permission += "".join(
+                ET.tostring(node, encoding="unicode") for node in actual.findall("uses-permission")
+            )
         if states["bad_permission"] == variant:
-            permission += (
-                '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />'
+            permission += "".join(
+                '<uses-permission android:name="android.permission.' + item + '" />'
+                for item in states.get("permissions", ["ACCESS_FINE_LOCATION"])
             )
         return (
             '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
@@ -205,10 +215,17 @@ def sdk(monkeypatch, source, tmp_path):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 with zipfile.ZipFile(path, "w") as archive:
                     archive.writestr("classes.dex", b"synthetic")
-                    if name == "remoteQa.apk":
+                    if name == "remoteQa.apk" and not states.get("missing_ca"):
                         archive.writestr("res/raw/remote_qa_ca.pem", ca.read_bytes())
-                    if name == "selfProbe.apk":
-                        archive.writestr("assets/xposed_init", v2.ENTRY + "\n")
+                    if name == states.get("trust_leak"):
+                        archive.writestr("res/raw/remote_qa_ca.pem", ca.read_bytes())
+                    if name in {"selfProbe.apk", "remoteQa.apk"}:
+                        entry = (
+                            SCRIPTS.parent / "android/app/src/selfProbe/assets/xposed_init"
+                        ).read_bytes()
+                        if name == "remoteQa.apk" and states.get("module_fault") == "wrong_asset":
+                            entry = b"org.other.Module\n"
+                        archive.writestr("assets/xposed_init", entry)
             return "BUILD SUCCESSFUL\n"
         if command[0] == sys.executable:
             out = Path(command[command.index("--outdir") + 1])
@@ -220,23 +237,28 @@ def sdk(monkeypatch, source, tmp_path):
             cert = "b" * 64 if states["bad_variant"] == variant else states["signature"]
             return "Signer #1 certificate SHA-256 digest: " + cert + "\n"
         if command[0] == "aapt2":
-            return (
-                (
-                    "Package name=org.happyrun.app id=7f\n"
-                    "    resource 0x7f010002 array/happyrun_self_probe_scope\n"
-                    '      () (array) size=1\n        ["org.happyrun.app"]\n'
-                )
-                if variant == "selfProbe"
-                else table
+            if variant not in {"selfProbe", "remoteQa"}:
+                return table
+            scope = (
+                "Package name=org.happyrun.app id=7f\n"
+                "    resource 0x7f010002 array/happyrun_self_probe_scope\n"
+                '      () (array) size=1\n        ["org.happyrun.app"]\n'
             )
+            if variant == "remoteQa" and states.get("module_fault") == "wrong_scope":
+                scope = scope.replace('["org.happyrun.app"]', '["org.other.app"]')
+            return scope + (table.split("\n", 1)[1] if variant == "remoteQa" else "")
         if command[1:3] == ["manifest", "print"]:
             return test_xml if path.name.endswith("-test.apk") else app_xml(variant)
         if command[1] == "resources":
             return config
         if command[1] == "dex":
-            return "C d 1 org.happyrun.app.MainActivity\n" + (
-                "C d 1 " + v2.ENTRY + "\n" if variant == "selfProbe" else ""
-            )
+            classes = "C d 1 org.happyrun.app.MainActivity\n"
+            if variant in {"selfProbe", "remoteQa"}:
+                if not (variant == "remoteQa" and states.get("module_fault") == "missing_class"):
+                    classes += "C d 1 " + v2.ENTRY + "\n"
+            if variant == "remoteQa" and states.get("module_fault") == "bundled_api":
+                classes += "C d 1 de.robv.android.xposed.XposedBridge\n"
+            return classes
         raise AssertionError(command)
 
     monkeypatch.setattr(legacy, "run", run)
@@ -474,3 +496,72 @@ def test_git_fixture_is_byte_exact_under_windows_text_defaults(tmp_path, monkeyp
     monkeypatch.setenv("GIT_CONFIG_VALUE_0", "true")
     root, head, tree = source.__wrapped__(tmp_path)
     assert v2.source_identity(root, head, tree) == {"commit": head, "tree": tree}
+
+
+def test_real_product_remoteqa_inherits_own_module():
+    gradle = (SCRIPTS.parent / "android/app/build.gradle").read_text(encoding="utf-8")
+    assert "initWith selfProbe" in gradle
+    for line in (
+        "java.srcDir 'src/selfProbe/java'",
+        "assets.srcDir 'src/selfProbe/assets'",
+        "res.srcDir 'src/selfProbe/res'",
+    ):
+        assert line in gradle
+    actual = ET.parse(SCRIPTS.parent / "android/app/src/remoteQa/AndroidManifest.xml")
+    names = {node.get(legacy.ANDROID + "name") for node in actual.findall("application/meta-data")}
+    assert names == {"xposedmodule", "xposeddescription", "xposedminversion", "xposedscope"}
+    assert not actual.findall("uses-permission")
+
+
+@pytest.mark.parametrize(
+    "fault", ["missing_metadata", "missing_class", "wrong_asset", "wrong_scope", "bundled_api"]
+)
+def test_remoteqa_own_module_guards_remain_strict(sdk, fault):
+    args, _, states = sdk
+    states["module_fault"] = fault
+    with pytest.raises((AssertionError, ValueError)):
+        builder.build(args)
+    assert not (args.output / "delivery.json").exists()
+
+
+@pytest.mark.parametrize("variant", ["ordinary", "remoteQa"])
+@pytest.mark.parametrize(
+    "permissions",
+    [
+        ["ACCESS_COARSE_LOCATION"],
+        ["ACCESS_FINE_LOCATION"],
+        ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+    ],
+)
+def test_module_does_not_grant_remoteqa_location_permissions(sdk, variant, permissions):
+    args, _, states = sdk
+    states["bad_permission"] = variant
+    states["permissions"] = permissions
+    with pytest.raises((AssertionError, ValueError)):
+        builder.build(args)
+    assert not (args.output / "delivery.json").exists()
+
+
+def test_ordinary_module_metadata_remains_forbidden(sdk):
+    args, _, states = sdk
+    states["ordinary_module"] = True
+    with pytest.raises(AssertionError):
+        builder.build(args)
+    assert not (args.output / "delivery.json").exists()
+
+
+@pytest.mark.parametrize("name", ["ordinary.apk", "selfProbe.apk", "remoteQa-test.apk"])
+def test_test_trust_remains_remoteqa_app_only(sdk, name):
+    args, _, states = sdk
+    states["trust_leak"] = name
+    with pytest.raises(ValueError):
+        builder.build(args)
+    assert not (args.output / "delivery.json").exists()
+
+
+def test_remoteqa_ca_still_required(sdk):
+    args, _, states = sdk
+    states["missing_ca"] = True
+    with pytest.raises(ValueError):
+        builder.build(args)
+    assert not (args.output / "delivery.json").exists()

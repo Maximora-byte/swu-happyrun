@@ -17,6 +17,7 @@ import shutil
 import stat
 import sys
 import tomllib
+import xml.etree.ElementTree as ET
 import zipfile
 from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
@@ -248,20 +249,29 @@ def inspect_pairs(bundle, ca, *, apksigner, apkanalyzer, aapt2):
     versions = set()
     for variant, names in FILES.items():
         app = safe_path(Path(bundle) / names[0])
-        optional = variant == "selfProbe"
+        has_own_module = variant in {"selfProbe", "remoteQa"}
+        allows_location = variant == "selfProbe"
         scope_id = (
             verify_resource_table(legacy.run([aapt2, "dump", "resources", str(app)]))
-            if optional
+            if has_own_module
             else None
         )
-        verify_manifest(
-            legacy.run([apkanalyzer, "manifest", "print", str(app)]), optional, scope_id
-        )
+        app_xml = legacy.run([apkanalyzer, "manifest", "print", str(app)])
+        if not allows_location:
+            permissions = {
+                node.get(legacy.ANDROID + "name")
+                for node in ET.fromstring(app_xml).findall("uses-permission")
+            }
+            assert not permissions & {
+                "android.permission.ACCESS_COARSE_LOCATION",
+                "android.permission.ACCESS_FINE_LOCATION",
+            }, "Location permissions are restricted to selfProbe"
+        verify_manifest(app_xml, has_own_module, scope_id)
         verify_classes(
-            legacy.run([apkanalyzer, "dex", "packages", "--defined-only", str(app)]), optional
+            legacy.run([apkanalyzer, "dex", "packages", "--defined-only", str(app)]), has_own_module
         )
         with zipfile.ZipFile(app) as archive:
-            if optional:
+            if has_own_module:
                 if archive.read("assets/xposed_init").decode("utf-8").strip() != ENTRY:
                     raise ValueError("invalid_self_scope_entry")
             elif "assets/xposed_init" in archive.namelist():

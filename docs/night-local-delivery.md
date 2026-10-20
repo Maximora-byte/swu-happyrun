@@ -36,7 +36,7 @@ python -m check_local_https_delivery --source-root $Product --expected-source-co
 - `remoteQa.apk` / `remoteQa-test.apk`
 - 同源 `swu_happyrun-…whl`、两份公有证书、`delivery.json`、`SHA256SUMS`
 
-所有 app/test 必须同证书，三组版本一致。普通与 remoteQa 无定位权限；selfProbe 仅自身 scope、可选定位权限，未推断 ART 激活。只有 remoteQa 携带本机测试 CA；其 test APK 不含信任材料。生产 adapter 已在同一产品源中，schema2 拒绝外部 `--adapter` overlay。
+所有 app/test 必须同证书，三组版本一致。普通与 remoteQa 无定位权限；selfProbe 仅自身 scope、可选定位权限，未推断 ART 激活。selfProbe 与 remoteQa 都包含仅自身作用域的模块 metadata、入口类和入口资产；模块存在性与定位权限分别检查，remoteQa 仍禁止定位权限。只有 remoteQa 携带本机测试 CA；其 test APK 不含信任材料。生产 adapter 已在同一产品源中，schema2 拒绝外部 `--adapter` overlay。
 
 ## 安装与运行边界
 
