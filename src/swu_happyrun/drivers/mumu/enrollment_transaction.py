@@ -16,6 +16,7 @@ import sqlite3
 import stat
 import time
 from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 from swu_happyrun.agent.journal import RunJournal
@@ -594,7 +595,22 @@ def _finish(session, lock):
     return diagnose_transaction(session.layout, session.records, session.artifacts)
 
 
-def _diagnose(plan, layout, anchors, reviewed):
+@dataclass(frozen=True, repr=False)
+class _EvidenceSnapshot:
+    """Observed evidence, never a lock token, independent approval or capability."""
+
+    diagnosis: TransactionDiagnosis
+    records: tuple[bytes, ...]
+    observations: dict
+    record_observations: tuple[ArtifactObservation, ...]
+
+
+def _evidence_snapshot(plan, layout, *, device_fd=None):
+    """Collect semantic evidence without SQLite or mutation.
+
+    A pin caller holds path/account/original-device locks and supplies its owner
+    descriptor. Public diagnosis retains its existing read-only behavior.
+    """
     _control_state(plan, layout)
     validate_frozen_inputs(plan)
     expected_names = {
@@ -603,18 +619,21 @@ def _diagnose(plan, layout, anchors, reviewed):
         *(layout.record_path(i).name for i in range(1, 8)),
     }
     _require(_names(layout.directory) <= expected_names)
-    records, observations, raw_artifacts, record_files = [], {}, {}, {}
+    records, observations, raw_artifacts, record_files = [], {}, {}, []
     for index in range(1, 8):
         path = layout.record_path(index)
         if os.path.lexists(path):
             _require(index == len(records) + 1)
             observation, raw = _observe(path, "intent", cap=65536)
             records.append(raw)
-            record_files[path] = observation.identity, False
+            record_files.append(observation)
     for role in layout.roles:
         path = layout.path(role)
         if os.path.lexists(path):
-            observation, raw = _observe(path, role)
+            if role == "device_lock" and device_fd is not None:
+                observation, raw = _observe_locked_byte(path, role, device_fd)
+            else:
+                observation, raw = _observe(path, role)
             observations[role], raw_artifacts[role] = observation, raw
     # Original DB/lock alone are not a transaction. They must still be the exact
     # approved objects; no initializer may relabel an unexplained new artifact.
@@ -628,7 +647,12 @@ def _diagnose(plan, layout, anchors, reviewed):
         for target in plan.targets:
             if target.name in originals:
                 _require(observations[target.name].identity == target.identity)
-        return TransactionDiagnosis("unstarted", "no_transaction_evidence")
+        return _EvidenceSnapshot(
+            TransactionDiagnosis("unstarted", "no_transaction_evidence"),
+            tuple(records),
+            observations,
+            tuple(record_files),
+        )
     for role, expected in (("admission", _admission(plan, layout)), ("intent", _intent(plan))):
         if role in raw_artifacts:
             _require(raw_artifacts[role] == expected)
@@ -647,23 +671,39 @@ def _diagnose(plan, layout, anchors, reviewed):
             and raw_artifacts["candidate"]
             == _candidate(plan, hashlib.sha256(records[5]).hexdigest())
         )
-    result = diagnose_transaction(layout, records, observations)
-    if result.status == "candidate_unpinned":
-        additions = _control_publications(layout.root, anchors, reviewed)
-        additions.update(record_files)
-        for role, observation in observations.items():
-            if plan.kind == "existing" and role in {"device_lock", "journal"}:
-                continue
-            additions[observation.path] = observation.identity, False
-        targets = {target.name: target for target in plan.targets}
-        current = inspect_enrollment(
-            reviewed.inspection.scope,
-            manager=targets["manager"].path,
-            instance_index=plan.instance_index,
-            expected_journal=layout.journal if plan.kind == "existing" else None,
-        )
-        require_phase_scope(reviewed, current, additions)
-    return result
+    return _EvidenceSnapshot(
+        diagnose_transaction(layout, records, observations),
+        tuple(records),
+        observations,
+        tuple(record_files),
+    )
+
+
+def _evidence_scope(plan, layout, anchors, reviewed, snapshot, *, extra=(), live_staging=()):
+    """Recheck original scope, subtracting exact verified evidence only."""
+    additions = _control_publications(layout.root, anchors, reviewed)
+    additions.update({item.path: (item.identity, False) for item in snapshot.record_observations})
+    for role, observation in snapshot.observations.items():
+        if plan.kind == "existing" and role in {"device_lock", "journal"}:
+            continue
+        additions[observation.path] = observation.identity, False
+    additions.update({item.path: (item.identity, False) for item in extra})
+    targets = {target.name: target for target in plan.targets}
+    current = inspect_enrollment(
+        reviewed.inspection.scope,
+        manager=targets["manager"].path,
+        instance_index=plan.instance_index,
+        expected_journal=layout.journal if plan.kind == "existing" else None,
+        _live_staging=live_staging,
+    )
+    require_phase_scope(reviewed, current, additions, live_staging=live_staging)
+
+
+def _diagnose(plan, layout, anchors, reviewed):
+    snapshot = _evidence_snapshot(plan, layout)
+    if snapshot.diagnosis.status == "candidate_unpinned":
+        _evidence_scope(plan, layout, anchors, reviewed, snapshot)
+    return snapshot.diagnosis
 
 
 def diagnose_candidate(
