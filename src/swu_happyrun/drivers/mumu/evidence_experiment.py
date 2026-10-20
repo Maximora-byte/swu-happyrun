@@ -12,7 +12,9 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from swu_happyrun.agent.journal import RunJournal
+from swu_happyrun.drivers.command import ProbeError
 from swu_happyrun.drivers.mumu.experiment_shutdown import observe_shutdown
+from swu_happyrun.drivers.mumu.point_evidence import PointObservation
 
 _WRITE_CODES = frozenset(
     {
@@ -111,7 +113,8 @@ def run_experiment(registration, *, adapter, store, clock):
     API35, approved same-source APKs, permissions (never auto-grants), fresh binding,
     boot and PID+creation time. capture_point uses capture_native_point above;
     observe_point uses OwnProbe location 1000ms/128 samples. Production discovery,
-    process attribution and Windows ACL support are deliberately not available.
+    and process attribution are not installed. Windows ACL support is implemented
+    but awaits independent native Windows validation.
     """
     report = {
         "status": "needs_attention",
@@ -176,21 +179,36 @@ def run_experiment(registration, *, adapter, store, clock):
                         report["evidence_error"] = "private_evidence_failed"
                         raise
                     if capture.status == "write_ack_unconfirmed" and capture.complete is True:
-                        observation = adapter.observe_point(duration_ms=1000, max_samples=128)
+                        report["observation_status"] = "observation_failed"
                         try:
-                            store.put_once("observation.json", _json(observation))
+                            observation = adapter.observe_point(duration_ms=1000, max_samples=128)
+                        except ProbeError as error:
+                            if error.code in {
+                                "no_samples",
+                                "permission_required",
+                                "private_cleanup_unconfirmed",
+                                "observation_cleanup_unconfirmed",
+                                "observation_correlation_invalid",
+                                "observation_payload_invalid",
+                                "observation_window_invalid",
+                                "observation_sample_invalid",
+                                "observation_recovery_required",
+                                "location_provider_unsupported",
+                                "binding_changed",
+                            }:
+                                report["observation_status"] = error.code
+                            raise
+                        if not isinstance(observation, PointObservation):
+                            report["observation_status"] = "observation_invalid"
+                            raise ValueError("observation_invalid")
+                        try:
+                            store.put_once("observation.json", _json(observation.private_dict()))
                         except BaseException:
                             storage_reliable = False
                             report["evidence_error"] = "private_evidence_failed"
                             raise
-                        count = observation.get("sample_count")
-                        if type(count) is int and 0 <= count <= 128:
-                            report["sample_count"] = count
-                            report["observation_status"] = (
-                                "samples_observed" if count else "no_samples"
-                            )
-                        else:
-                            report["observation_status"] = "observation_invalid"
+                        report["sample_count"] = observation.sample_count
+                        report["observation_status"] = observation.observation_status
                 except BaseException as error:
                     report["primary_error"] = _error(error)
                 finally:

@@ -1,5 +1,6 @@
 """Only synthetic lifecycle actions; this suite never launches MuMu or ADB."""
 
+import sys
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -47,7 +48,20 @@ class Adapter:
     def observe_point(self, *, duration_ms, max_samples):
         assert duration_ms == 1000 and max_samples == 128
         self.action("probe")
-        return {"sample_count": 0, "samples": []}
+        from swu_happyrun.drivers.mumu.own_probe import OwnObservation, OwnSample
+        from swu_happyrun.drivers.mumu.point_evidence import PointObservation
+
+        observation = OwnObservation(
+            nonce="0" * 32,
+            binding_digest="1" * 64,
+            boot_id="synthetic-boot",
+            channel="location",
+            duration_ms=1000,
+            window_start_ns=0,
+            window_end_ns=1_000_000_000,
+            samples=(OwnSample((0.0, 0.0), 1, "location", 2.0),),
+        )
+        return PointObservation(observation, (0.0, 0.0), 1.0)
 
     def seal(self):
         self.action("seal")
@@ -71,7 +85,12 @@ class Adapter:
 @pytest.fixture
 def case(tmp_path):
     private = tmp_path / "private"
-    private.mkdir(mode=0o700)
+    if sys.platform == "win32":
+        from swu_happyrun.drivers.mumu.windows_private import provision_private_directory
+
+        provision_private_directory(private)
+    else:
+        private.mkdir(mode=0o700)
     registration = subject.Registration(
         stable_instance="synthetic-registered-instance",
         device_id=str(uuid4()),
@@ -327,3 +346,76 @@ def test_report_keeps_original_evidence_error_when_journal_update_also_fails(cas
     result = run(case)
     assert result["evidence_error"] == "private_evidence_failed"
     assert result["journal_error"] == "journal_result_failed"
+
+
+def test_untyped_observation_cannot_claim_samples_or_persist_private_payload(case):
+    case[1].observe_point = lambda **kwargs: {"sample_count": 1, "private": "unvalidated"}
+    result = run(case)
+    assert result["observation_status"] == "observation_invalid"
+    assert result["sample_count"] == 0
+    assert not (case[2].root / "observation.json").exists()
+    assert case[1].calls.count("shutdown") == 1
+
+
+@pytest.mark.parametrize(
+    "code", ["no_samples", "permission_required", "observation_correlation_invalid"]
+)
+def test_probe_failure_retains_safe_status_and_still_closes(case, code):
+    from swu_happyrun.drivers.command import ProbeError
+
+    def fail(**kwargs):
+        raise ProbeError(code)
+
+    case[1].observe_point = fail
+    result = run(case)
+    assert result["observation_status"] == code
+    assert result["sample_count"] == 0
+    assert case[1].calls.count("shutdown") == 1
+    assert not (case[2].root / "observation.json").exists()
+
+
+def test_private_correlation_saved_but_public_report_contains_only_status_count(case):
+    import json
+
+    result = run(case)
+    private = json.loads((case[2].root / "observation.json").read_text())
+    assert result["sample_count"] == 1
+    assert result["observation_status"] == "samples_within_declared_tolerance"
+    assert "nonce" in json.dumps(private)
+    assert "nonce" not in json.dumps(result)
+    assert "tolerance_m" not in json.dumps(result)
+    assert result["stop_status"] == "stop_unconfirmed"
+    assert result["replay_enabled"] is False
+
+
+def test_observation_persistence_failure_keeps_private_values_out_and_forbids_shutdown(
+    case, monkeypatch
+):
+    original = case[2].put_once
+
+    def fail(name, value):
+        if name == "observation.json":
+            raise OSError("private target and tolerance")
+        return original(name, value)
+
+    monkeypatch.setattr(case[2], "put_once", fail)
+    result = run(case)
+    assert result["evidence_error"] == "private_evidence_failed"
+    assert result["observation_status"] == "observation_failed"
+    assert result["sample_count"] == 0
+    assert case[1].calls.count("probe") == 1
+    assert "drain" in case[1].calls
+    assert "shutdown" not in case[1].calls
+    assert "private target" not in str(result)
+
+
+def test_unknown_probe_error_text_is_not_public(case):
+    from swu_happyrun.drivers.command import ProbeError
+
+    def fail(**kwargs):
+        raise ProbeError("secret-identifier")
+
+    case[1].observe_point = fail
+    result = run(case)
+    assert result["observation_status"] == "observation_failed"
+    assert "secret" not in str(result)

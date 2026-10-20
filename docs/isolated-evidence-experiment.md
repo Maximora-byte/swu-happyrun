@@ -48,8 +48,14 @@ Implemented software pieces:
   success gate. A probe is allowed only after exact `write_ack_unconfirmed`,
   `last_delivery.command_completed`, complete nontruncated capture, confirmed
   cleanup and successful private persistence. The trusted adapter must use the
-  existing `OwnProbe` at 1000 ms/128 maximum samples. No sample is reported as
-  `no_samples`, not a match. This slice does not compute target matching/calibration.
+  existing `OwnProbe` at 1000 ms/128 maximum samples. The private typed result
+  preserves nonce/binding/boot/device-window/sample-time/accuracy correlation.
+  `observe_declared_point` invokes exactly one window and compares every sample
+  numerically with the frozen raw target and supplied tolerance. It does not
+  convert or infer vendor CRS, create calibration, prove causality, or acknowledge
+  injection. No samples remains `no_samples`, not a match. Public output includes
+  only fixed observation status and sample count; target, tolerance and errors
+  remain private.
 - The shutdown observer samples four signals sequentially on fixed 0/5/.../30 s
   offsets. The same absolute 45 s deadline begins before sealing/draining and
   includes identity checks, intent persistence, shutdown, capture cleanup, reads,
@@ -87,11 +93,23 @@ results are not device evidence. Before installing a real adapter it must:
 3. Pass the shared capture guard for all reads/writes. Missing executables,
    denied queries, timeouts and parse failures are unknown, not ADB-unavailable
    or process-exited evidence. Unattributable shared services stay unknown.
-4. Preserve target/nonce/binding/boot/device-clock correlation and accuracy plus
-   the predeclared tolerance in a private report, with no clock subtraction across
-   host/Android time domains. No matching retry, second point or CRS inference.
+4. Use the implemented `observe_declared_point` helper with the predeclared
+   private target/tolerance and an existing guarded `OwnProbe`. Its typed result
+   retains nonce/binding/boot/device-clock correlation, accuracy and numeric errors.
+   No clock subtraction across host/Android domains, matching retry, second point
+   or CRS inference is allowed.
 5. Independently review the exact implementation and validate Windows privacy,
    crash recovery and all negative cases before any separately approved runtime.
+
+Remaining implementation is not all an external evidence blocker: generic
+Windows PID/creation-time/image/exit querying, strict fixed registration loading,
+and concrete lifecycle wiring can be implemented and tested with synthetic inputs.
+Those components are not installed yet. What requires original-machine evidence
+is the actual MuMu-specific relation from stable instance identity to attributable
+execution processes, the original host/device/journal mapping, and verified launch
+and shutdown grammar. A generic OS process record does not prove MuMu ownership.
+The earlier staged omission of numeric point/tolerance correlation was an
+implementation omission, not something requiring real-device execution.
 
 Read-only original-machine preflight should retain privately: exact manager
 version/hash and read-only help grammar; the four stopped-instance records;
