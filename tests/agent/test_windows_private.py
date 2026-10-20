@@ -84,7 +84,9 @@ def test_windows_store_checks_acl_before_writing_and_keeps_once(tmp_path, monkey
             import os
 
             assert sid == SID
-            return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            return os.open(
+                path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600
+            )
 
     @contextmanager
     def verified(path, identity=None):
