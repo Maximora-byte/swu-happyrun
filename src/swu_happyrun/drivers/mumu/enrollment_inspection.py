@@ -41,6 +41,15 @@ class DiscoveryScope:
 
 
 @dataclass(frozen=True, repr=False)
+class BoundedDiscoveryScope(DiscoveryScope):
+    """Explicit v2 fixed-policy full rewalk, never a cursor or history proof.
+
+    The five historical categories retain their independent review requirement.
+    Constructing a scope grants no trust; original-lock reinspection is required.
+    """
+
+
+@dataclass(frozen=True, repr=False)
 class RootInspection:
     path: str
     identity_domain: str
@@ -52,6 +61,7 @@ class RootInspection:
     candidate_journals: tuple[str, ...]
     state_artifacts: tuple[str, ...]
     missing: bool = False
+    directory_identities: tuple[tuple[str, tuple[int, int]], ...] = ()
 
 
 @dataclass(frozen=True, repr=False)
@@ -375,7 +385,12 @@ def inspect_enrollment(
         sources["omitted_roots"] = tuple(str(path) for path in root_paths[MAX_SCAN_ROOTS:])
         root_paths = root_paths[:MAX_SCAN_ROOTS]
     collected = []
-    budget = MAX_SCAN_ENTRIES
+    bounded = type(scope) is BoundedDiscoveryScope
+    observations = []
+    if bounded:
+        from . import enrollment_coverage
+
+    budget = enrollment_coverage.MAX_ENTRIES if bounded else MAX_SCAN_ENTRIES
     for root in root_paths:
         if budget <= 0:
             reasons.append("scan_limit_reached")
@@ -393,13 +408,23 @@ def inspect_enrollment(
                 )
             )
             continue
-        observation = (
-            _scan(root, budget, _live_staging=_live_staging)
-            if _live_staging
-            else _scan(root, budget)
-        )
+        if bounded:
+            observation = enrollment_coverage.scan(
+                root, budget, _live_staging=_live_staging, _observations=observations
+            )
+        else:
+            observation = (
+                _scan(root, budget, _live_staging=_live_staging)
+                if _live_staging
+                else _scan(root, budget)
+            )
         budget -= observation.entry_count
         collected.append(observation)
+    if bounded:
+        try:
+            enrollment_coverage.revalidate(observations)
+        except (OSError, ValueError):
+            reasons.append("directory_changed")
     roots = tuple(collected)
     reasons.extend(error for root in roots for error in root.errors)
     journals = set(path for root in roots for path in root.candidate_journals)
