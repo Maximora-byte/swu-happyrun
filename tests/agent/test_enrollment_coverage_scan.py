@@ -6,6 +6,7 @@ import os
 import sqlite3
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -46,6 +47,71 @@ class HookedScan:
         entry = next(self.iterator)
         self.after_entry(entry)
         return entry
+
+
+def windows_cached_scandir(monkeypatch, *, zero_identity=True, cached_times_path=None):
+    """Install Windows-style DirEntry metadata over real filesystem enumeration."""
+    real_scandir = os.scandir
+
+    class CachedEntry:
+        def __init__(self, entry):
+            self.path = entry.path
+            self.entry = entry
+            self.cached = None
+            if Path(self.path) == cached_times_path:
+                info = Path(self.path).lstat()
+                self.cached = self.metadata(info)
+                os.utime(
+                    cached_times_path,
+                    ns=(info.st_atime_ns, info.st_mtime_ns + 2_000_000_000),
+                )
+
+        def metadata(self, info):
+            # Windows DirEntry.stat reports zero identity values and can retain
+            # earlier enumeration times. These are not the Path.lstat domain.
+            return SimpleNamespace(
+                st_mode=info.st_mode,
+                st_dev=0 if zero_identity else info.st_dev,
+                st_ino=0 if zero_identity else info.st_ino,
+                st_nlink=0 if zero_identity else info.st_nlink,
+                st_mtime_ns=info.st_mtime_ns,
+                st_ctime_ns=info.st_ctime_ns,
+                st_file_attributes=getattr(info, "st_file_attributes", 0),
+            )
+
+        def stat(self, *, follow_symlinks=True):
+            assert not follow_symlinks
+            if self.cached is None:
+                self.cached = self.metadata(self.entry.stat(follow_symlinks=False))
+            return self.cached
+
+    class CachedScan(HookedScan):
+        def __next__(self):
+            return CachedEntry(super().__next__())
+
+    monkeypatch.setattr(os, "scandir", lambda path: CachedScan(real_scandir(path)))
+
+
+@pytest.mark.parametrize("zero_identity,cached_times", [(True, False), (False, True), (True, True)])
+def test_scandir_cache_is_not_compared_with_fresh_path_metadata(
+    tmp_path, monkeypatch, zero_identity, cached_times
+):
+    module = scanner()
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    journal = nested / "history.db"
+    journal.touch()
+    windows_cached_scandir(
+        monkeypatch, zero_identity=zero_identity, cached_times_path=nested if cached_times else None
+    )
+    result = module.scan(tmp_path)
+    assert result.errors == ()
+    assert result.entry_count == 2
+    assert result.candidate_journals == (str(journal),)
+    assert result.directory_identities == tuple(
+        (str(path), (path.lstat().st_dev, path.lstat().st_ino))
+        for path in sorted((tmp_path, nested))
+    )
 
 
 def test_scan_continues_same_directory_beyond_two_pages_without_opening_files(
@@ -215,6 +281,7 @@ def test_remaining_budget_keeps_global_page_boundary(tmp_path, monkeypatch):
     (tmp_path / "first").touch()
     (tmp_path / "second").touch()
     real_scandir = os.scandir
+    real_lstat = Path.lstat
     changed = False
 
     def mutate(entry):
@@ -223,9 +290,25 @@ def test_remaining_budget_keeps_global_page_boundary(tmp_path, monkeypatch):
             changed = True
             (tmp_path / "late.db").touch()
 
+    def observed_lstat(path, *args, **kwargs):
+        info = real_lstat(path, *args, **kwargs)
+        if path == tmp_path and changed:
+            # This test concerns the global page boundary once metadata changes
+            # are observable, not Windows directory timestamp visibility timing.
+            return SimpleNamespace(
+                st_mode=info.st_mode,
+                st_dev=info.st_dev,
+                st_ino=info.st_ino,
+                st_mtime_ns=info.st_mtime_ns + 2_000_000_000,
+                st_ctime_ns=info.st_ctime_ns,
+                st_file_attributes=getattr(info, "st_file_attributes", 0),
+            )
+        return info
+
     monkeypatch.setattr(
         os, "scandir", lambda path: HookedScan(real_scandir(path), after_entry=mutate)
     )
+    monkeypatch.setattr(Path, "lstat", observed_lstat)
     # Earlier roots consumed 449 entries. The shared page ends after this one,
     # not after an additional 450 entries in this root.
     result = module.scan(tmp_path, module.MAX_ENTRIES - 449)
@@ -390,6 +473,11 @@ def test_live_staging_uses_only_exact_enumerated_owned_metadata(tmp_path, monkey
         0,
     )
     real_scandir = os.scandir
+    real_lstat = Path.lstat
+
+    def checked_lstat(path, *args, **kwargs):
+        assert path != stage, "exclusive staging file stat by name"
+        return real_lstat(path, *args, **kwargs)
 
     class Unstatable:
         def __init__(self, entry):
@@ -403,6 +491,7 @@ def test_live_staging_uses_only_exact_enumerated_owned_metadata(tmp_path, monkey
             return Unstatable(super().__next__())
 
     monkeypatch.setattr(os, "scandir", lambda path: StagingScan(real_scandir(path)))
+    monkeypatch.setattr(Path, "lstat", checked_lstat)
     result = module.scan(tmp_path, _live_staging=(live,))
     assert result.errors == ()
     assert result.entry_count == result.file_count == 1

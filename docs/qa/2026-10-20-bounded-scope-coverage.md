@@ -79,3 +79,46 @@ files, policy/ledger tampering, nested directory replacement, and fixed initiali
 plus independent pin issuance/readback using actual v2 reinspection. Linux results
 are not Windows/NTFS acceptance. Product 45-second budgets, existing assertions and
 lock order remain unchanged; original-machine acceptance is a separate gate.
+
+## Original Windows CI result and portability correction
+
+The first published tree `67ee12113debc53a1b77a4bd7bebe66593b1ba0d`
+(remote HEAD `2e264fd5bcb9dd3253de0a11ece67b36781b5e2c`) is not Windows
+accepted. Both original checks attempts ended in failure:
+[push](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39451749778)
+and [pull request](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39451805912).
+The PR event checked synthetic merge `7b18ae0ee921bab745e04eca079085eb8a4711dc`.
+No original attempt was rerun or cancelled during diagnosis.
+
+- Push Windows 3.11 main: 17 failed, 2812 passed, 66 skipped, 1 warning,
+  6 subtests passed (1370.69 seconds).
+- Push Windows 3.13 main: 16 failed, 2813 passed, 66 skipped, 6 warnings,
+  6 subtests passed (1408.32 seconds).
+- PR Windows 3.11 main: 16 failed, 2813 passed, 66 skipped, 1 warning,
+  6 subtests passed (1650.77 seconds).
+- PR Windows 3.13 main: 17 failed, 2812 passed, 66 skipped, 6 warnings,
+  6 subtests passed (1378.31 seconds).
+- Each event's Windows 3.13 pin shards passed all 42 cases. Windows 3.11
+  boundary shards passed 23 cases each, but remaining shards suffered fatal
+  access violations during diagnostic dumps; these are not passing suites.
+- All four Linux jobs passed 2920 tests with 17 conditional skips and 6 subtests.
+  Console, Android/optional build/static and container jobs passed. Conditional
+  Android runtime steps were skipped, not device acceptance.
+
+The new scanner incorrectly compared `DirEntry.stat(follow_symlinks=False)`
+identity/time metadata against fresh `Path.lstat()` observations. Python documents
+that Windows `DirEntry.stat()` returns zero `st_ino`, `st_dev` and `st_nlink`, and
+caches its result; fresh `os.stat()` is required for those identity attributes.
+See [Python 3.13 DirEntry.stat documentation](https://docs.python.org/3.13/library/os.html#os.DirEntry.stat).
+Thus valid nested directories were rejected as changed. This is a product
+portability defect, separate from the diagnostic crashes. The corrective scanner
+must use fresh no-follow path metadata consistently, without removing discovery,
+pending-subtree, descent, page or completion comparisons.
+
+Timestamp checks observe only changes visible through the filesystem metadata
+API. Windows `st_ctime` can represent creation time, and timestamp visibility or
+resolution can delay or conceal a mutation. These checks are not an atomic
+snapshot or a substitute for independently excluding concurrent legacy writers.
+A page-boundary unit test must make its simulated metadata change visible
+explicitly rather than assume that creating a file immediately updates directory
+timestamps on every platform; its early-stop assertions must remain intact.

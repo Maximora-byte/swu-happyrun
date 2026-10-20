@@ -153,7 +153,11 @@ def scan(root, budget=MAX_ENTRIES, *, _live_staging=(), _observations=None):
                                     raise ValueError("live_staging_invalid")
                                 files += 1
                                 continue
-                            info = entry.stat(follow_symlinks=False)
+                            # DirEntry metadata is cached and reports zero file
+                            # identities on Windows. Observe the path without
+                            # following links, in the same fresh lstat domain as
+                            # _chain/_capture and later directory validation.
+                            info = path.lstat()
                             if stat.S_ISLNK(info.st_mode) or (
                                 getattr(info, "st_file_attributes", 0) & 0x400
                             ):
