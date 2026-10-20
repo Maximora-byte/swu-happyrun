@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   contracts-and-diagnostics:
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -28,7 +29,7 @@ jobs:
       - run: uv sync --extra server --extra agent --extra dev --frozen
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
-      - run: uv run --no-sync python -m pytest -q
+      - run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20
       - run: uv run --no-sync python scripts/export_schema.py --check
       - run: uv build
       - run: uv run --no-sync python scripts/check_distribution_privacy.py
