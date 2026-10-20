@@ -45,6 +45,7 @@ def test_missing_host_is_not_success(monkeypatch):
 
 
 def test_stopped_instance_does_not_contact_adb(stub_command_process, tmp_path):
+    (tmp_path / "host-id").write_text("00000000-0000-4000-8000-000000000001\n")
     calls = []
 
     def run(args, **kwargs):

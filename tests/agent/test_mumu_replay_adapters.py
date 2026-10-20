@@ -10,7 +10,10 @@ from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
+import mumu_synthetic as native
+import mumu_synthetic as probe_module
 import pytest
+from mumu_cli_harness import _synthetic_run_local_cli
 from test_mumu_binding import sample
 from test_mumu_virtual_replay import Clock, execution
 
@@ -18,14 +21,21 @@ from swu_happyrun.agent.journal import RunJournal, UnsafeReplay
 from swu_happyrun.drivers.base import DriverError
 from swu_happyrun.drivers.command import ProbeError
 from swu_happyrun.drivers.mumu.binding import resolve_binding
-from swu_happyrun.drivers.mumu.virtual_replay import VirtualReplaySession, run_local_cli
+from swu_happyrun.drivers.mumu.virtual_replay import VirtualReplaySession
 
-native = pytest.importorskip(
-    "swu_happyrun.drivers.mumu.native_684", reason="N1 integration required"
-)
-probe_module = pytest.importorskip(
-    "swu_happyrun.drivers.mumu.own_probe", reason="N2 integration required"
-)
+
+def run_local_cli(*args, **kwargs):
+    return _synthetic_run_local_cli(
+        *args, native_factory=native.MuMuNative684, probe_factory=probe_module.OwnProbe, **kwargs
+    )
+
+
+def run_probe_point_cli(*args, **kwargs):
+    from mumu_cli_harness import _synthetic_run_probe_point_cli
+
+    return _synthetic_run_probe_point_cli(
+        *args, native_factory=native.MuMuNative684, probe_factory=probe_module.OwnProbe, **kwargs
+    )
 
 
 @pytest.fixture
@@ -198,8 +208,9 @@ def test_actual_own_probe_decoding_and_cleanup_error_keep_replay_uncertain(
 def test_actual_single_point_only_observes_confirmed_process_exit(
     local_inputs, monkeypatch, outcome
 ):
+    import mumu_cli_harness as probe_point
+
     from swu_happyrun.core.models import GeoPoint
-    from swu_happyrun.drivers.mumu import probe_point
 
     args, binding, clock = local_inputs
     args.duration_ms = 10
@@ -257,7 +268,7 @@ def test_actual_single_point_only_observes_confirmed_process_exit(
             raise DriverError("write_ack_unconfirmed")
 
         monkeypatch.setattr(native.MuMuNative684, "write_location", no_receipt)
-    assert probe_point.run_probe_point_cli(args, point=point, clock=clock, emit=reports.append) == 3
+    assert run_probe_point_cli(args, point=point, clock=clock, emit=reports.append) == 3
     result = reports[-1]
     assert not result["replay_enabled"]
     assert not result["record_verified"]
@@ -276,7 +287,7 @@ def test_actual_single_point_only_observes_confirmed_process_exit(
         assert not args.private_output.exists()
     before = len(captures)
     args.private_output = args.journal.parent / "second-private-evidence.json"
-    assert probe_point.run_probe_point_cli(args, point=point, clock=clock, emit=reports.append) == 3
+    assert run_probe_point_cli(args, point=point, clock=clock, emit=reports.append) == 3
     assert len(captures) == before
     assert reports[-1]["reason_code"] == "probe_reservation_unresolved"
     assert "latitude" not in json.dumps(reports)
@@ -290,8 +301,9 @@ def test_cli_closes_real_session_after_stop_persistence_failure(
     local_inputs, monkeypatch, body_fails, close_fails, storage_error
 ):
     """Releasing the OS lock cannot clear unresolved durable exclusion."""
+    import mumu_cli_harness as module
+
     from swu_happyrun.agent.journal import UnsafeReplay
-    from swu_happyrun.drivers.mumu import virtual_replay as module
 
     args, _, clock = local_inputs
     state = {"writes": 0, "stops": 0, "closes": 0}
@@ -375,7 +387,7 @@ def test_cli_closes_real_session_after_stop_persistence_failure(
 
 
 def test_cli_closes_real_session_when_cleanup_report_fails(local_inputs, monkeypatch):
-    from swu_happyrun.drivers.mumu import virtual_replay as module
+    import mumu_cli_harness as module
 
     args, _, clock = local_inputs
     sessions, writes, stops = [], [], []

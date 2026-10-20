@@ -9,6 +9,7 @@ from pathlib import Path
 
 from swu_happyrun.drivers.adb import AdbClient
 from swu_happyrun.drivers.command import ProbeError
+from swu_happyrun.drivers.mumu.enrollment_inspection import read_existing_host_id
 from swu_happyrun.drivers.mumu.manager import MuMuInstance, MuMuManager
 
 
@@ -141,12 +142,13 @@ def collect_report(
             for i in instances
         ]
         selected = select_instance(instances, index)
+        client.host_id = read_existing_host_id()
         report["selected_device"] = client.capability(selected).model_dump(mode="json")
         if not selected.android_started:
             raise ProbeError("android_not_started")
         if adb is None or serial is None:
             raise ProbeError("adb_selection_required")
-        observed = AdbClient(adb, serial, package=package).inspect()
+        observed = AdbClient(adb, serial, package=package, host_id=client.host_id).inspect()
         # Keep the MuMu identity; a generic ADB identity is not automatically the same device.
         # Until that mapping is verified in L1, expose the ADB observation separately.
         report["adb_observation"] = observed.model_dump(mode="json")

@@ -34,7 +34,9 @@ def stub(stub_command_process, payload, returncode=0):
 
 def test_info_uses_explicit_vmindex(stub_command_process, tmp_path):
     calls = stub(stub_command_process, response())
-    result = MuMuManager(tmp_path / "MuMuManager.exe").info("all")
+    result = MuMuManager(
+        tmp_path / "MuMuManager.exe", host_id="00000000-0000-4000-8000-000000000001"
+    ).info("all")
     assert calls[0][0][1:] == ["info", "--vmindex", "all"]
     assert result[0].backend == "mumu"
     assert result[0].capabilities == []
@@ -44,7 +46,7 @@ def test_info_uses_explicit_vmindex(stub_command_process, tmp_path):
 def test_path_with_spaces_is_one_argument(stub_command_process):
     calls = stub(stub_command_process, response())
     path = Path("C:/Program Files/模拟器/MuMuManager.exe")
-    MuMuManager(path).info("0")
+    MuMuManager(path, host_id="00000000-0000-4000-8000-000000000001").info("0")
     assert calls[0][0][0] == str(path)
     assert calls[0][1]["shell"] is False
     assert calls[0][1]["stdin"] is subprocess.DEVNULL
@@ -82,7 +84,7 @@ def test_malformed_json_is_diagnosed(stub_command_process, tmp_path):
 
 def test_stable_identity_and_stopped_metadata(stub_command_process, tmp_path):
     stub(stub_command_process, response())
-    manager = MuMuManager(tmp_path / "manager.exe")
+    manager = MuMuManager(tmp_path / "manager.exe", host_id="00000000-0000-4000-8000-000000000001")
     assert manager.info("0")[0].device_id == manager.info("0")[0].device_id
     assert manager.inspect("0")[0].android_started is False
     assert manager.inspect("0")[0].android_version == "15.0"

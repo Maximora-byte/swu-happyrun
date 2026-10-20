@@ -223,11 +223,12 @@ def test_native_optional_collector_records_only_manager_attempt(monkeypatch):
     import subprocess
     from datetime import UTC, datetime
 
+    from mumu_synthetic import MuMuNative684
+
     from swu_happyrun.core.clock import SystemClock
     from swu_happyrun.core.models import GeoPoint
     from swu_happyrun.drivers.base import DriverError
     from swu_happyrun.drivers.mumu.binding import MumuBinding
-    from swu_happyrun.drivers.mumu.native_684 import MuMuNative684
 
     evidence = collector()
     binding = MumuBinding(

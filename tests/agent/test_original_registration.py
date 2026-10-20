@@ -266,10 +266,10 @@ def test_denied_original_file_is_unknown(receipt, monkeypatch):
 def test_lifecycle_rechecks_receipt_immediately_before_launch(receipt):
     import sys
 
+    from mumu_experiment_harness import run_synthetic_experiment
     from test_evidence_experiment import Adapter
     from test_experiment_shutdown import Clock
 
-    from swu_happyrun.drivers.mumu.evidence_experiment import run_experiment
     from swu_happyrun.drivers.mumu.private_evidence import PrivateEvidenceStore
 
     path, value, _ = receipt
@@ -289,7 +289,7 @@ def test_lifecycle_rechecks_receipt_immediately_before_launch(receipt):
             return True
 
     adapter = Changed(registration)
-    result = run_experiment(
+    result = run_synthetic_experiment(
         registration, adapter=adapter, store=PrivateEvidenceStore(root), clock=Clock()
     )
     assert "launch" not in adapter.calls

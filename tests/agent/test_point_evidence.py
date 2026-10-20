@@ -8,10 +8,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from mumu_synthetic import OwnProbe
 
 from swu_happyrun.core.models import GeoPoint
 from swu_happyrun.drivers.command import ProbeError
-from swu_happyrun.drivers.mumu.own_probe import OwnProbe
 
 
 @pytest.fixture
