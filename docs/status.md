@@ -2,6 +2,12 @@
 
 更新：2026-10-20（Asia/Shanghai）。Dot 主导实现和修复；本地 Codex 负责独立测试、设备观测和集成审核。本轮只使用 GitHub，没有发送 Matrix 消息。
 
+## 最新候选与本机验收
+
+当前候选为 `dot/recheck-candidate` 的 **`628c23da47a6e1a9bde5a917568e8cbf5f99b7cd`**，tree `b8805236b46f79fe278bb3ce4c1a25af4598e788`；#97–#99 已按软件范围独立接受并合入该候选，产品增量尚未合 main。准确候选 CI 全部成功；本机六 APK/wheel 构建、严格校验、Windows 3.11/3.13 新环境安装和真实 HTTP fake 联调已通过，详见[本轮验收](qa/2026-10-20-candidate628-local-acceptance.md)。
+
+停止态已私有采到四个实例的 XML Machine UUID，均与各自上一份配置一致；原 host-id 保留，但原 journal 映射/首次登记流程和活动进程归属仍未接受。Dot 接续 [#100](https://github.com/Maximora-byte/swu-happyrun/issues/100)，Codex 继续原机技术复核。尚未安装执行这组六 APK、接通真实 MuMu 输入或开放连续回放；学校有效记录与 #57 历史 HTTP 失败单列。下文 ec15/e490 等候选数值保留早期阶段记录，当前候选以上述准确 SHA 为准。
+
 ## 下一轮执行入口
 
 **最新执行入口为[夜间虚拟跑步计划](superpowers/plans/2026-10-20-dot-virtual-run-night.md)与[Issue #86](https://github.com/Maximora-byte/swu-happyrun/issues/86)。** 用户明确使用MuMu虚拟定位/虚拟轨迹模拟跑步，不要求本人实跑。Dot优先交原生有界调用、自有探针私有读回和可执行轨迹控制器；Codex接受#74/#77并原机验证。候选已到`ec15ea880012b85f7e25778b6b8d149553827040`（#85），tree2d55bd3，Windows完整1580通过/23条件skip/6subtests、准确自动CI通过；#85仅参数准备，虚拟输入仍待设备证据。#84报告已合main83757fd6。按收到后1/3/6小时交检查点，目标10月21日早间可安装/可用的分项交付；本人登录、正式学校规则与有效记录仍独立接受，不将轨迹控制器写成整个项目完成。
