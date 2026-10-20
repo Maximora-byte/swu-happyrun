@@ -1,5 +1,6 @@
 """Fixed-entry integration on synthetic storage, not original-machine approval."""
 
+import ast
 import importlib
 import importlib.util
 import sqlite3
@@ -139,9 +140,9 @@ def test_configured_templates_still_refuse_arguments(name, synthetic, capsys):
 
 def test_separate_fixed_reviewer_issues_once_and_does_not_initialize(synthetic):
     entry = runner()
-    name = "swu_happyrun.drivers.mumu.enrollment_reviewer_entry"
-    assert importlib.util.find_spec(name), "independent reviewer entry is missing"
+    name = "swu_happyrun.drivers.mumu.enrollment_pin_reviewer"
     reviewer = importlib.import_module(name)
+    assert callable(getattr(reviewer, "issue_fixed_pin", None))
     _, state, bundle = synthetic
     root, anchors, _, _, paths = bundle(nested=True)
     assert reviewer.issue_fixed_pin(anchors).status == "incomplete"
@@ -171,6 +172,27 @@ def test_runner_import_does_not_import_any_reviewer():
         timeout=10,
     )
     assert result.returncode == 0, result.stderr.decode()
+
+
+def test_external_reviewer_import_is_outside_production_package():
+    root = Path(__file__).parents[2]
+    package = root / "src" / "swu_happyrun"
+    assert not (package / "drivers/mumu/enrollment_reviewer_entry.py").exists()
+    script = root / "examples/enrollment/independent_pin_reviewer.py"
+    imports = [
+        node.module
+        for node in ast.walk(ast.parse(script.read_text(encoding="utf-8")))
+        if isinstance(node, ast.ImportFrom)
+    ]
+    assert "swu_happyrun.drivers.mumu.enrollment_pin_reviewer" in imports
+    for file in package.rglob("*.py"):
+        if file.name == "enrollment_pin_reviewer.py":
+            continue
+        for node in ast.walk(ast.parse(file.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom):
+                assert "enrollment_pin_reviewer" not in (node.module or "")
+            elif isinstance(node, ast.Import):
+                assert all("enrollment_pin_reviewer" not in alias.name for alias in node.names)
 
 
 def test_approval_loss_after_loading_scope_still_causes_zero_writes(synthetic, monkeypatch):

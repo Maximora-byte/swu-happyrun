@@ -9,7 +9,7 @@ import json
 import sys
 
 from swu_happyrun.drivers.mumu.enrollment_authority import RunnerAnchors
-from swu_happyrun.drivers.mumu.enrollment_reviewer_entry import issue_fixed_pin
+from swu_happyrun.drivers.mumu.enrollment_pin_reviewer import issue_fixed_pin
 
 RUNNER_ANCHORS: RunnerAnchors | None = None
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 
+from .enrollment_authority import RunnerAnchors
 from .enrollment_review_pin import (
     ReviewPinAnchors,
     ReviewPinResult,
@@ -24,6 +25,22 @@ from .enrollment_review_pin_records import (
     encode_review_pin,
 )
 from .enrollment_storage import private_storage
+
+
+def issue_fixed_pin(anchors: RunnerAnchors) -> ReviewPinResult:
+    """Separate external reviewer's one explicit publication, never initialization.
+
+    Keep this entry in the issuer-only module: no other production module may
+    import the issuer. The independently reviewed external script invokes it
+    directly. Returned observations still require independent external fixation.
+    """
+    from .enrollment_runner import _load_fixed_scope
+
+    try:
+        reviewed = _load_fixed_scope(anchors)
+        return issue_review_pin(anchors, reviewed, reviewer_id=INDEPENDENT_REVIEWER_ID)
+    except Exception:
+        return ReviewPinResult("incomplete", "fixed_reviewer_evidence_mismatch")
 
 
 def issue_review_pin(anchors, reviewed_scope, *, reviewer_id) -> ReviewPinResult:

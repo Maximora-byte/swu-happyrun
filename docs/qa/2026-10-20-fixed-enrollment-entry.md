@@ -17,8 +17,9 @@ The installed package provides:
   authorized candidate initialization through the existing protected-path,
   account-lock, original-device-lock and existing-SQL checks. It does not create
   approval, grant execution, clear reservations, or fabricate historical receipts.
-- `enrollment_reviewer_entry.issue_fixed_pin(RunnerAnchors)`: a **separate reviewer
-  entry**, never imported by the initializer. It only publishes a pin for an
+- `enrollment_pin_reviewer.issue_fixed_pin(RunnerAnchors)`: a **reviewer-only
+  entry**, imported directly by the physically separate external reviewer
+  script, never by another production package module. It only publishes a pin for an
   already complete candidate, through the original exclusive issuer. It does not
   initialize an unstarted candidate or overwrite/adopt a previous pin.
 - `enrollment_runner.inspect_fixed_pin(ReviewPinAnchors)`: load the exact original
