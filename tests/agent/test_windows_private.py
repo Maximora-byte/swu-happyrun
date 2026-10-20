@@ -329,7 +329,7 @@ def test_literal_la_is_not_an_identity_grant():
         win.validate_sddl("O:LAD:P(A;OICI;FA;;;LA)", "S-1-5-21-1-2-3-500", protected=True)
 
 
-def test_native_windows_provision_verify_and_inherited_file_acl(tmp_path):
+def test_native_windows_provision_verify_and_inherited_file_acl(tmp_path, monkeypatch):
     """Real Windows API regression; no emulator, device, or synthetic ACL backend."""
     import os
 
@@ -341,7 +341,25 @@ def test_native_windows_provision_verify_and_inherited_file_acl(tmp_path):
     win.provision_private_directory(root)
     win.verify_directory(root)
     store = PrivateEvidenceStore(root)
-    store.put_once("command.stdout.bin", b"synthetic-native-acl-regression")
+    # Capture the native file ACL shape while the CRT-created fd remains open.
+    # This distinguishes a sharing error from a default-owner/inheritance issue.
+    diagnostics = {}
+    original_security = win._WinAPI.security
+
+    def observed_security(api, path):
+        if path.name == "command.stdout.bin":
+            diagnostics.update(_native_acl_shape(api, path, api.current_sid()))
+        return original_security(api, path)
+
+    monkeypatch.setattr(win._WinAPI, "security", observed_security)
+    try:
+        store.put_once("command.stdout.bin", b"synthetic-native-acl-regression")
+    except RuntimeError:
+        import json
+
+        pytest.fail(
+            "native_file_acl_shape=" + json.dumps(diagnostics, sort_keys=True), pytrace=False
+        )
     api = win._WinAPI()
     sid = api.current_sid()
     directory_sddl = api.security(root)
@@ -359,3 +377,128 @@ def test_native_inherited_file_alias_is_canonicalized():
     result = api.security(Path("synthetic"))
     assert result == f"O:{SID}D:AI(A;ID;FA;;;{SID})"
     win.validate_sddl(result, SID, protected=False)
+
+
+def _native_acl_shape(api, path, current_sid):
+    """CI diagnosis only: fixed stages, numbers and equality booleans, never raw ACL/SIDs."""
+    import ctypes as ct
+    import struct
+
+    result = {
+        "stage": "query",
+        "query_status": None,
+        "owner_equals_current": None,
+        "control": None,
+        "aces": [],
+    }
+    descriptor = ct.c_void_p()
+    status = api.advapi.GetNamedSecurityInfoW(
+        str(path), 1, 5, None, None, None, None, ct.byref(descriptor)
+    )
+    result["query_status"] = int(status)
+    if status != 0 or not descriptor.value:
+        return result
+    try:
+        result["stage"] = "descriptor"
+        if not 0 < api.advapi.GetSecurityDescriptorLength(descriptor) <= 65536:
+            return result
+        result["stage"] = "control"
+        function = api.advapi.GetSecurityDescriptorControl
+        function.argtypes = [ct.c_void_p, ct.c_void_p, ct.c_void_p]
+        function.restype = win.wt.BOOL
+        control, revision = ct.c_uint16(), win.wt.DWORD()
+        if not function(descriptor, ct.byref(control), ct.byref(revision)):
+            return result
+        result["control"] = int(control.value)
+        result["stage"] = "owner"
+        owner, defaulted = ct.c_void_p(), win.wt.BOOL()
+        if not api.advapi.GetSecurityDescriptorOwner(
+            descriptor, ct.byref(owner), ct.byref(defaulted)
+        ):
+            return result
+        result["owner_equals_current"] = api._sid_text(owner) == current_sid
+        result["stage"] = "dacl"
+        acl, present = ct.c_void_p(), win.wt.BOOL()
+        if not api.advapi.GetSecurityDescriptorDacl(
+            descriptor, ct.byref(present), ct.byref(acl), ct.byref(defaulted)
+        ):
+            return result
+        if not present.value or not acl.value or not api.advapi.IsValidAcl(acl):
+            return result
+        _, _, size, count, _ = struct.unpack("<BBHHH", ct.string_at(acl, 8))
+        if not (8 <= size <= 65535 and 0 < count <= 32):
+            return result
+        result["stage"] = "ace"
+        for index in range(count):
+            pointer = ct.c_void_p()
+            if not api.advapi.GetAce(acl, index, ct.byref(pointer)):
+                return result
+            if not pointer.value or not acl.value + 8 <= pointer.value <= acl.value + size - 8:
+                return result
+            kind, flags, ace_size, mask = struct.unpack("<BBHI", ct.string_at(pointer, 8))
+            shape = {
+                "type": int(kind),
+                "flags": int(flags),
+                "mask": int(mask),
+                "trustee_equals_current": None,
+            }
+            result["aces"].append(shape)
+            if kind != 0 or not 16 <= ace_size <= acl.value + size - pointer.value:
+                return result
+            sid_pointer = ct.c_void_p(pointer.value + 8)
+            sid_revision, count = ct.string_at(sid_pointer, 2)
+            if sid_revision != 1 or count > 15 or 8 + 4 * count != ace_size - 8:
+                return result
+            shape["trustee_equals_current"] = api._sid_text(sid_pointer) == current_sid
+        result["stage"] = "complete"
+        return result
+    except (win.WindowsPrivacyError, OSError, AttributeError, ValueError):
+        return result
+    finally:
+        api.kernel.LocalFree(descriptor)
+
+
+def test_native_diagnostic_query_failure_has_no_sensitive_values():
+    import json
+
+    class Advapi:
+        def GetNamedSecurityInfoW(self, *args):
+            return 32  # ERROR_SHARING_VIOLATION
+
+    api = object.__new__(win._WinAPI)
+    api.advapi = Advapi()
+    result = _native_acl_shape(api, Path("private-synthetic-path"), SID)
+    assert result == {
+        "stage": "query",
+        "query_status": 32,
+        "owner_equals_current": None,
+        "control": None,
+        "aces": [],
+    }
+    assert SID not in json.dumps(result)
+    assert "private-synthetic-path" not in json.dumps(result)
+
+
+def test_native_diagnostic_reports_only_shape_and_identity_equality():
+    import ctypes as ct
+    import json
+
+    class Control:
+        def __call__(self, descriptor, control, revision):
+            ct.cast(control, ct.POINTER(ct.c_uint16))[0] = 0x8004
+            return True
+
+    api = _native_alias_api(owner="S-1-5-32-544")
+    api.advapi.GetSecurityDescriptorControl = Control()
+    result = _native_acl_shape(api, Path("private-synthetic-path"), SID)
+    assert result == {
+        "stage": "complete",
+        "query_status": 0,
+        "owner_equals_current": False,
+        "control": 0x8004,
+        "aces": [{"type": 0, "flags": 3, "mask": 0x1F01FF, "trustee_equals_current": True}],
+    }
+    encoded = json.dumps(result)
+    assert SID not in encoded
+    assert "S-1-5-32-544" not in encoded
+    assert "private-synthetic-path" not in encoded
