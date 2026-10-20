@@ -45,7 +45,14 @@ def test_modes_change_only_reporter_not_target_or_threshold():
     probe = load_probe()
     a = probe.pytest_arguments("async")
     b = probe.pytest_arguments("python-thread")
-    assert a[-1] == b[-1] == probe.NODE
+    assert (
+        a[-1]
+        == b[-1]
+        == (
+            "tests/agent/test_enrollment_review_pin.py::"
+            "test_journal_intent_and_result_changes_preserve_pin_not_ready"
+        )
+    )
     assert "faulthandler_timeout=60" in a
     assert "faulthandler_timeout=0" in b
     assert probe.OBSERVATION_SECONDS == 60

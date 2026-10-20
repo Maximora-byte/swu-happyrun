@@ -13,8 +13,8 @@ from datetime import UTC, datetime
 import pytest
 
 NODE = (
-    "tests/agent/test_enrollment_transaction.py::"
-    "test_diagnosis_missing_stage_or_candidate_never_repairs[candidate-v1.json]"
+    "tests/agent/test_enrollment_review_pin.py::"
+    "test_journal_intent_and_result_changes_preserve_pin_not_ready"
 )
 OBSERVATION_SECONDS = 60
 
