@@ -80,9 +80,11 @@ def test_windows_store_checks_acl_before_writing_and_keeps_once(tmp_path, monkey
     from swu_happyrun.drivers.mumu import private_evidence as store_module
 
     class API:
-        def security(self, path):
-            assert path.read_bytes() == b""  # no private bytes before ACL verification
-            return f"O:{SID}D:AI(A;ID;FA;;;{SID})"
+        def create_private_file(self, path, sid):
+            import os
+
+            assert sid == SID
+            return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 
     @contextmanager
     def verified(path, identity=None):
@@ -104,8 +106,9 @@ def test_windows_store_bad_file_acl_stays_empty(tmp_path, monkeypatch):
     from swu_happyrun.drivers.mumu import private_evidence as store_module
 
     class API:
-        def security(self, path):
-            return f"O:{SID}D:AI(A;ID;FA;;;WD)"
+        def create_private_file(self, path, sid):
+            path.touch(exist_ok=False)
+            raise win.WindowsPrivacyError("private_acl_unverified")
 
     @contextmanager
     def verified(path, identity=None):
@@ -329,7 +332,7 @@ def test_literal_la_is_not_an_identity_grant():
         win.validate_sddl("O:LAD:P(A;OICI;FA;;;LA)", "S-1-5-21-1-2-3-500", protected=True)
 
 
-def test_native_windows_provision_verify_and_inherited_file_acl(tmp_path):
+def test_native_windows_provision_verify_and_explicit_file_acl(tmp_path, monkeypatch):
     """Real Windows API regression; no emulator, device, or synthetic ACL backend."""
     import os
 
@@ -341,13 +344,38 @@ def test_native_windows_provision_verify_and_inherited_file_acl(tmp_path):
     win.provision_private_directory(root)
     win.verify_directory(root)
     store = PrivateEvidenceStore(root)
+    verified_handles = []
+    transferred_handles = []
+    transferred_identities = []
+    original_security_handle = win._WinAPI.security_handle
+    original_transfer = win._open_osfhandle
+
+    def observed_security_handle(api, handle):
+        result = original_security_handle(api, handle)
+        win.validate_sddl(result, api.current_sid(), protected=True)
+        verified_handles.append(handle)
+        return result
+
+    def observed_transfer(handle):
+        assert handle in verified_handles
+        fd = original_transfer(handle)
+        transferred_handles.append(handle)
+        info = os.fstat(fd)
+        transferred_identities.append((info.st_dev, info.st_ino))
+        return fd
+
+    monkeypatch.setattr(win._WinAPI, "security_handle", observed_security_handle)
+    monkeypatch.setattr(win, "_open_osfhandle", observed_transfer)
     store.put_once("command.stdout.bin", b"synthetic-native-acl-regression")
+    assert verified_handles == transferred_handles
+    file_info = (root / "command.stdout.bin").stat()
+    assert transferred_identities == [(file_info.st_dev, file_info.st_ino)]
     api = win._WinAPI()
     sid = api.current_sid()
     directory_sddl = api.security(root)
     file_sddl = api.security(root / "command.stdout.bin")
     win.validate_sddl(directory_sddl, sid, protected=True)
-    win.validate_sddl(file_sddl, sid, protected=False)
+    win.validate_sddl(file_sddl, sid, protected=True)
     assert (root / "command.stdout.bin").read_bytes() == b"synthetic-native-acl-regression"
     store.claim_intent("launch")
     with pytest.raises(RuntimeError, match="^intent_exists$"):
@@ -359,3 +387,146 @@ def test_native_inherited_file_alias_is_canonicalized():
     result = api.security(Path("synthetic"))
     assert result == f"O:{SID}D:AI(A;ID;FA;;;{SID})"
     win.validate_sddl(result, SID, protected=False)
+
+
+def _native_creation_api(
+    monkeypatch, *, status=0, invalid_owner=False, transfer_error=False, file_attributes=0x80
+):
+    import ctypes as ct
+    import struct
+
+    calls = []
+
+    class Advapi:
+        def ConvertStringSecurityDescriptorToSecurityDescriptorW(self, sddl, revision, out, size):
+            calls.append(("descriptor", sddl))
+            ct.cast(out, ct.POINTER(ct.c_void_p))[0] = 123
+            return True
+
+    class Kernel:
+        def CreateFileW(self, path, access, sharing, attributes, disposition, flags, template):
+            attr = ct.cast(attributes, ct.POINTER(win._SecurityAttributes)).contents
+            calls.append(("create", access, sharing, disposition, flags, attr.lpSecurityDescriptor))
+            return ct.c_void_p(-1).value if status else 99
+
+        def GetFileType(self, handle):
+            assert handle == 99
+            return 1
+
+        def GetFileInformationByHandle(self, handle, out):
+            data = [file_attributes] + [0] * 12
+            data[10] = 1
+            ct.memmove(out, struct.pack("<13I", *data), 52)
+            calls.append(("file_info", handle))
+            return True
+
+        def CloseHandle(self, handle):
+            calls.append(("close", handle))
+            return True
+
+        def LocalFree(self, pointer):
+            calls.append(("free", pointer.value))
+
+    api = object.__new__(win._WinAPI)
+    api.advapi, api.kernel = Advapi(), Kernel()
+
+    def security_handle(handle):
+        calls.append(("security_handle", handle))
+        return f"O:{'S-1-5-32-544' if invalid_owner else SID}D:P(A;;FA;;;{SID})"
+
+    api.security_handle = security_handle
+
+    def transfer(handle):
+        calls.append(("transfer", handle))
+        if transfer_error:
+            raise OSError("synthetic private path")
+        return 777
+
+    monkeypatch.setattr(win, "_open_osfhandle", transfer, raising=False)
+    monkeypatch.setattr(win.ct, "get_last_error", lambda: status, raising=False)
+    return api, calls
+
+
+def test_native_file_create_sets_exact_owner_and_verifies_same_handle(monkeypatch):
+    api, calls = _native_creation_api(monkeypatch)
+    assert api.create_private_file(Path("synthetic"), SID) == 777
+    assert calls[0] == ("descriptor", f"O:{SID}D:P(A;;FA;;;{SID})")
+    create = next(row for row in calls if row[0] == "create")
+    assert create[3] == 1  # CREATE_NEW, never overwrite/reopen
+    assert create[1] & 0x20000  # READ_CONTROL for handle ACL query
+    assert calls.index(("security_handle", 99)) < calls.index(("transfer", 99))
+    assert ("close", 99) not in calls  # ownership transferred exactly once
+
+
+@pytest.mark.parametrize("status", [80, 183])
+def test_native_file_exists_refuses_without_transfer(monkeypatch, status):
+    api, calls = _native_creation_api(monkeypatch, status=status)
+    with pytest.raises(FileExistsError):
+        api.create_private_file(Path("synthetic"), SID)
+    assert not any(row[0] in {"transfer", "close"} for row in calls)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"invalid_owner": True},
+        {"transfer_error": True},
+        {"file_attributes": 0x400},
+        {"file_attributes": 0x10},
+        {"status": 5},
+    ],
+)
+def test_native_creation_failure_never_transfers_unverified_handle(monkeypatch, changes):
+    api, calls = _native_creation_api(monkeypatch, **changes)
+    with pytest.raises(win.WindowsPrivacyError, match="^private_acl_unverified$"):
+        api.create_private_file(Path("synthetic"), SID)
+    assert calls.count(("close", 99)) == (0 if changes.get("status") else 1)
+    if not changes.get("transfer_error"):
+        assert ("transfer", 99) not in calls
+
+
+def test_native_security_handle_queries_exact_handle_not_path():
+    import ctypes as ct
+
+    api = _native_alias_api()
+    calls = []
+
+    def query(handle, kind, info, a, b, c, d, out):
+        calls.append((handle, kind, info))
+        ct.cast(out, ct.POINTER(ct.c_void_p))[0] = 123
+        return 0
+
+    def no_path(*args):
+        pytest.fail("handle verification must not reopen a path")
+
+    api.advapi.GetSecurityInfo = query
+    api.advapi.GetNamedSecurityInfoW = no_path
+    result = api.security_handle(99)
+    assert calls == [(99, 1, 5)]
+    win.validate_sddl(result, SID, protected=True)
+
+
+def test_windows_native_intent_validation_failure_is_never_retryable(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+
+    from swu_happyrun.drivers.mumu import private_evidence as store_module
+
+    class API:
+        def create_private_file(self, path, sid):
+            # Models CREATE_NEW succeeding before a failing handle ACL check.
+            path.touch(exist_ok=False)
+            raise win.WindowsPrivacyError("private_acl_unverified")
+
+    @contextmanager
+    def verified(path, identity=None):
+        yield API(), SID, (3, 4)
+
+    monkeypatch.setattr(store_module, "_PLATFORM", "nt")
+    monkeypatch.setattr(win, "verify_directory", lambda path: (3, 4))
+    monkeypatch.setattr(win, "verified_directory", verified)
+    store = store_module.PrivateEvidenceStore(tmp_path)
+    with pytest.raises(store_module.PrivateEvidenceError, match="^private_acl_unverified$"):
+        store.claim_intent("launch")
+    assert (tmp_path / "launch.intent").read_bytes() == b""
+    with pytest.raises(store_module.PrivateEvidenceError, match="^intent_exists$"):
+        store_module.PrivateEvidenceStore(tmp_path).claim_intent("launch")
