@@ -7,6 +7,7 @@ VM process identity. No caller JSON/boolean can install a production adapter.
 """
 
 import json
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -106,6 +107,31 @@ def capture_native_point(native, evidence, point, *, deadline):
     return PointCapture(status, complete, snapshot.stdout, snapshot.stderr, metadata)
 
 
+@contextmanager
+def _original_journal(registration):
+    # Internal synthetic adapters retain their existing interface; a real loader
+    # snapshot uses only the original files and holds path guards through cleanup.
+    from swu_happyrun.drivers.mumu.original_registration import (
+        OriginalRegistration,
+        original_paths,
+    )
+
+    if isinstance(registration, OriginalRegistration):
+        with original_paths(registration):
+            with RunJournal(registration.journal, existing_only=True) as journal:
+                yield journal
+    else:
+        with RunJournal(registration.journal) as journal:
+            yield journal
+
+
+def _recheck_original(registration):
+    from swu_happyrun.drivers.mumu.original_registration import OriginalRegistration
+
+    if isinstance(registration, OriginalRegistration):
+        registration.revalidate()
+
+
 def run_experiment(registration, *, adapter, store, clock):
     """Run an internal trusted adapter exactly once, retaining unresolved exclusion.
 
@@ -147,9 +173,10 @@ def run_experiment(registration, *, adapter, store, clock):
     storage_reliable = True
     session = str(uuid4())
     try:
-        with RunJournal(registration.journal) as journal:
+        with _original_journal(registration) as journal:
             # Crucially before preflight/launch, and held through all cleanup.
             with journal.device_lock(registration.device_id):
+                _recheck_original(registration)
                 if adapter.check_stopped_registration(registration) is not True:
                     report["primary_error"] = "registration_invalid"
                     return report
@@ -157,6 +184,7 @@ def run_experiment(registration, *, adapter, store, clock):
                 journal.record_intent(session, 1, "start")
                 store.claim_intent("launch")
                 try:
+                    _recheck_original(registration)
                     started = True  # An exception may mean launch already happened.
                     adapter.launch()
                     adapter.prepare()

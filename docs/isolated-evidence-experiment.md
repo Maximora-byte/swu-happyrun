@@ -101,13 +101,13 @@ results are not device evidence. Before installing a real adapter it must:
 5. Independently review the exact implementation and validate Windows privacy,
    crash recovery and all negative cases before any separately approved runtime.
 
-Remaining implementation is not all an external evidence blocker: generic
-Windows PID/creation-time/image/exit querying, strict fixed registration loading,
-and concrete lifecycle wiring can be implemented and tested with synthetic inputs.
-Those components are not installed yet. What requires original-machine evidence
-is the actual MuMu-specific relation from stable instance identity to attributable
-execution processes, the original host/device/journal mapping, and verified launch
-and shutdown grammar. A generic OS process record does not prove MuMu ownership.
+The read-only original receipt loader, its lifecycle rechecks and generic Windows
+PID/creation-time/image facts are now implemented below. They do not provide a
+MuMu ownership/exit adapter. What still requires original-machine evidence is
+the MuMu-specific relation from stable instance identity to attributable execution
+processes, the original host/device/journal mapping, and verified launch/shutdown
+grammar. Those evidence-backed adapters still require implementation and review;
+a generic OS process record does not prove MuMu ownership.
 The earlier staged omission of numeric point/tolerance correlation was an
 implementation omission, not something requiring real-device execution.
 
@@ -138,3 +138,131 @@ python -m pytest
 These are fake clocks, synthetic host children, local temporary storage and
 protocol tests, not MuMu/API35/installation or school-record acceptance. The PR
 records exact results, failures and immutable source identity separately.
+
+## Read-only original identity prerequisites
+
+The prerequisite implementation adds no executable MuMu adapter. `--execute`
+continues to return `not_ready`, with no launch/install/input/shutdown. These are
+separate inspection commands, not an execution approval:
+
+```console
+python scripts/mumu_evidence_experiment.py --preview
+python scripts/mumu_evidence_experiment.py --execute
+python scripts/mumu_evidence_experiment.py --process-facts
+```
+
+The first two still start zero subprocesses. The last explicitly starts only a
+fixed isolated Python read-only helper on Windows and prints fixed status/counts,
+never paths, PIDs, creation times or raw OS errors. Non-Windows returns unknown
+(exit 3); complete process facts return exit 0, partial/unknown exit 3. This is
+not an instance shutdown check or MuMu ownership verdict. No process is stopped
+except cleanup of the helper that this query itself started.
+
+### Original receipt contract and provenance
+
+There was no persisted instance-to-original-journal registry in the existing
+product. The new loader therefore does not pretend one already exists. It reads
+only `mumu-experiment-registration.json` next to the ORIGINAL persisted host-id
+file resolved by `drivers.identity._namespace_path()` (including the previously
+configured `SWU_HAPPYRUN_HOST_ID_FILE`, if any). It never calls `load_host_id`,
+which creates missing identities. A missing receipt, host file, initialized
+journal, or existing one-byte device lock is not-ready, not an invitation to
+bootstrap, migrate, clear a marker, copy a journal, or rotate an identity.
+
+The strict schema is a local private evidence receipt, not a new wire contract:
+
+- `schema`: integer 1; `stable_instance`: canonical original vendor UUID;
+  `instance_index`: canonical decimal string; `host_id` and `device_id`:
+  canonical UUIDs.
+- `host_file`, `manager_file`, `journal_file`: exactly `path` (canonical absolute
+  original local path) and `identity` (two integers: Python stat device/inode).
+- `journal_directory_identity` and `lock_identity`: original stat identity pairs.
+  The lock path is derived by the existing journal device-ID SHA256 naming rule,
+  never supplied by the receipt. `evidence_root` is the private output directory,
+  not an alternative journal or lock namespace.
+
+The receipt is capped at 8 KiB, rejects duplicate/unknown keys, wrong types,
+noncanonical UUID/index/path, symlinks/reparse points and changed file/ancestor
+identities. Device ID is recomputed using the ACTUAL existing manager contract:
+UUID5 of the original persisted host namespace, `mumu`, and
+`normcase(resolved original manager path):instance_index`. Vendor UUID is a
+separate stable-instance claim; it must not replace this derivation.
+
+A reviewed original-machine adapter must independently pin the receipt's SHA256
+and stat identity before calling the loader. Computing a hash of an arbitrary new
+receipt does NOT authenticate its history. This PR has no receipt writer, no
+reviewed production receipt, no anchor-generation command, and no CLI journal,
+device-ID or receipt overrides. Only synthetic tests create synthetic receipts.
+The private library interface is:
+
+```python
+from swu_happyrun.drivers.mumu.original_registration import (
+    load_original_registration,
+    locked_original,
+)
+
+registration = load_original_registration(
+    receipt_sha256=independently_reviewed_digest,
+    receipt_identity=independently_reviewed_stat_identity,
+)
+with locked_original(registration) as original_journal:
+    # Inspection only: shared original lock held, reservation checked, no writes.
+    pass
+```
+
+These anchors must come from the original private review, not from untrusted
+caller JSON. Inspection never opens SQLite (even SQLite read-only mode can create WAL shared
+memory). It checks a bounded original header, rejects WAL/recovery sidecars, and
+uses the existing lock only; database query/write methods are disabled;
+regular agent defaults are unchanged. When the internal lifecycle receives this
+validated registration type, it opens only the existing journal, keeps the same
+original lock through cleanup and revalidates under lock and immediately before
+launch. Windows ancestor/file handles deny delete-sharing; every path identity
+is checked again. This is not a security boundary against a hostile administrator
+or same-user process. Missing/changed files, lock contention, corrupt/uncertain
+reservation all keep launch at zero. Neither inspection nor experiment releases
+or deletes an unresolved marker. The preview does not fabricate a registration.
+
+### Windows process facts and remaining original-machine evidence
+
+`query_process_facts(deadline)` uses actual standard-library ctypes Toolhelp
+snapshot APIs, query-limited process handles, process creation FILETIME, full
+image path and a read-only file identity query. It returns private typed facts.
+The native image lookup requires a fixed local NTFS volume and rejects remote
+drives, unsupported filesystems and reparse paths. At most 64 ancestor/file
+components are guarded without write/delete sharing through the file query.
+The fixed helper has 512-row, 32,768-character per-path, 65,536-character aggregate
+path and 512-KiB IPC caps (the shared capture retains its 1-MiB/stream cap). Total
+budget is the lesser of the supplied absolute deadline and five seconds, with
+0.5 seconds reserved INSIDE that deadline for helper cleanup. OS scheduling is
+not hard realtime: overrun or unconfirmed cleanup is unknown, not hidden.
+
+Permission denial, failed reads and partial enumeration are retained as unknown
+or partial facts. PID reuse is distinguishable by `(PID, creation FILETIME)`;
+missing PID is NEVER automatically exit evidence. Parent PID is an unverified
+snapshot hint, not ownership or reliable ancestry, and the snapshot is not
+atomic. Legacy Windows volume/file-index identity describes the file opened at
+the image path, not a loaded-image attestation or universal ReFS identity. Never
+infer MuMu ownership from process names, or turn these facts into a successful
+`processes` shutdown signal without separately reviewed attribution evidence.
+
+Still needed privately on the ORIGINAL machine before an executable adapter:
+
+1. Independently established historical host file/namespace, manager path/index,
+   vendor UUID mapping, original journal directory/file and initialized lock
+   identities; reviewed receipt digest/file identity. If absent, remain not-ready
+   and separately review how provenance can be established, never synthesize it.
+2. Actual MuMu 6.8.4 manager version/hash/help and verified targeted launch and
+   shutdown syntax; exact stopped-instance state schema and all four identities.
+3. Evidence tying the target vendor UUID/index to the VM execution PID plus
+   creation time and attributable descendants, including ambiguity/shared-service
+   handling. Do not launch merely to collect this missing evidence.
+4. Fresh approved serial/boot/API35 binding, selfProbe artifact/certificate and
+   permissions, privately preregistered raw target/tolerance, and independent
+   Windows review of native file/process behavior and ACL enforcement.
+
+All identifiers, paths, raw receipts, command output and process facts stay local
+and private. Public reports contain only fixed reason/status/counts and safe
+artifact hashes. No account, school, system permission or other instance changes;
+continuous replay remains closed, and manual restart of the isolated instance
+remains outside and prohibited by this experiment's workflow.
