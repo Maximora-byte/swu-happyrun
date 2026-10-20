@@ -14,10 +14,47 @@ class UnsafeReplay(RuntimeError):
 
 
 class RunJournal:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, existing_only: bool = False, read_only: bool = False):
         self._device_owners = {}
         self._replay_reservations = {}
         self.path = Path(path)
+        self._existing_only = existing_only or read_only
+        self._read_only = read_only
+        if read_only:
+            # Inspection is deliberately lock/reservation-only: even SQLite
+            # mode=ro can CREATE a WAL -shm file. Do not open SQLite at all.
+            self._db = None
+            try:
+                with self.path.open("rb") as source:
+                    header = source.read(100)
+                if (
+                    len(header) != 100
+                    or header[:16] != b"SQLite format 3\x00"
+                    or header[18:20] != b"\x01\x01"
+                    or any(
+                        os.path.lexists(str(self.path) + suffix)
+                        for suffix in ("-wal", "-shm", "-journal")
+                    )
+                ):
+                    raise UnsafeReplay("original_journal_unavailable")
+            except OSError:
+                raise UnsafeReplay("original_journal_unavailable") from None
+            return
+        if self._existing_only:
+            # No directory, database, schema or original lock bootstrapping.
+            try:
+                self._db = sqlite3.connect(
+                    self.path.absolute().as_uri() + "?mode=rw",
+                    uri=True,
+                    timeout=0,
+                )
+                self._db.execute("SELECT job_id, action, fence, result FROM intents LIMIT 0")
+                self._db.execute("SELECT job_id, fence, revision, event_id FROM stop_acks LIMIT 0")
+            except sqlite3.Error:
+                if hasattr(self, "_db"):
+                    self._db.close()
+                raise UnsafeReplay("original_journal_unavailable") from None
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(self.path, timeout=5)
         self._db.execute("PRAGMA synchronous=FULL")
@@ -36,9 +73,15 @@ class RunJournal:
         self.close()
 
     def close(self):
-        self._db.close()
+        if self._db is not None:
+            self._db.close()
+
+    def _require_database(self):
+        if self._read_only:
+            raise UnsafeReplay("original_lock_inspection_only")
 
     def has_intent(self, job_id: str, action: str) -> bool:
+        self._require_database()
         return (
             self._db.execute(
                 "SELECT 1 FROM intents WHERE job_id=? AND action=?", (job_id, action)
@@ -47,6 +90,7 @@ class RunJournal:
         )
 
     def record_intent(self, job_id: str, fence: int, action: str) -> None:
+        self._require_database()
         if action not in {"start", "upload"} or type(fence) is not int or fence < 0:
             raise ValueError("invalid intent")
         try:
@@ -58,6 +102,7 @@ class RunJournal:
             raise UnsafeReplay("action already attempted; recovery required") from None
 
     def record_result(self, job_id: str, fence: int, action: str, result: str) -> None:
+        self._require_database()
         if action not in {"start", "upload"} or result not in {"confirmed", "uncertain"}:
             raise ValueError("invalid action result")
         with self._db:
@@ -69,6 +114,7 @@ class RunJournal:
                 raise UnsafeReplay("intent or fence mismatch")
 
     def stop_ack_intent(self, job_id: str, fence: int, revision: int) -> str:
+        self._require_database()
         with self._db:
             self._db.execute(
                 "INSERT OR IGNORE INTO stop_acks VALUES (?, ?, ?, ?)",
@@ -100,8 +146,20 @@ class RunJournal:
         # Same private journal directory must be used by all agents for a host.
         name = hashlib.sha256(device_id.encode()).hexdigest()
         lock_path = self.path.parent / f"device-{name}.lock"
-        with lock_path.open("a+b") as handle:
+        if self._existing_only:
+            import stat
+
+            info = lock_path.lstat()
+            if not stat.S_ISREG(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                raise UnsafeReplay("original_lock_invalid")
+        with lock_path.open("r+b" if self._existing_only else "a+b") as handle:
+            if self._existing_only:
+                opened = os.fstat(handle.fileno())
+                if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                    raise UnsafeReplay("original_lock_changed")
             # Windows byte locks also prohibit reads; inspect metadata only.
+            if self._existing_only and os.fstat(handle.fileno()).st_size != 1:
+                raise UnsafeReplay("original_lock_invalid")
             if os.fstat(handle.fileno()).st_size == 0:
                 handle.write(b"0")
                 handle.flush()
@@ -118,6 +176,14 @@ class RunJournal:
             except OSError:
                 raise UnsafeReplay("device already locked") from None
             try:
+                if self._existing_only:
+                    current = lock_path.lstat()
+                    if (
+                        (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino)
+                        or not stat.S_ISREG(current.st_mode)
+                        or getattr(current, "st_file_attributes", 0) & 0x400
+                    ):
+                        raise UnsafeReplay("original_lock_changed")
                 if device_id in self._device_owners:
                     raise UnsafeReplay("device already locked")
                 self._device_owners[device_id] = object()
@@ -270,6 +336,8 @@ class RunJournal:
         permit.marker = value
 
     def _write_reservation(self, device_id, value):
+        if self._read_only:
+            raise UnsafeReplay("original_journal_read_only")
         path = self._reservation_path(device_id)
         temporary = path.with_suffix(".tmp-" + str(uuid4()))
         try:
