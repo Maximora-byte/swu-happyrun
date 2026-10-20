@@ -12,19 +12,27 @@ import pytest
 
 @pytest.mark.parametrize("reader_number", [1, 2])
 @pytest.mark.parametrize(
-    ("exception", "phase"),
+    ("exception", "phase", "ready_delay"),
     [
-        (exc, phase)
+        (exc, phase, 0)
         for exc in ("KeyboardInterrupt", "SystemExit")
         for phase in ("before_launch", "before_ident", "delayed_bootstrap")
     ]
-    + [("RuntimeError", "before_launch")],
+    + [("RuntimeError", "before_launch", 0), ("KeyboardInterrupt", "before_ident", 2.1)],
 )
 def test_interrupted_reader_start_keeps_bounded_ownership(
-    tmp_path, reader_number, exception, phase
+    tmp_path, reader_number, exception, phase, ready_delay
 ):
     result = subprocess.run(
-        [sys.executable, __file__, str(tmp_path), str(reader_number), exception, phase],
+        [
+            sys.executable,
+            __file__,
+            str(tmp_path),
+            str(reader_number),
+            exception,
+            phase,
+            str(ready_delay),
+        ],
         capture_output=True,
         text=True,
         timeout=10,
@@ -48,7 +56,7 @@ def test_interrupted_reader_start_keeps_bounded_ownership(
         assert observed["recovered"] == "recovered\n"
 
 
-def _probe(directory, reader_number, exception_name, phase):
+def _probe(directory, reader_number, exception_name, phase, ready_delay=0):
     # Import the exact source tree beside this test in the isolated interpreter.
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
     from swu_happyrun.drivers import command
@@ -69,6 +77,9 @@ def _probe(directory, reader_number, exception_name, phase):
     entered, release, reading = (threading.Event() for _ in range(3))
     attempts, processes, attempted_pipes, main_closed = [], [], [], []
     marker = Path(directory) / "descendant-ready"
+    descendant_release = Path(directory) / "descendant-release"
+    descendant_done = Path(directory) / "descendant-done"
+    injected_at = None
     main_ident = threading.get_ident()
 
     class Pipe:
@@ -91,23 +102,29 @@ def _probe(directory, reader_number, exception_name, phase):
         original_bootstrap(thread)
 
     def start(function, *args, **kwargs):
+        nonlocal injected_at
         thread = function.__self__
         attempts.append(thread)
-        if len(attempts) != reader_number:
+        if injected_at is not None or len(attempts) != reader_number:
             return original_start(function, *args, **kwargs)
         attempted_pipes.append(getattr(processes[0], ("stdout", "stderr")[reader_number - 1]))
         if phase != "before_launch":
             original_start(function, *args, **kwargs)
             assert entered.wait(2)
             assert thread.ident is None
+        injected_at = time.monotonic()
         raise exception_type("synthetic interruption")
 
     def popen(*args, **kwargs):
+        # A failed prerequisite must never turn a later forbidden call into
+        # the first injected startup, or silently launch an extra child.
+        assert not processes, "unexpected Popen while reader ownership is pending"
         process = original_popen(*args, **kwargs)
         processes.append(process)
-        deadline = time.monotonic() + 2
+        # Fixture setup is separate from the production cleanup budget.
+        deadline = time.monotonic() + 5
         while not marker.exists():
-            assert time.monotonic() < deadline
+            assert time.monotonic() < deadline, "descendant readiness was not established"
             time.sleep(0.005)
         target = ("stdout", "stderr")[reader_number - 1]
         setattr(process, target, Pipe(getattr(process, target)))
@@ -125,7 +142,13 @@ def _probe(directory, reader_number, exception_name, phase):
         return process
 
     descendant = (
-        f"import time; from pathlib import Path; Path({str(marker)!r}).touch(); time.sleep(2)"
+        "import time; from pathlib import Path; "
+        f"time.sleep({ready_delay!r}); Path({str(marker)!r}).touch(); "
+        "deadline=time.monotonic()+8\n"
+        f"while not Path({str(descendant_release)!r}).exists():\n"
+        "    if time.monotonic() >= deadline: raise SystemExit('fixture release missing')\n"
+        "    time.sleep(.005)\n"
+        f"Path({str(descendant_done)!r}).touch()"
     )
     source = (
         "import subprocess,sys,time; "
@@ -140,14 +163,27 @@ def _probe(directory, reader_number, exception_name, phase):
         try:
             command.run_readonly(Path(sys.executable), "-c", source, timeout=0.1)
         except BaseException as exc:
+            expected_type = (
+                command.ProbeError if exception_name == "RuntimeError" else exception_type
+            )
+            if not isinstance(exc, expected_type) or injected_at is None:
+                raise AssertionError(
+                    f"initial capture failed before injection: {type(exc).__name__}; "
+                    f"reader_attempts={len(attempts)}; descendant_ready={marker.exists()}"
+                ) from exc
             observed["exception"] = type(exc).__name__
             observed["code"] = getattr(exc, "code", None)
             observed["primary_code"] = getattr(exc, "primary_code", None)
-        observed["elapsed"] = time.monotonic() - began
+        assert injected_at is not None, "initial capture never reached the injected interruption"
+        observed["elapsed"] = time.monotonic() - injected_at
+        observed["total_elapsed"] = time.monotonic() - began
         observed["lock_released"] = not command._CAPTURE_LOCK.locked()
         observed["child_reaped"] = processes[0].poll() is not None
         pending = command._PENDING_CAPTURE
         observed["pending_readers"] = None if pending is None else len(pending[1])
+        assert observed["pending_readers"] == reader_number, (
+            f"initial capture ownership lost: {observed}"
+        )
         observed["blocked_codes"] = []
         for _ in range(3):
             try:
@@ -163,6 +199,17 @@ def _probe(directory, reader_number, exception_name, phase):
         threading.Thread._bootstrap_inner = original_bootstrap
         command.subprocess.Popen = original_popen
         release.set()
+        descendant_release.touch()
+        # Cleanup belongs only to this disposable fixture. Assertions above
+        # already recorded whether production reaped its direct child.
+        for process in processes:
+            if process.poll() is None:
+                original_popen.kill(process)
+            process.wait(timeout=2)
+    deadline = time.monotonic() + 5
+    while not descendant_done.exists():
+        assert time.monotonic() < deadline, "fixture descendant did not acknowledge release"
+        time.sleep(0.005)
     if phase != "before_launch":
         deadline = time.monotonic() + 5
         for thread in attempts:
@@ -178,4 +225,4 @@ def _probe(directory, reader_number, exception_name, phase):
 
 
 if __name__ == "__main__":
-    _probe(sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4])
+    _probe(sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], float(sys.argv[5]))
