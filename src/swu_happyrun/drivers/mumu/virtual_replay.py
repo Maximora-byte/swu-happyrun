@@ -576,12 +576,16 @@ def run_local_cli(args, *, execution, clock, emit):
             return 3
         finally:
             # A failed start still left durable intent before any device action.
-            if session._native is not None and not session.progress["stop_confirmed"]:
-                try:
-                    emit(session.stop())
-                except DriverError:
-                    emit(session.progress)
-            session.close()
+            try:
+                if session._native is not None and not session.progress["stop_confirmed"]:
+                    try:
+                        emit(session.stop())
+                    except DriverError:
+                        emit(session.progress)
+            finally:
+                # Storage/reporting failures must not skip process-lock release.
+                # Closing never clears the durable marker or acknowledges stop.
+                session.close()
 
 
 def _read_control_commands(stream, session, commands):

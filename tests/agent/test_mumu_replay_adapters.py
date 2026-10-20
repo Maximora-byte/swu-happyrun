@@ -14,7 +14,7 @@ import pytest
 from test_mumu_binding import sample
 from test_mumu_virtual_replay import Clock, execution
 
-from swu_happyrun.agent.journal import RunJournal
+from swu_happyrun.agent.journal import RunJournal, UnsafeReplay
 from swu_happyrun.drivers.base import DriverError
 from swu_happyrun.drivers.command import ProbeError
 from swu_happyrun.drivers.mumu.binding import resolve_binding
@@ -281,3 +281,142 @@ def test_actual_single_point_only_observes_confirmed_process_exit(
     assert reports[-1]["reason_code"] == "probe_reservation_unresolved"
     assert "latitude" not in json.dumps(reports)
     assert args.serial not in json.dumps(reports)
+
+
+@pytest.mark.parametrize("body_fails", [False, True])
+@pytest.mark.parametrize("close_fails", [False, True])
+@pytest.mark.parametrize("storage_error", [OSError, UnsafeReplay])
+def test_cli_closes_real_session_after_stop_persistence_failure(
+    local_inputs, monkeypatch, body_fails, close_fails, storage_error
+):
+    """Releasing the OS lock cannot clear unresolved durable exclusion."""
+    from swu_happyrun.agent.journal import UnsafeReplay
+    from swu_happyrun.drivers.mumu import virtual_replay as module
+
+    args, _, clock = local_inputs
+    state = {"writes": 0, "stops": 0, "closes": 0}
+    body_error = RuntimeError("synthetic body failure")
+    stop_error = storage_error("synthetic storage failure")
+    close_error = OSError("synthetic close failure")
+    reports = []
+
+    class Session(VirtualReplaySession):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            state["session"] = self
+
+        def close(self):
+            state["closes"] += 1
+            super().close()
+            if close_fails:
+                raise close_error
+
+    class SyntheticNative:
+        def __init__(self, *a, **kw):
+            pass
+
+        def write_location(self, point, *, deadline):
+            state["writes"] += 1
+            state["point"] = point
+            if body_fails:
+                raise body_error
+
+        def stop(self):
+            state["stops"] += 1
+            session = state["session"]
+            state["marker"] = session.journal.read_replay_reservation(args.device_id)
+
+            def fail_persistence(*a, **kw):
+                raise stop_error
+
+            monkeypatch.setattr(session.journal, "_write_reservation", fail_persistence)
+            raise DriverError("stop_unconfirmed")
+
+    class SyntheticProbe:
+        def __init__(self, *a, **kw):
+            pass
+
+        def sample(self, channel, *, duration_ms):
+            point = state["point"]
+            return (SimpleNamespace(channel=channel, values=(point.latitude, point.longitude)),)
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: pytest.fail("real process forbidden"))
+    monkeypatch.setattr(module, "VirtualReplaySession", Session)
+    monkeypatch.setattr(native, "MuMuNative684", SyntheticNative)
+    monkeypatch.setattr(probe_module, "OwnProbe", SyntheticProbe)
+    monkeypatch.setattr(module, "_run_control_loop", lambda *a: None)
+    try:
+        with pytest.raises((OSError, UnsafeReplay)) as caught:
+            run_local_cli(args, execution=execution(clock), clock=clock, emit=reports.append)
+        assert state["closes"] == 1
+        assert state["session"]._device_lock is None
+        assert state["writes"] == state["stops"] == 1
+        assert caught.value is (close_error if close_fails else stop_error)
+        chain = []
+        error = caught.value
+        while error is not None and error not in chain:
+            chain.append(error)
+            error = error.__context__
+        assert stop_error in chain
+        if body_fails:
+            assert body_error in chain
+        assert not state["session"].progress["stop_confirmed"]
+        assert all(not report["stop_confirmed"] for report in reports)
+        with RunJournal(args.journal) as journal:
+            with pytest.raises(UnsafeReplay, match="replay_recovery_requires_stop"):
+                with journal.device_lock(args.device_id):
+                    pytest.fail("unresolved device became writable")
+            with journal.replay_recovery_lock(args.device_id):
+                # OS lock released, but durable exclusion remains unchanged.
+                assert journal.read_replay_reservation(args.device_id) == state["marker"]
+    finally:
+        # Test cleanup also releases the lock on an unfixed implementation.
+        VirtualReplaySession.close(state["session"])
+
+
+def test_cli_closes_real_session_when_cleanup_report_fails(local_inputs, monkeypatch):
+    from swu_happyrun.drivers.mumu import virtual_replay as module
+
+    args, _, clock = local_inputs
+    sessions, writes, stops = [], [], []
+    reports = []
+    report_error = OSError("synthetic output unavailable")
+
+    class Session(VirtualReplaySession):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            sessions.append(self)
+
+    class SyntheticNative:
+        def __init__(self, *a, **kw):
+            pass
+
+        def write_location(self, point, *, deadline):
+            writes.append(point)
+            raise DriverError("write_ack_unconfirmed")
+
+        def stop(self):
+            stops.append(True)
+            raise DriverError("stop_unconfirmed")
+
+    def emit(report):
+        reports.append(report)
+        if len(reports) == 2:
+            raise report_error
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: pytest.fail("real process forbidden"))
+    monkeypatch.setattr(module, "VirtualReplaySession", Session)
+    monkeypatch.setattr(native, "MuMuNative684", SyntheticNative)
+    monkeypatch.setattr(probe_module, "OwnProbe", lambda *a, **kw: object())
+    try:
+        with pytest.raises(OSError) as caught:
+            run_local_cli(args, execution=execution(clock), clock=clock, emit=emit)
+        assert caught.value is report_error
+        assert len(writes) == len(stops) == 1
+        assert sessions[0]._device_lock is None
+        assert not reports[-1]["stop_confirmed"]
+        with RunJournal(args.journal) as journal:
+            with journal.replay_recovery_lock(args.device_id):
+                assert journal.read_replay_reservation(args.device_id)["status"] == "uncertain"
+    finally:
+        sessions[0].close()
