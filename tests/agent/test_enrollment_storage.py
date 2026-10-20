@@ -57,7 +57,10 @@ class SyntheticIO:
     def create(self, path):
         assert path.parent == self.root
         return self.operation(
-            "create", lambda: os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            "create",
+            lambda: os.open(
+                path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600
+            ),
         )
 
     def write(self, fd, data):
@@ -73,7 +76,9 @@ class SyntheticIO:
         return self.operation("close", lambda: os.close(fd))
 
     def open_read(self, path):
-        return self.operation("open_read", lambda: os.open(path, os.O_RDONLY))
+        return self.operation(
+            "open_read", lambda: os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        )
 
     def check_fd(self, fd):
         info = os.fstat(fd)

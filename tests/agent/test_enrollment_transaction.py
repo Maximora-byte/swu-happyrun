@@ -194,7 +194,10 @@ def synthetic(tmp_path, monkeypatch):
 
         def create(self, path):
             return self.event(
-                "create", lambda: os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                "create",
+                lambda: os.open(
+                    path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600
+                ),
             )
 
         def write(self, fd, data):
@@ -210,7 +213,7 @@ def synthetic(tmp_path, monkeypatch):
             os.close(fd)
 
         def open_read(self, path):
-            return os.open(path, os.O_RDONLY)
+            return os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
 
         def check_fd(self, fd):
             assert os.fstat(fd).st_nlink == 1
@@ -632,7 +635,7 @@ def test_live_stage_scan_uses_exact_fd_metadata_not_second_stat(tmp_path, monkey
 
     _, _, reviewed, _, paths = create_bundle(tmp_path, monkeypatch)
     stage = paths["journal"].parent / (".private." + TX + ".staged")
-    fd = os.open(stage, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    fd = os.open(stage, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
     try:
         original = os.scandir
 
@@ -666,3 +669,36 @@ def test_live_stage_scan_uses_exact_fd_metadata_not_second_stat(tmp_path, monkey
         )
     finally:
         os.close(fd)
+
+
+def test_synthetic_byte_io_preserves_binary_journal_on_windows(synthetic, monkeypatch):
+    """Model CRT text translation, even on Linux, without replacing storage logic."""
+    transaction, _, bundle = synthetic
+    _, anchors, reviewed, _, _ = bundle()
+    native_binary = getattr(os, "O_BINARY", 0)
+    marker = native_binary or 0x40000000
+    original_open, original_write, original_read = os.open, os.write, os.read
+    modes = {}
+
+    def opened(path, flags, *args, **kwargs):
+        # Underlying descriptors stay binary; emulate only the requested mode.
+        fd = original_open(path, (flags & ~marker) | native_binary, *args, **kwargs)
+        modes[fd] = bool(flags & marker)
+        return fd
+
+    def written(fd, data):
+        raw = bytes(data)
+        if not modes.get(fd, True):
+            original_write(fd, raw.replace(b"\n", b"\r\n"))
+            return len(raw)
+        return original_write(fd, raw)
+
+    def read(fd, count):
+        raw = original_read(fd, count)
+        return raw if modes.get(fd, True) else raw.replace(b"\r\n", b"\n")
+
+    monkeypatch.setattr(os, "O_BINARY", marker, raising=False)
+    monkeypatch.setattr(os, "open", opened)
+    monkeypatch.setattr(os, "write", written)
+    monkeypatch.setattr(os, "read", read)
+    assert transaction.initialize_candidate(anchors, reviewed).status == "candidate_unpinned"

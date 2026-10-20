@@ -329,6 +329,7 @@ def test_target_presence_and_hash_policy_is_strict(tmp_path, kind, name):
 @pytest.mark.parametrize(
     "text",
     ["relative", "/a/../b", "/a//b", "/a/./b", "//host/share", "/a/\0b", "/" + "x" * 1024],
+    ids=["relative", "parent", "double-slash", "dot", "unc", "nul", "oversized"],
 )
 def test_target_path_must_be_canonical_absolute_and_bounded(tmp_path, text):
     api = module()
@@ -542,6 +543,7 @@ def test_frozen_validation_rejects_static_symlink_and_hardlink(tmp_path, name):
 @pytest.mark.parametrize(
     "payload",
     [b"", b"\xff", b"{}", b"null", b"[]" * 40000, b"[" * 1000 + b"]" * 1000],
+    ids=["empty", "invalid-utf8", "empty-object", "null", "oversized", "deep-nesting"],
 )
 def test_malformed_payload_is_sanitized(tmp_path, payload):
     api = module()
