@@ -3,6 +3,8 @@
 Reference APIs and SDDL grammar:
 https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getnamedsecurityinfow
 https://learn.microsoft.com/en-us/windows/win32/secauthz/security-descriptor-string-format
+https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-getsecuritydescriptorowner
+https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-getace
 https://learn.microsoft.com/en-us/windows/win32/api/sddl/nf-sddl-convertstringsecuritydescriptortosecuritydescriptorw
 
 Only the current token user may have an allow ACE. Unsupported ACL representations
@@ -15,6 +17,7 @@ from __future__ import annotations
 import ctypes as ct
 import os
 import re
+import struct
 from contextlib import contextmanager
 from ctypes import wintypes as wt
 from pathlib import Path
@@ -95,6 +98,12 @@ class _WinAPI:
             wt.DWORD,
         )
         self._bind(self.advapi, "GetSecurityDescriptorLength", [P], wt.DWORD)
+        self._bind(self.advapi, "GetSecurityDescriptorOwner", [P, P, P], wt.BOOL)
+        self._bind(self.advapi, "GetSecurityDescriptorDacl", [P, P, P, P], wt.BOOL)
+        self._bind(self.advapi, "IsValidAcl", [P], wt.BOOL)
+        self._bind(self.advapi, "GetAce", [P, wt.DWORD, P], wt.BOOL)
+        self._bind(self.advapi, "IsValidSid", [P], wt.BOOL)
+        self._bind(self.advapi, "GetLengthSid", [P], wt.DWORD)
         self._bind(
             self.advapi,
             "ConvertSecurityDescriptorToStringSecurityDescriptorW",
@@ -166,11 +175,75 @@ class _WinAPI:
                 self._require(0 < length.value <= 65536)
                 result = text.value
                 self._require(result is not None)
-                return result
+                return self._canonicalize_native_sids(descriptor, result)
             finally:
                 self.kernel.LocalFree(text)
         finally:
             self.kernel.LocalFree(descriptor)
+
+    def _sid_text(self, pointer) -> str:
+        self._require(pointer and self.advapi.IsValidSid(pointer))
+        text = wt.LPWSTR()
+        self._require(self.advapi.ConvertSidToStringSidW(pointer, ct.byref(text)))
+        try:
+            result = text.value
+            self._require(result is not None and len(result) < 256)
+            self._require(re.fullmatch(r"S-1-(?:\d+-){1,14}\d+", result))
+            return result
+        finally:
+            self.kernel.LocalFree(text)
+
+    def _canonicalize_native_sids(self, descriptor, sddl: str) -> str:
+        """Get full numeric identities from this descriptor, never infer aliases.
+
+        SDDL conversion may abbreviate an owner/trustee as LA even though token
+        SID conversion returns S-1-5-21-...-500. Read the binary owner and each ACE
+        SID from the original descriptor instead. No caller-supplied alias map,
+        RID matching, or account-name lookup participates in authorization.
+        """
+        match = re.fullmatch(r"O:[A-Z0-9-]+D:([A-Z]*)(\(.*\))", sddl)
+        self._require(match is not None)
+        flags, aces = match.groups()
+        parts = re.findall(r"\([^()]*\)", aces)
+        self._require(0 < len(parts) <= 32 and "".join(parts) == aces)
+        owner = ct.c_void_p()
+        defaulted = wt.BOOL()
+        self._require(
+            self.advapi.GetSecurityDescriptorOwner(descriptor, ct.byref(owner), ct.byref(defaulted))
+        )
+        owner_text = self._sid_text(owner)
+        acl = ct.c_void_p()
+        present = wt.BOOL()
+        self._require(
+            self.advapi.GetSecurityDescriptorDacl(
+                descriptor, ct.byref(present), ct.byref(acl), ct.byref(defaulted)
+            )
+        )
+        self._require(present.value and acl.value and self.advapi.IsValidAcl(acl))
+        # ACL/ACE binary layouts use fixed-width WORD/DWORD, on every test host.
+        _, _, acl_size, ace_count, _ = struct.unpack("<BBHHH", ct.string_at(acl, 8))
+        self._require(8 <= acl_size <= 65535 and ace_count == len(parts))
+        canonical = []
+        for index, part in enumerate(parts):
+            fields = part[1:-1].split(";")
+            self._require(len(fields) == 6)
+            ace = ct.c_void_p()
+            self._require(self.advapi.GetAce(acl, index, ct.byref(ace)))
+            self._require(ace.value and acl.value + 8 <= ace.value <= acl.value + acl_size - 8)
+            kind, inheritance, ace_size, mask = struct.unpack("<BBHI", ct.string_at(ace, 8))
+            self._require(kind == 0 and inheritance in {0, 1, 2, 3, 16, 19})
+            self._require(16 <= ace_size <= acl.value + acl_size - ace.value and mask == 0x1F01FF)
+            sid_pointer = ct.c_void_p(ace.value + 8)
+            revision, subauthorities = ct.string_at(sid_pointer, 2)
+            self._require(revision == 1 and subauthorities <= 15)
+            self._require(8 + 4 * subauthorities == ace_size - 8)
+            self._require(self.advapi.IsValidSid(sid_pointer))
+            self._require(self.advapi.GetLengthSid(sid_pointer) == ace_size - 8)
+            fields[5] = self._sid_text(sid_pointer)
+            canonical.append("(" + ";".join(fields) + ")")
+        result = "O:" + owner_text + "D:" + flags + "".join(canonical)
+        self._require(len(result) <= 65536)
+        return result
 
     def guard(self, path: Path):
         attrs = self.kernel.GetFileAttributesW(str(path))

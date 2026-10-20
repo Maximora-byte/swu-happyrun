@@ -197,3 +197,165 @@ def test_native_provision_supplies_protected_inheritable_current_user_dacl():
     assert api.advapi.descriptor == f"O:{SID}D:P(A;OICI;FA;;;{SID})"
     assert api.kernel.created == ["synthetic"]
     assert api.kernel.freed == [123]
+
+
+def _native_alias_api(
+    *,
+    owner=SID,
+    trustee=SID,
+    rights="FA",
+    mask=0x1F01FF,
+    ace_type=0,
+    ace_flags=3,
+    fail_owner=False,
+    fail_sid=False,
+    ace_size=20,
+    ace_offset=8,
+    acl_count=1,
+    sid_count=1,
+    sddl_flags="P",
+    sddl_inheritance="OICI",
+):
+    """Native memory fixtures: SDDL aliases never carry the asserted identity."""
+    import ctypes as ct
+    import struct
+
+    # Minimal SID bytes, only interpreted by our fake native SID conversion.
+    ace_bytes = (
+        struct.pack("<BBHI", ace_type, ace_flags, ace_size, mask)
+        + bytes([1, sid_count])
+        + bytes(10)
+    )
+    owner_sid = ct.create_string_buffer(bytes(12))
+    acl = ct.create_string_buffer(struct.pack("<BBHHH", 2, 0, 28, acl_count, 0) + ace_bytes)
+    strings = []
+
+    def out_pointer(out, address):
+        ct.cast(out, ct.POINTER(ct.c_void_p))[0] = address
+
+    class Advapi:
+        def GetNamedSecurityInfoW(self, path, kind, info, a, b, c, d, out):
+            out_pointer(out, 123)
+            return 0
+
+        def GetSecurityDescriptorLength(self, descriptor):
+            return 128
+
+        def ConvertSecurityDescriptorToStringSecurityDescriptorW(self, sd, rev, info, out, size):
+            text = ct.create_unicode_buffer(
+                f"O:LAD:{sddl_flags}(A;{sddl_inheritance};{rights};;;LA)"
+            )
+            strings.append(text)
+            out_pointer(out, ct.addressof(text))
+            ct.cast(size, ct.POINTER(win.wt.DWORD))[0] = len(text)
+            return True
+
+        def GetSecurityDescriptorOwner(self, sd, out, defaulted):
+            out_pointer(out, ct.addressof(owner_sid))
+            return not fail_owner
+
+        def GetSecurityDescriptorDacl(self, sd, present, out, defaulted):
+            ct.cast(present, ct.POINTER(win.wt.BOOL))[0] = True
+            out_pointer(out, ct.addressof(acl))
+            return True
+
+        def IsValidAcl(self, pointer):
+            return True
+
+        def GetAce(self, pointer, index, out):
+            assert index == 0
+            out_pointer(out, ct.addressof(acl) + ace_offset)
+            return True
+
+        def IsValidSid(self, pointer):
+            return not fail_sid
+
+        def GetLengthSid(self, pointer):
+            return 12
+
+        def ConvertSidToStringSidW(self, pointer, out):
+            address = pointer.value if isinstance(pointer, ct.c_void_p) else pointer
+            text = ct.create_unicode_buffer(
+                owner if address == ct.addressof(owner_sid) else trustee
+            )
+            strings.append(text)
+            out_pointer(out, ct.addressof(text))
+            return True
+
+    class Kernel:
+        def LocalFree(self, pointer):
+            pass
+
+    api = object.__new__(win._WinAPI)
+    api.advapi, api.kernel = Advapi(), Kernel()
+    return api
+
+
+def test_native_la_rendering_canonicalizes_actual_owner_and_ace_sid():
+    admin_sid = "S-1-5-21-1-2-3-500"
+    api = _native_alias_api(owner=admin_sid, trustee=admin_sid)
+    result = api.security(Path("synthetic"))
+    assert result == f"O:{admin_sid}D:P(A;OICI;FA;;;{admin_sid})"
+    win.validate_sddl(result, admin_sid, protected=True)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"owner": "S-1-5-21-9-8-7-500"},
+        {"trustee": "S-1-5-21-9-8-7-500"},
+        {"trustee": "S-1-1-0"},
+        {"rights": "FR"},
+        {"mask": 0x120089},
+        {"ace_type": 9},
+        {"ace_flags": 8},
+        {"fail_owner": True},
+        {"fail_sid": True},
+        {"ace_size": 1024},
+        {"ace_size": 8},
+        {"ace_offset": 1},
+        {"acl_count": 2},
+        {"sid_count": 15},
+    ],
+)
+def test_native_alias_does_not_authorize_wrong_identity_or_rights(changes):
+    api = _native_alias_api(**changes)
+    with pytest.raises(win.WindowsPrivacyError, match="^private_acl_unverified$"):
+        win.validate_sddl(api.security(Path("synthetic")), SID, protected=True)
+
+
+def test_literal_la_is_not_an_identity_grant():
+    with pytest.raises(win.WindowsPrivacyError, match="^private_acl_unverified$"):
+        win.validate_sddl("O:LAD:P(A;OICI;FA;;;LA)", "S-1-5-21-1-2-3-500", protected=True)
+
+
+def test_native_windows_provision_verify_and_inherited_file_acl(tmp_path):
+    """Real Windows API regression; no emulator, device, or synthetic ACL backend."""
+    import os
+
+    from swu_happyrun.drivers.mumu.private_evidence import PrivateEvidenceStore
+
+    if os.name != "nt":
+        pytest.skip("requires real Windows ACL APIs")
+    root = tmp_path / "native-private"
+    win.provision_private_directory(root)
+    win.verify_directory(root)
+    store = PrivateEvidenceStore(root)
+    store.put_once("command.stdout.bin", b"synthetic-native-acl-regression")
+    api = win._WinAPI()
+    sid = api.current_sid()
+    directory_sddl = api.security(root)
+    file_sddl = api.security(root / "command.stdout.bin")
+    win.validate_sddl(directory_sddl, sid, protected=True)
+    win.validate_sddl(file_sddl, sid, protected=False)
+    assert (root / "command.stdout.bin").read_bytes() == b"synthetic-native-acl-regression"
+    store.claim_intent("launch")
+    with pytest.raises(RuntimeError, match="^intent_exists$"):
+        PrivateEvidenceStore(root).claim_intent("launch")
+
+
+def test_native_inherited_file_alias_is_canonicalized():
+    api = _native_alias_api(ace_flags=16, sddl_flags="AI", sddl_inheritance="ID")
+    result = api.security(Path("synthetic"))
+    assert result == f"O:{SID}D:AI(A;ID;FA;;;{SID})"
+    win.validate_sddl(result, SID, protected=False)
