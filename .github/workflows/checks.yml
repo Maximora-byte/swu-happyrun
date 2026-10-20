@@ -31,7 +31,12 @@ jobs:
       - run: uv sync --extra server --extra agent --extra dev --frozen
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
-      - run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20
+      - name: Full Python suite on Linux
+        if: runner.os != 'Windows'
+        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20
+      - name: Windows Python suite except separately tested pin pipeline
+        if: runner.os == 'Windows'
+        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 --ignore=tests/agent/test_enrollment_review_pin.py
       - run: uv run --no-sync python scripts/export_schema.py --check
       - run: uv build
       - run: uv run --no-sync python scripts/check_distribution_privacy.py
@@ -50,6 +55,27 @@ jobs:
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 7
+
+  windows-review-pin:
+    # Exhaustive partition: this exact file is excluded only from Windows main
+    # above; Linux still runs everything. No native QA opt-in is enabled here.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.12.19"
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - run: uv sync --extra server --extra agent --extra dev --frozen
+      - run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 tests/agent/test_enrollment_review_pin.py
 
   console-browser-qa:
     runs-on: ubuntu-latest
