@@ -30,6 +30,7 @@ from .enrollment_inspection import (
     MAX_SCAN_DEPTH,
     MAX_SCAN_ENTRIES,
     MAX_SCAN_ROOTS,
+    BoundedDiscoveryScope,
     DeclaredJournalInspection,
     DiscoveryScope,
     EnrollmentInspection,
@@ -38,6 +39,10 @@ from .enrollment_inspection import (
 
 MAX_REVIEW_SCOPE_BYTES = 2 * 1024 * 1024
 _SCHEMA = "enrollment-review-scope-v1"
+_SCHEMA_V2 = "enrollment-review-scope-v2"
+# Literal, versioned policy: neither a caller budget nor a trusted resume cursor.
+_POLICY_V2 = {"page_entries": 450, "max_pages": 64, "max_depth": 8, "max_roots": 32}
+
 _SOURCE_KEYS = {
     "host_path",
     "host_override",
@@ -164,17 +169,17 @@ def _constant(_):
     raise ReviewScopeNotReady()
 
 
-def _bounded(value):
+def _bounded(value, *, v2=False):
     pending, count = [(value, 0)], 0
     while pending:
         node, depth = pending.pop()
         count += 1
-        _require(count <= 8192 and depth <= 8)
+        _require(count <= (262144 if v2 else 8192) and depth <= (10 if v2 else 8))
         if type(node) is dict:
             _require(len(node) <= 32 and all(type(key) is str and len(key) <= 64 for key in node))
             pending.extend((item, depth + 1) for item in node.values())
         elif type(node) is list:
-            _require(len(node) <= MAX_SCAN_ENTRIES)
+            _require(len(node) <= (28800 if v2 else MAX_SCAN_ENTRIES))
             pending.extend((item, depth + 1) for item in node)
         else:
             _require(node is None or type(node) in (str, int, bool))
@@ -203,9 +208,19 @@ def _root_sources(scope, sources, journal):
 
 def _validate(payload, expected_host_id, expected_device_id, expected_journal):
     """Structural checks precede semantic derivation; no asserted success is trusted."""
-    _bounded(payload)
-    _keys(payload, {"schema", "kind", "expected_journal", "inspection"})
-    _require(payload["schema"] == _SCHEMA)
+    v2 = type(payload) is dict and payload.get("schema") == _SCHEMA_V2
+    _bounded(payload, v2=v2)
+    _keys(
+        payload,
+        {"schema", "kind", "expected_journal", "inspection"} | ({"scan_policy"} if v2 else set()),
+    )
+    _require(payload["schema"] == (_SCHEMA_V2 if v2 else _SCHEMA))
+    if v2:
+        _keys(payload["scan_policy"], set(_POLICY_V2))
+        _require(all(type(value) is int for value in payload["scan_policy"].values()))
+        _require(payload["scan_policy"] == _POLICY_V2)
+    max_entries = 28800 if v2 else MAX_SCAN_ENTRIES
+    max_depth = 8 if v2 else MAX_SCAN_DEPTH
     _require(payload["expected_journal"] == expected_journal)
     if expected_journal is not None:
         _path(expected_journal)
@@ -262,7 +277,7 @@ def _validate(payload, expected_host_id, expected_device_id, expected_journal):
     identities = set()
     candidates, artifacts = set(), set()
     for root in roots:
-        _keys(root, _ROOT_KEYS)
+        _keys(root, _ROOT_KEYS | ({"directory_identities"} if v2 else set()))
         path = _path(root["path"])
         _require(root["sources"] == expected_roots[root["path"]])
         _require(root["identity_domain"] == "python_stat")
@@ -272,17 +287,36 @@ def _validate(payload, expected_host_id, expected_device_id, expected_journal):
         _empty(root["exclusions"])
         entries, files = root["entry_count"], root["file_count"]
         _require(
-            type(entries) is int and type(files) is int and 0 <= files <= entries < MAX_SCAN_ENTRIES
+            type(entries) is int and type(files) is int and 0 <= files <= entries < max_entries
         )
         count += entries
-        _require(count < MAX_SCAN_ENTRIES)
-        journals = _paths(root["candidate_journals"], MAX_SCAN_ENTRIES)
-        states = _paths(root["state_artifacts"], MAX_SCAN_ENTRIES)
+        _require(count < max_entries)
+        if v2:
+            directories = _list(root["directory_identities"], max_entries)
+            seen_paths, seen_ids = set(), set()
+            for directory in directories:
+                _require(type(directory) is list and len(directory) == 2)
+                directory_path = _path(directory[0])
+                directory_identity = _identity(directory[1])
+                _require(len(directory_path.relative_to(path).parts) <= max_depth)
+                _require(directory_path not in seen_paths and directory_identity not in seen_ids)
+                seen_paths.add(directory_path)
+                seen_ids.add(directory_identity)
+            _require([item[0] for item in directories] == sorted(str(item) for item in seen_paths))
+            _require(len(directories) == (0 if root["missing"] else entries - files + 1))
+            if not root["missing"]:
+                _require([str(path), root["identity"]] in directories)
+            _require(all(item == path or item.parent in seen_paths for item in seen_paths))
+
+        journals = _paths(root["candidate_journals"], max_entries)
+        states = _paths(root["state_artifacts"], max_entries)
         _require(len(set(journals)) == len(journals) and len(set(states)) == len(states))
         _require(len(set(journals) | set(states)) <= files)
         for item in (*journals, *states):
+            if v2:
+                _require(item.parent in seen_paths)
             relative = item.relative_to(path)
-            _require(1 <= len(relative.parts) <= MAX_SCAN_DEPTH + 1)
+            _require(1 <= len(relative.parts) <= max_depth + 1)
         _require(
             all(item.name.lower().endswith((".sqlite", ".sqlite3", ".db")) for item in journals)
         )
@@ -337,7 +371,11 @@ def _validate(payload, expected_host_id, expected_device_id, expected_journal):
 
 
 def _serialize(inspection, expected_journal):
-    _require(type(inspection) is EnrollmentInspection and type(inspection.scope) is DiscoveryScope)
+    _require(
+        type(inspection) is EnrollmentInspection
+        and type(inspection.scope) in (DiscoveryScope, BoundedDiscoveryScope)
+    )
+    v2 = type(inspection.scope) is BoundedDiscoveryScope
     scope = inspection.scope
     declaration = {
         "roots": [str(path) for path in scope.roots],
@@ -366,6 +404,15 @@ def _serialize(inspection, expected_journal):
                 "state_artifacts": list(root.state_artifacts),
                 "missing": root.missing,
                 "sources": expected_roots.get(root.path, []),
+                **(
+                    {
+                        "directory_identities": [
+                            [path, list(identity)] for path, identity in root.directory_identities
+                        ]
+                    }
+                    if v2
+                    else {}
+                ),
             }
         )
     journals = []
@@ -381,7 +428,8 @@ def _serialize(inspection, expected_journal):
             }
         )
     return {
-        "schema": _SCHEMA,
+        "schema": _SCHEMA_V2 if v2 else _SCHEMA,
+        **({"scan_policy": dict(_POLICY_V2)} if v2 else {}),
         "kind": "existing" if expected_journal is not None else "new_enrollment",
         "expected_journal": expected_journal,
         "inspection": {
@@ -422,11 +470,14 @@ def _inspection(payload):
                 candidate_journals=tuple(root["candidate_journals"]),
                 state_artifacts=tuple(root["state_artifacts"]),
                 missing=root["missing"],
+                directory_identities=tuple(
+                    (item[0], tuple(item[1])) for item in root.get("directory_identities", [])
+                ),
             )
             for root in value["roots"]
         ),
         identity_sources=sources,
-        scope=DiscoveryScope(
+        scope=(BoundedDiscoveryScope if payload["schema"] == _SCHEMA_V2 else DiscoveryScope)(
             roots=tuple(Path(path) for path in scope["roots"]),
             journal_arguments=tuple(Path(path) for path in scope["journal_arguments"]),
             working_directories=tuple(Path(path) for path in scope["working_directories"]),
@@ -536,7 +587,7 @@ def require_matching_reinspection(
         previous = json.loads(
             reviewed.canonical_bytes, object_pairs_hook=_unique, parse_constant=_constant
         )
-        _bounded(previous)
+        _bounded(previous, v2=previous.get("schema") == _SCHEMA_V2)
         original = previous["inspection"]
         journal = previous["expected_journal"]
         load_review_scope(

@@ -132,21 +132,13 @@ the relation from each path to its concrete source. Resolve duplicates only from
 positive identity evidence; do not silently collapse aliases or redirecting
 paths. Review the fresh actual inspection, not an edited copy of its JSON.
 
-The existing scanner has a **global 450-entry budget**, depth 4 and at most 32
-roots. The known ten-root report exhausted that budget and left five source
-categories unchecked. This PR does not raise those limits or add a completion
-claim. Separate bounded scans may help investigate where history lies, but their
-outputs cannot be concatenated into a valid complete ledger or substituted for
-the required fresh whole-scope reinspection.
-
-If the concrete relevant scope still exceeds these limits, stop before approval
-or initialization. The next software increment must provide bounded continued
-coverage with explicit pending subtrees, stable identities/change detection and
-a verifier that proves all required coverage, rather than arbitrary exclusions,
-deleting broad roots, or setting `declared_complete=True`. A genuinely irrelevant
-root may only be corrected based on documented original source evidence, while
-retaining the earlier report and the reason for the correction. Until that is
-established, retain `unknown`; there is no supported bypass in these entries.
+The v1 `DiscoveryScope` retains its **global 450-entry budget**, depth 4 and
+32-root limit. The original ten-root report exhausted that budget and left five
+source categories unchecked. Keep that original report; it is not made complete
+retroactively. The additive [bounded v2 coverage](2026-10-20-bounded-scope-coverage.md)
+provides an explicit fixed-policy full rewalk beyond 450 entries. It does not
+prove any of the five historical source categories or authorize initialization.
+Separate old truncated scans cannot be concatenated into either ledger version.
 
 ## Evidence and remaining work
 
@@ -158,7 +150,7 @@ Standalone unset scripts and installed isolated-interpreter refusal are separate
 checks from successful synthetic function integration. Exact commands/platform,
 HEAD/tree and CI belong in the PR receipt, not an inferred Windows result.
 
-This PR does not finish the source-completeness continuation, internal typed
+This entry does not establish historical source completeness, internal typed
 runtime resolver, per-action approval/SQL validation, bounded original-scope
 cleanup after producer shutdown, positive PID association, active sampling, or
 real device execution. None of these may be inferred from an exit code of 0 here.
