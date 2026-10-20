@@ -62,8 +62,11 @@ def test_static_read_only_and_private_repr(tmp_path):
         '<VirtualBox><Machine uuid="' + UUID_A + '" name="wrong"/></VirtualBox>',
         "x" * (1024 * 1024 + 1),
     ],
+    ids=["missing-machine", "invalid-uuid", "duplicate-machine", "dtd", "wrong-name", "oversized"],
 )
-def test_bad_static_is_unknown(tmp_path, bad):
+def test_bad_static_is_unknown(tmp_path, bad, request):
+    # Pytest copies node IDs into PYTEST_CURRENT_TEST, including on Windows.
+    assert len(request.node.nodeid) < 512
     config, args = setup_instance(tmp_path)
     config.write_text(bad)
     assert inspect_static_instance(config, **args).status == "unknown"
