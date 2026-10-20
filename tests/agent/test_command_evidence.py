@@ -250,7 +250,9 @@ def test_native_optional_collector_records_only_manager_attempt(monkeypatch):
     def spawn(argv, **kwargs):
         calls.append(argv[0])
         source = (
-            "print('35')" if argv[0] == "adb" else "print('manager-private'); raise SystemExit(3)"
+            "import sys; sys.stdout.buffer.write(b'35\\n')"
+            if argv[0] == "adb"
+            else "import sys; sys.stdout.buffer.write(b'manager-private\\n'); raise SystemExit(3)"
         )
         if argv[0] == "manager":
             assert evidence.snapshot is None  # SDK capture must not populate it.
@@ -293,7 +295,7 @@ def test_unresolved_readers_snapshot_is_immutable_and_pending_gate_stays_closed(
     monkeypatch.setattr(command, "_read_pipe", hold)
     try:
         with pytest.raises(command.ProbeError, match="command_cleanup_unconfirmed"):
-            child("print('retained')", evidence, timeout=0.1)
+            child("import sys; sys.stdout.buffer.write(b'retained\\n')", evidence, timeout=0.1)
         snapshot = evidence.snapshot
         assert snapshot.stdout == b"retained\n"
         assert not snapshot.output_complete
