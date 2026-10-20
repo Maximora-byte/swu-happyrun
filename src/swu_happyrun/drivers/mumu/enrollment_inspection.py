@@ -386,13 +386,13 @@ def inspect_enrollment(
         root_paths = root_paths[:MAX_SCAN_ROOTS]
     collected = []
     bounded = type(scope) is BoundedDiscoveryScope
-    observations = []
     if bounded:
         from . import enrollment_coverage
 
+        scan_session = enrollment_coverage._ScanSession(_live_staging)
     budget = enrollment_coverage.MAX_ENTRIES if bounded else MAX_SCAN_ENTRIES
     for root in root_paths:
-        if budget <= 0:
+        if budget <= 0 or (bounded and scan_session.exhausted):
             reasons.append("scan_limit_reached")
             collected.append(
                 RootInspection(
@@ -409,9 +409,7 @@ def inspect_enrollment(
             )
             continue
         if bounded:
-            observation = enrollment_coverage.scan(
-                root, budget, _live_staging=_live_staging, _observations=observations
-            )
+            observation = enrollment_coverage.scan(root, budget, _session=scan_session)
         else:
             observation = (
                 _scan(root, budget, _live_staging=_live_staging)
@@ -422,9 +420,12 @@ def inspect_enrollment(
         collected.append(observation)
     if bounded:
         try:
-            enrollment_coverage.revalidate(observations)
+            enrollment_coverage.revalidate(scan_session)
+        except enrollment_coverage._WorkLimit:
+            reasons.append("scan_limit_reached")
         except (OSError, ValueError):
             reasons.append("directory_changed")
+        collected = enrollment_coverage._with_failures(collected, scan_session)
     roots = tuple(collected)
     reasons.extend(error for root in roots for error in root.errors)
     journals = set(path for root in roots for path in root.candidate_journals)

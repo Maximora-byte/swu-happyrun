@@ -22,6 +22,41 @@ def scanner():
     return importlib.import_module(MODULE)
 
 
+def freeze_directory_times(monkeypatch, *paths):
+    """Keep directory timestamps unchanged while preserving fresh identity/type."""
+    real_lstat = Path.lstat
+    times = {path: (real_lstat(path).st_mtime_ns, real_lstat(path).st_ctime_ns) for path in paths}
+
+    def frozen(path, *args, **kwargs):
+        info = real_lstat(path, *args, **kwargs)
+        if path not in times:
+            return info
+        return SimpleNamespace(
+            st_mode=info.st_mode,
+            st_dev=info.st_dev,
+            st_ino=info.st_ino,
+            st_mtime_ns=times[path][0],
+            st_ctime_ns=times[path][1],
+            st_file_attributes=getattr(info, "st_file_attributes", 0),
+        )
+
+    monkeypatch.setattr(Path, "lstat", frozen)
+
+
+def hook_payload(monkeypatch, module, hook):
+    """Distinguish inventory descent from read-only membership observations."""
+    if hasattr(module, "_payload_entries"):
+        original = module._payload_entries
+        monkeypatch.setattr(
+            module,
+            "_payload_entries",
+            lambda directory, session: hook(directory.path, lambda: original(directory, session)),
+        )
+    else:
+        original = os.scandir
+        monkeypatch.setattr(os, "scandir", lambda path: hook(path, lambda: original(path)))
+
+
 class HookedScan:
     """Wrap real directory metadata, with deterministic filesystem race boundaries."""
 
@@ -49,16 +84,239 @@ class HookedScan:
         return entry
 
 
+@pytest.mark.parametrize("mutation", ["add", "remove", "replace"])
+def test_pending_membership_change_with_frozen_times_prevents_payload_descent(
+    tmp_path, monkeypatch, mutation
+):
+    module = scanner()
+    pending = tmp_path / "pending"
+    pending.mkdir()
+    (tmp_path / "trigger").touch()
+    original_member = pending / "original.db"
+    replacement = tmp_path.parent / f"{tmp_path.name}-replacement"
+    if mutation != "add":
+        original_member.touch()
+    if mutation == "replace":
+        replacement.touch()
+        assert replacement.lstat().st_ino != original_member.lstat().st_ino
+    freeze_directory_times(monkeypatch, tmp_path, pending)
+    yielded = []
+    descended = []
+    changed = False
+
+    def mutate():
+        nonlocal changed
+        if pending in yielded and not changed:
+            changed = True
+            if mutation == "add":
+                (pending / "hidden.db").touch()
+            elif mutation == "remove":
+                original_member.unlink()
+            else:
+                os.replace(replacement, original_member)
+
+    def hooked(path, original):
+        descended.append(path)
+        if path == tmp_path:
+            return HookedScan(original(), mutate, lambda entry: yielded.append(Path(entry.path)))
+        return original()
+
+    hook_payload(monkeypatch, module, hooked)
+    result = module.scan(tmp_path)
+    assert changed
+    assert pending not in descended
+    assert "directory_changed" in result.errors
+    assert str(pending) in result.exclusions
+    assert result.candidate_journals == ()
+
+
+def test_finished_membership_change_with_frozen_times_is_rejected(tmp_path, monkeypatch):
+    module = scanner()
+    children = (tmp_path / "first", tmp_path / "second")
+    for child in children:
+        child.mkdir()
+    freeze_directory_times(monkeypatch, tmp_path, *children)
+    scanned = []
+
+    def hooked(path, original):
+        if path != tmp_path:
+            if scanned:
+                (scanned[0] / "late.db").touch()
+            scanned.append(path)
+        return original()
+
+    hook_payload(monkeypatch, module, hooked)
+    result = module.scan(tmp_path)
+    assert len(scanned) == 2
+    assert "directory_changed" in result.errors
+    assert str(scanned[0]) in result.exclusions
+    assert result.candidate_journals == ()
+
+
+def test_cross_root_membership_change_with_frozen_times_is_rejected(tmp_path, monkeypatch):
+    module = scanner()
+    first = tmp_path / "first"
+    nested = first / "nested"
+    nested.mkdir(parents=True)
+    second = tmp_path / "second"
+    second.mkdir()
+    freeze_directory_times(monkeypatch, first, nested, second)
+    session = module._ScanSession()
+    assert module.scan(first, _session=session).errors == ()
+    (nested / "late.db").touch()
+    assert module.scan(second, _session=session).errors == ()
+    with pytest.raises(ValueError, match="directory_changed"):
+        module.revalidate(session)
+
+
+def test_all_metadata_attempts_share_fixed_work_cap_and_close_on_exhaustion(tmp_path, monkeypatch):
+    module = scanner()
+    (tmp_path / "file").touch()
+    file_info = (tmp_path / "file").lstat()
+    calls = {"lstat": 0, "open": 0, "next": 0, "close": 0}
+    real_lstat = Path.lstat
+
+    def counted_lstat(path, *args, **kwargs):
+        calls["lstat"] += 1
+        if path.parent == tmp_path and path.name.startswith("synthetic-"):
+            return file_info
+        return real_lstat(path, *args, **kwargs)
+
+    class Repeating:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.close()
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            calls["next"] += 1
+            return SimpleNamespace(path=str(tmp_path / f"synthetic-{calls['next']}"))
+
+        def close(self):
+            calls["close"] += 1
+
+    def repeated(path):
+        calls["open"] += 1
+        return Repeating()
+
+    monkeypatch.setattr(Path, "lstat", counted_lstat)
+    monkeypatch.setattr(os, "scandir", repeated)
+    result = module.scan(tmp_path)
+    assert calls["lstat"] + calls["open"] + calls["next"] == module.MAX_ENTRIES
+    assert calls["close"] == calls["open"]
+    assert result.errors == ("scan_limit_reached",)
+    assert str(tmp_path) in result.exclusions
+
+
+def test_empty_root_and_cross_root_checks_share_one_counted_session(tmp_path, monkeypatch):
+    module = scanner()
+    roots = (tmp_path / "first", tmp_path / "second")
+    for root in roots:
+        root.mkdir()
+    real_scandir, real_lstat = os.scandir, Path.lstat
+    calls = {"lstat": 0, "open": 0, "next": 0}
+
+    def counted_lstat(path, *args, **kwargs):
+        calls["lstat"] += 1
+        return real_lstat(path, *args, **kwargs)
+
+    def counted_next():
+        calls["next"] += 1
+
+    def counted_scandir(path):
+        calls["open"] += 1
+        return HookedScan(real_scandir(path), before_next=counted_next)
+
+    monkeypatch.setattr(Path, "lstat", counted_lstat)
+    monkeypatch.setattr(os, "scandir", counted_scandir)
+    session = module._ScanSession()
+    for root in roots:
+        assert module.scan(root, _session=session).errors == ()
+    before_final = session.work_used
+    module.revalidate(session)
+    assert session.work_used == sum(calls.values()) > before_final > 0
+    # Each root has four membership stages plus one actual payload iterator.
+    assert calls["open"] == calls["next"] == 10
+
+
+def test_scope_final_work_exhaustion_preserves_all_unswept_paths_without_further_io(
+    tmp_path, monkeypatch
+):
+    module = scanner()
+    roots = (tmp_path / "first", tmp_path / "second")
+    for root in roots:
+        root.mkdir()
+    session = module._ScanSession()
+    reports = [module.scan(root, _session=session) for root in roots]
+    assert all(not report.errors for report in reports)
+    # Simulate earlier charged work leaving exactly one metadata attempt.
+    session.work_used = module.MAX_ENTRIES - 1
+    calls = []
+    real_lstat = Path.lstat
+
+    def counted_lstat(path, *args, **kwargs):
+        calls.append(path)
+        return real_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", counted_lstat)
+    monkeypatch.setattr(os, "scandir", lambda path: pytest.fail("open after exhaustion"))
+    with pytest.raises(module._WorkLimit, match="scan_limit_reached"):
+        module.revalidate(session)
+    assert len(calls) == 1
+    corrected = module._with_failures(reports, session)
+    for root, report in zip(roots, corrected, strict=True):
+        assert report.errors == ("scan_limit_reached",)
+        assert str(root) in report.exclusions
+    refused = module.scan(tmp_path / "another", _session=session)
+    assert refused.errors == ("scan_limit_reached",)
+    assert len(calls) == 1
+
+
+def test_disappearing_member_does_not_turn_existing_root_into_missing(tmp_path, monkeypatch):
+    module = scanner()
+    member = tmp_path / "vanished"
+    member.touch()
+    real_lstat = Path.lstat
+
+    def vanished(path, *args, **kwargs):
+        if path == member:
+            raise FileNotFoundError("member vanished during membership observation")
+        return real_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", vanished)
+    result = module.scan(tmp_path)
+    assert not result.missing
+    assert "root_inspection_failed" in result.errors
+
+
+def test_missing_root_never_enumerates_out_of_scope_parent(tmp_path, monkeypatch):
+    module = scanner()
+    session = module._ScanSession()
+    monkeypatch.setattr(os, "scandir", lambda path: pytest.fail("out-of-scope parent enumerated"))
+    result = module.scan(tmp_path / "absent", _session=session)
+    assert result.missing
+    assert result.errors == ()
+    module.revalidate(session)
+    assert session.work_used > 0
+
+
 def windows_cached_scandir(monkeypatch, *, zero_identity=True, cached_times_path=None):
     """Install Windows-style DirEntry metadata over real filesystem enumeration."""
     real_scandir = os.scandir
+    changed_times = False
 
     class CachedEntry:
         def __init__(self, entry):
+            nonlocal changed_times
             self.path = entry.path
             self.entry = entry
             self.cached = None
-            if Path(self.path) == cached_times_path:
+            if Path(self.path) == cached_times_path and not changed_times:
+                changed_times = True
                 info = Path(self.path).lstat()
                 self.cached = self.metadata(info)
                 os.utime(
@@ -138,7 +396,8 @@ def test_scan_continues_same_directory_beyond_two_pages_without_opening_files(
     assert result.errors == ()
     assert result.entry_count == result.file_count == 903
     assert result.candidate_journals == (str(journal),)
-    assert opened == [tmp_path]
+    # Baseline, pre-descent, one retained payload iterator, and root-final.
+    assert opened == [tmp_path] * 4
 
 
 def test_scan_retains_pending_subtrees_and_scans_eight_levels(tmp_path):
@@ -207,7 +466,6 @@ def test_midscan_failure_retains_current_directory_and_pending_subtrees(tmp_path
     pending = tmp_path / "pending"
     pending.mkdir()
     (pending / "unseen.db").touch()
-    real_scandir = os.scandir
     yielded = False
 
     def fail_after_entry():
@@ -218,10 +476,14 @@ def test_midscan_failure_retains_current_directory_and_pending_subtrees(tmp_path
         nonlocal yielded
         yielded = True
 
-    monkeypatch.setattr(
-        os,
-        "scandir",
-        lambda path: HookedScan(real_scandir(path), fail_after_entry, mark_yielded),
+    hook_payload(
+        monkeypatch,
+        module,
+        lambda path, original: (
+            HookedScan(original(), fail_after_entry, mark_yielded)
+            if path == tmp_path
+            else original()
+        ),
     )
     result = module.scan(tmp_path)
     assert "root_access_denied" in result.errors
@@ -234,14 +496,13 @@ def test_failed_descent_retains_pending_paths_but_not_finished_root(tmp_path, mo
     children = (tmp_path / "first", tmp_path / "second")
     for child in children:
         child.mkdir()
-    real_scandir = os.scandir
 
-    def deny_descent(path):
+    def deny_descent(path, original):
         if path != tmp_path:
             raise PermissionError("child inaccessible")
-        return real_scandir(path)
+        return original()
 
-    monkeypatch.setattr(os, "scandir", deny_descent)
+    hook_payload(monkeypatch, module, deny_descent)
     result = module.scan(tmp_path)
     assert "root_access_denied" in result.errors
     assert set(result.exclusions) == {str(child) for child in children}
@@ -257,22 +518,35 @@ def test_fixed_total_cap_cannot_be_expanded_by_a_caller(tmp_path, monkeypatch):
     )
     (tmp_path / "file").touch()
     real_scandir = os.scandir
+    real_lstat = Path.lstat
+    info = (tmp_path / "file").lstat()
     consumed = 0
 
     class RepeatingScan(HookedScan):
         def __next__(self):
             nonlocal consumed
             consumed += 1
-            return self.entry
+            return SimpleNamespace(path=str(tmp_path / f"synthetic-{consumed}"))
 
     def repeated(path):
         result = RepeatingScan(real_scandir(path))
-        result.entry = next(result.iterator)
         return result
 
     monkeypatch.setattr(os, "scandir", repeated)
+    monkeypatch.setattr(
+        Path,
+        "lstat",
+        lambda path, *a, **k: (
+            info
+            if path.parent == tmp_path and path.name.startswith("synthetic-")
+            else real_lstat(path, *a, **k)
+        ),
+    )
     result = module.scan(tmp_path, module.MAX_ENTRIES + 1)
-    assert result.entry_count == consumed == module.MAX_ENTRIES
+    # The separate fixed work ceiling stops an endless baseline even when the
+    # caller requests a larger logical cap. No payload traversal was reached.
+    assert result.entry_count == 0
+    assert 0 < consumed < module.MAX_ENTRIES
     assert "scan_limit_reached" in result.errors
 
 
@@ -280,7 +554,6 @@ def test_remaining_budget_keeps_global_page_boundary(tmp_path, monkeypatch):
     module = scanner()
     (tmp_path / "first").touch()
     (tmp_path / "second").touch()
-    real_scandir = os.scandir
     real_lstat = Path.lstat
     changed = False
 
@@ -305,8 +578,10 @@ def test_remaining_budget_keeps_global_page_boundary(tmp_path, monkeypatch):
             )
         return info
 
-    monkeypatch.setattr(
-        os, "scandir", lambda path: HookedScan(real_scandir(path), after_entry=mutate)
+    hook_payload(
+        monkeypatch,
+        module,
+        lambda path, original: HookedScan(original(), after_entry=mutate),
     )
     monkeypatch.setattr(Path, "lstat", observed_lstat)
     # Earlier roots consumed 449 entries. The shared page ends after this one,
@@ -325,7 +600,6 @@ def test_pending_directory_change_is_rejected_before_descent(
     pending = tmp_path / "pending"
     pending.mkdir()
     (tmp_path / "trigger").touch()
-    real_scandir = os.scandir
     yielded = []
     changed = False
     descended = []
@@ -340,15 +614,13 @@ def test_pending_directory_change_is_rejected_before_descent(
             pending.mkdir()
         (pending / "hidden.db").touch()
 
-    def hooked(path):
+    def hooked(path, original):
         if path == tmp_path:
-            return HookedScan(
-                real_scandir(path), mutate, lambda entry: yielded.append(Path(entry.path))
-            )
+            return HookedScan(original(), mutate, lambda entry: yielded.append(Path(entry.path)))
         descended.append(path)
-        return real_scandir(path)
+        return original()
 
-    monkeypatch.setattr(os, "scandir", hooked)
+    hook_payload(monkeypatch, module, hooked)
     result = module.scan(tmp_path)
     assert changed
     assert pending not in descended
@@ -361,10 +633,9 @@ def test_already_scanned_directory_is_revalidated_at_end(tmp_path, monkeypatch, 
     module = scanner()
     for name in ("first", "second"):
         (tmp_path / name).mkdir()
-    real_scandir = os.scandir
     scanned = []
 
-    def hooked(path):
+    def hooked(path, original):
         if path != tmp_path:
             if scanned:
                 previous = scanned[0]
@@ -373,9 +644,9 @@ def test_already_scanned_directory_is_revalidated_at_end(tmp_path, monkeypatch, 
                     previous.mkdir()
                 (previous / "late.db").touch()
             scanned.append(path)
-        return real_scandir(path)
+        return original()
 
-    monkeypatch.setattr(os, "scandir", hooked)
+    hook_payload(monkeypatch, module, hooked)
     result = module.scan(tmp_path)
     assert len(scanned) == 2
     assert "directory_changed" in result.errors
@@ -436,17 +707,16 @@ def test_special_file_is_rejected_without_opening(tmp_path, monkeypatch):
 
 def test_missing_root_keeps_safe_parent_observations_without_creation(tmp_path):
     module = scanner()
-    observations = []
+    session = module._ScanSession()
     missing = tmp_path / "missing"
-    result = module.scan(missing, _observations=observations)
+    result = module.scan(missing, _session=session)
     assert result.missing
     assert result.errors == ()
     assert result.entry_count == 0
     assert not missing.exists()
-    module.revalidate(observations)
     missing.mkdir()
     with pytest.raises(ValueError, match="directory_changed"):
-        module.revalidate(observations)
+        module.revalidate(session)
 
 
 def test_unreadable_root_is_sanitized(tmp_path, monkeypatch):
@@ -498,7 +768,9 @@ def test_live_staging_uses_only_exact_enumerated_owned_metadata(tmp_path, monkey
     assert result.candidate_journals == result.state_artifacts == ()
 
 
-@pytest.mark.parametrize("invalid", ["name", "parent", "size", "kind"])
+@pytest.mark.parametrize(
+    "invalid", ["name", "parent", "size", "kind", "identity_domain", "parent_domain"]
+)
 def test_invalid_live_staging_metadata_fails_closed(tmp_path, invalid):
     module = scanner()
     stage = tmp_path / ("journal.db" if invalid == "name" else ".owned.staged")
@@ -515,6 +787,15 @@ def test_invalid_live_staging_metadata_fails_closed(tmp_path, invalid):
         live = replace(live, size=-1)
     elif invalid == "kind":
         live = replace(live, file_type="directory")
+    elif invalid in {"identity_domain", "parent_domain"}:
+        field = "identity" if invalid == "identity_domain" else "parent_identity"
+        identity = getattr(live, field)
+        wrong_domain = SimpleNamespace(
+            domain="win32_legacy_ntfs",
+            volume=identity.volume,
+            file_index=identity.file_index,
+        )
+        live = replace(live, **{field: wrong_domain})
     result = module.scan(tmp_path, _live_staging=(live,))
     assert "root_inspection_failed" in result.errors
 
@@ -526,21 +807,20 @@ def test_cross_root_observations_detect_later_nested_changes(tmp_path):
     nested.mkdir(parents=True)
     second = tmp_path / "second"
     second.mkdir()
-    observations = []
-    assert module.scan(first, _observations=observations).errors == ()
-    assert module.scan(second, _observations=observations).errors == ()
-    module.revalidate(observations)
+    session = module._ScanSession()
+    assert module.scan(first, _session=session).errors == ()
+    assert module.scan(second, _session=session).errors == ()
     (nested / "late.db").touch()
     with pytest.raises(ValueError, match="directory_changed"):
-        module.revalidate(observations)
+        module.revalidate(session)
 
 
 def test_result_retains_only_traversed_directory_identities(tmp_path):
     module = scanner()
     nested = tmp_path / "nested"
     nested.mkdir()
-    observations = []
-    result = module.scan(tmp_path, _observations=observations)
+    session = module._ScanSession()
+    result = module.scan(tmp_path, _session=session)
     assert result.directory_identities == tuple(
         (str(path), (path.stat().st_dev, path.stat().st_ino)) for path in sorted((tmp_path, nested))
     )
