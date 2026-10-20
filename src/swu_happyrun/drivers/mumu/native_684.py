@@ -17,7 +17,12 @@ from pathlib import Path
 from swu_happyrun.core.clock import Clock
 from swu_happyrun.core.models import GeoPoint
 from swu_happyrun.drivers.base import DriverError
-from swu_happyrun.drivers.command import ProbeError, _run_bounded_bytes, run_readonly
+from swu_happyrun.drivers.command import (
+    CaptureEvidence,
+    ProbeError,
+    _run_bounded_bytes,
+    run_readonly,
+)
 from swu_happyrun.drivers.mumu.binding import MumuBinding
 from swu_happyrun.drivers.mumu.commands_684 import MuMu684Commands
 
@@ -60,6 +65,7 @@ class MuMuNative684:
         binding_check: Callable[[], None],
         authorization_check: Callable[[], None],
         clock: Clock,
+        evidence: CaptureEvidence | None = None,
     ) -> None:
         if not isinstance(binding, MumuBinding) or binding.host_version != "6.8.4.0":
             raise DriverError("transport_version_unverified")
@@ -71,6 +77,7 @@ class MuMuNative684:
         self._binding = binding
         self._binding_check, self._authorization_check = binding_check, authorization_check
         self._clock = clock
+        self._evidence = evidence
         self._closed = threading.Event()
         self.last_delivery: CommandDelivery | None = None
         # API35 here selects the encoder; actual SDK is read before any write.
@@ -149,6 +156,7 @@ class MuMuNative684:
                 timeout=self._remaining(deadline, wall_deadline),
                 before_spawn=final_check,
                 cancel_event=self._closed,
+                **({"evidence": self._evidence} if self._evidence is not None else {}),
             )
         except ProbeError as exc:
             mapping = {
