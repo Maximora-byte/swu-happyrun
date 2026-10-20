@@ -102,3 +102,105 @@ def test_real_windows_known_folder_read_only():
     assert root.is_absolute()
     assert root.parts[-2:] == ("swu-happyrun", "control-v1")
     # Existence is intentionally not required; resolution must not initialize it.
+
+
+@pytest.mark.parametrize("operation", ["probe-point", "replay", "recover-stop"])
+@pytest.mark.parametrize("input_kind", ["missing", "nonregular"])
+def test_real_cli_execute_rejects_before_input_or_state_io(
+    operation, input_kind, tmp_path, monkeypatch, capsys
+):
+    import builtins
+    import os
+    import sqlite3
+
+    from swu_happyrun import cli
+    from swu_happyrun.drivers import command, identity
+    from swu_happyrun.drivers.mumu import virtual_replay
+
+    source = tmp_path / "input.json"
+    if input_kind == "nonregular":
+        if hasattr(os, "mkfifo"):
+            os.mkfifo(source)
+        else:
+            source.mkdir()
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("execute gate reached input or state I/O")
+
+    monkeypatch.setattr(virtual_replay, "read_private_json", forbidden)
+    monkeypatch.setattr(builtins, "open", forbidden)
+    monkeypatch.setattr(Path, "open", forbidden)
+    monkeypatch.setattr(os, "open", forbidden)
+    monkeypatch.setattr(Path, "mkdir", forbidden)
+    monkeypatch.setattr(sqlite3, "connect", forbidden)
+    monkeypatch.setattr(identity, "load_host_id", forbidden)
+    monkeypatch.setattr(command, "run_readonly", forbidden)
+    monkeypatch.setattr(command, "_run_bounded_bytes", forbidden)
+    if operation == "probe-point":
+        argv = [
+            "mumu",
+            operation,
+            "--instance",
+            "0",
+            "--point",
+            str(source),
+            "--execute-virtual-probe",
+        ]
+    else:
+        argv = ["mumu", "replay", "--instance", "0", "--execute-virtual-replay"]
+        argv += (
+            ["--recover-stop"]
+            if operation == "recover-stop"
+            else ["--route", str(source), "--speed-mps", "2", "--duration-seconds", "30"]
+        )
+    assert cli.main(argv) == 3
+    assert "enrollment_execution_not_ready" in capsys.readouterr().out
+
+
+def test_private_json_nonregular_rejected_before_open(tmp_path, monkeypatch):
+    import os
+
+    from swu_happyrun.drivers.mumu.virtual_replay import read_private_json
+
+    path = tmp_path / "nonregular"
+    if hasattr(os, "mkfifo"):
+        os.mkfifo(path)
+    else:
+        path.mkdir()
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("nonregular input opened")
+
+    monkeypatch.setattr(Path, "open", forbidden)
+    monkeypatch.setattr(os, "open", forbidden)
+    with pytest.raises(DriverError, match="replay_input_invalid"):
+        read_private_json(path)
+
+
+@pytest.mark.parametrize("operation", ["probe-point", "replay"])
+def test_real_cli_preview_rejects_nonregular_without_open(operation, tmp_path, monkeypatch, capsys):
+    import os
+
+    from swu_happyrun.cli import main
+
+    source = tmp_path / "input"
+    if hasattr(os, "mkfifo"):
+        os.mkfifo(source)
+    else:
+        source.mkdir()
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("preview opened nonregular input")
+
+    monkeypatch.setattr(os, "open", forbidden)
+    monkeypatch.setattr(Path, "open", forbidden)
+    argv = ["mumu", operation, "--instance", "0"]
+    argv += (
+        ["--point", str(source)]
+        if operation == "probe-point"
+        else ["--route", str(source), "--speed-mps", "2", "--duration-seconds", "30"]
+    )
+    assert main(argv) == 3
+    output = capsys.readouterr().out
+    assert "replay_input_invalid" in output
+    assert str(source) not in output

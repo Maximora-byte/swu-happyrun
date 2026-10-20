@@ -55,6 +55,15 @@ class RootInspection:
 
 
 @dataclass(frozen=True, repr=False)
+class DeclaredJournalInspection:
+    path: str
+    status: str
+    identity: tuple[int, int] | None = None
+    identity_domain: str = "python_stat"
+    errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, repr=False)
 class EnrollmentInspection:
     status: str
     reasons: tuple[str, ...]
@@ -67,6 +76,7 @@ class EnrollmentInspection:
     device_id: str | None = field(default=None, repr=False)
     runtime_state: str = "unverified"
     launch_allowed: bool = False
+    declared_journals: tuple[DeclaredJournalInspection, ...] = field(default=(), repr=False)
 
     def public_summary(self):
         return {
@@ -235,6 +245,41 @@ def _scan(root, budget=MAX_SCAN_ENTRIES):
     )
 
 
+def _journal_identity(path):
+    """Bounded header/identity observation, not SQLite integrity or state proof."""
+    before = _chain(path)
+    header = _read(path, 100, prefix=True)
+    if len(header) != 100 or header[:16] != b"SQLite format 3\x00" or header[18:20] != b"\x01\x01":
+        raise ValueError
+    page_size = int.from_bytes(header[16:18], "big")
+    page_size = 65536 if page_size == 1 else page_size
+    info = path.lstat()
+    if (
+        page_size < 512
+        or page_size > 65536
+        or page_size & (page_size - 1)
+        or info.st_size < page_size
+        or info.st_size % page_size
+        or header[21:24] != bytes((64, 32, 32))
+        or _chain(path) != before
+    ):
+        raise ValueError
+    return _identity(info)
+
+
+def _declared_journal(path):
+    try:
+        identity = _journal_identity(path)
+        return DeclaredJournalInspection(str(path), "present", identity)
+    except FileNotFoundError:
+        code, status = "declared_journal_missing", "missing"
+    except PermissionError:
+        code, status = "declared_journal_unreadable", "unreadable"
+    except (OSError, ValueError):
+        code, status = "declared_journal_invalid", "invalid"
+    return DeclaredJournalInspection(str(path), status, errors=(code,))
+
+
 def inspect_enrollment(
     scope: DiscoveryScope,
     *,
@@ -333,6 +378,28 @@ def inspect_enrollment(
     roots = tuple(collected)
     reasons.extend(error for root in roots for error in root.errors)
     journals = set(path for root in roots for path in root.candidate_journals)
+    # Historical arguments are evidence in their own right. Do not rely on
+    # extension-based discovery or let a selected valid journal hide another
+    # declared (missing, inaccessible, malformed or aliased) historical path.
+    declared_paths = tuple(dict.fromkeys(Path(path) for path in scope.journal_arguments))
+    if len(declared_paths) > MAX_SCAN_ROOTS:
+        reasons.append("declared_journal_limit_reached")
+        sources["unchecked_journal_arguments"] = tuple(
+            str(path) for path in declared_paths[MAX_SCAN_ROOTS:]
+        )
+    declarations = tuple(_declared_journal(path) for path in declared_paths[:MAX_SCAN_ROOTS])
+    reasons.extend(code for declaration in declarations for code in declaration.errors)
+    journals.update(item.path for item in declarations if item.status == "present")
+    identities = {}
+    for journal_path in sorted(journals):
+        try:
+            path = Path(journal_path)
+            identity = _chain(path)[-1][1]
+            if identity in identities and identities[identity] != journal_path:
+                reasons.append("journal_alias_unresolved")
+            identities[identity] = journal_path
+        except (OSError, ValueError):
+            reasons.append("journal_mapping_unverified")
     artifacts = set(path for root in roots for path in root.state_artifacts)
     if len(journals) > 1:
         reasons.append("multiple_journals")
@@ -345,27 +412,7 @@ def inspect_enrollment(
             journal = Path(selected)
             lock = journal.parent / f"device-{hashlib.sha256(product_id.encode()).hexdigest()}.lock"
             try:
-                header = _read(journal, 100, prefix=True)
-                if (
-                    len(header) != 100
-                    or header[:16] != b"SQLite format 3\x00"
-                    or header[18:20] != b"\x01\x01"
-                ):
-                    raise ValueError
-                # Header checks reject obvious truncation/corruption without
-                # claiming SQLite integrity or safe mutable runtime state.
-                page_size = int.from_bytes(header[16:18], "big")
-                page_size = 65536 if page_size == 1 else page_size
-                size = journal.stat().st_size
-                if (
-                    page_size < 512
-                    or page_size > 65536
-                    or page_size & (page_size - 1)
-                    or size < page_size
-                    or size % page_size
-                    or header[21:24] != bytes((64, 32, 32))
-                ):
-                    raise ValueError
+                _journal_identity(journal)
                 _chain(lock)
                 if not stat.S_ISREG(lock.lstat().st_mode) or lock.stat().st_size != 1:
                     raise ValueError
@@ -395,4 +442,5 @@ def inspect_enrollment(
         unchecked,
         host_value,
         product_id,
+        declared_journals=declarations,
     )

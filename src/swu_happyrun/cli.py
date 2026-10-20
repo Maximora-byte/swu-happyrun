@@ -158,7 +158,19 @@ def _mumu_probe_point(args):
 
     if not args.instance.isdecimal() or not 1 <= args.duration_ms <= 5000:
         raise UsageError("invalid point observation parameters")
-    point = GeoPoint.model_validate(read_private_json(args.point))
+    if args.execute_virtual_probe:
+        from swu_happyrun.drivers.mumu.enrollment import require_native_enrollment
+
+        try:
+            require_native_enrollment()
+        except DriverError as error:
+            _emit({"status": "blocked", "reason_code": error.reason_code, "record_verified": False})
+            return 3
+    try:
+        point = GeoPoint.model_validate(read_private_json(args.point))
+    except DriverError as error:
+        _emit({"status": "blocked", "reason_code": error.reason_code, "record_verified": False})
+        return 3
     if not args.execute_virtual_probe:
         _emit(
             {
@@ -190,12 +202,24 @@ def _mumu_replay(args):
 
     if not args.instance.isdecimal():
         raise UsageError("invalid instance")
+    if args.execute_virtual_replay:
+        from swu_happyrun.drivers.mumu.enrollment import require_native_enrollment
+
+        try:
+            require_native_enrollment()
+        except DriverError as error:
+            _emit({"status": "blocked", "reason_code": error.reason_code, "record_verified": False})
+            return 3
     clock = SystemClock()
     execution = None
     if not args.recover_stop:
         if args.route is None or args.speed_mps is None or args.duration_seconds is None:
             raise UsageError("explicit route, speed and duration are required")
-        route = RouteProfile.model_validate(read_private_json(args.route))
+        try:
+            route = RouteProfile.model_validate(read_private_json(args.route))
+        except DriverError as error:
+            _emit({"status": "blocked", "reason_code": error.reason_code, "record_verified": False})
+            return 3
         execution = RouteExecution.for_local_replay(
             route,
             speed_mps=args.speed_mps,

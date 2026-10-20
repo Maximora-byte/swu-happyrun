@@ -50,3 +50,27 @@ python -m pytest -q tests/agent/test_mumu_enrollment_gate.py tests/agent/test_mu
 尚未交付：受控首用事务、跨目录准入竞争、可变 SQLite 原锁接线、独立批准及 pin
 装载、真实配置到 PID 桥接、原机设备执行。schema1 单固定 receipt 的首轮单实例限制
 继续有效。第二批必须落实原机复核五项约束，不能凭本批静态成功开放执行。
+
+## Independent review follow-up
+
+The first Windows review found an oversized parametrized test name: pytest copies
+node IDs to `PYTEST_CURRENT_TEST`, and the unnamed 1 MiB input exceeded Windows'
+32767-character environment-value limit during setup and teardown. The fixture
+now has a short explicit ID and a node-ID length regression assertion. Its original
+1 MiB + 1 byte payload and `unknown` assertion remain unchanged. CI now emits
+verbose test names and a 60-second diagnostic traceback, with a 15-minute job
+ceiling. A traceback is diagnostic only, not a successful result or a test skip.
+
+Explicit historical `journal_arguments` are now individually read-only validated
+and recorded in a private declaration ledger regardless of filename suffix.
+Missing, inaccessible, invalid, aliased, competing or uninspected declarations
+keep the result `unknown`, even when the selected journal and lock are valid.
+Repeated declarations of the exact same path are deduplicated; unresolved
+same-file aliases are not silently discarded.
+
+The public `cli.main` execute paths for point/replay/recover-stop now encounter
+admission before reading point/route files, including missing or nonregular
+inputs. Offline previews remain available. Their input reader rejects nonregular
+files before opening and performs bounded reads with file/path identity rechecks;
+invalid input returns a sanitized blocked result. These changes do not issue an
+execution capability, initialize production state, or authorize device use.

@@ -425,12 +425,15 @@ class VirtualReplaySession:
 def read_private_json(path: Path):
     """Bounded, duplicate-key-rejecting local input; never follow source_ref."""
     from swu_happyrun.core.profiles import _unique_keys
+    from swu_happyrun.drivers.mumu.enrollment_inspection import _read
 
-    path = Path(path)
-    if path.is_symlink() or path.stat().st_size > 1_000_000:
-        raise DriverError("replay_input_invalid")
-    with path.open(encoding="utf-8") as handle:
-        return json.load(handle, object_pairs_hook=_unique_keys)
+    try:
+        # Shared bounded reader checks regular file/path identity before opening,
+        # uses nonblocking/no-follow flags where available, and rechecks after.
+        raw = _read(Path(path).absolute(), 1_000_000)
+        return json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_keys)
+    except (OSError, ValueError, UnicodeError, RecursionError) as error:
+        raise DriverError("replay_input_invalid") from error
 
 
 def _read_calibration(path, binding, clock):

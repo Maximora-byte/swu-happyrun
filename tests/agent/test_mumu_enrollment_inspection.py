@@ -310,3 +310,119 @@ def test_header_only_forgery_not_existing(setup):
     )
     (root / f"device-{hashlib.sha256(ident.encode()).hexdigest()}.lock").write_bytes(b"0")
     assert inspect(setup, expected_journal=journal).status == "unknown"
+
+
+@pytest.fixture
+def mapped_history(setup):
+    host, manager, root, scope = setup
+    journal = root / "agent.sqlite"
+    db = sqlite3.connect(journal)
+    db.execute("CREATE TABLE intents (id INT)")
+    db.close()
+    ident = device_id(
+        "mumu", f"{os.path.normcase(str(manager.resolve()))}:0", host_id=host.read_text().strip()
+    )
+    (root / f"device-{hashlib.sha256(ident.encode()).hexdigest()}.lock").write_bytes(b"0")
+    return journal
+
+
+@pytest.mark.parametrize("kind", ["second_db", "missing", "invalid", "hardlink", "directory"])
+def test_explicit_history_cannot_disappear_behind_expected(
+    setup, mapped_history, tmp_path, monkeypatch, kind
+):
+    from dataclasses import replace
+
+    other = setup[2] / "history.data"
+    if kind == "second_db":
+        db = sqlite3.connect(other)
+        db.execute("CREATE TABLE old_history (id INT)")
+        db.close()
+    elif kind == "invalid":
+        other.write_bytes(b"not a database")
+    elif kind == "hardlink":
+        os.link(mapped_history, other)
+    elif kind == "directory":
+        other.mkdir()
+    scope = replace(setup[3], journal_arguments=(other,))
+    before = snapshot(tmp_path)
+    from pathlib import Path
+
+    monkeypatch.setattr(Path, "mkdir", lambda *a, **k: pytest.fail("directory created"))
+    monkeypatch.setattr(sqlite3, "connect", lambda *a, **k: pytest.fail("SQLite opened"))
+    result = inspect_enrollment(
+        scope, manager=setup[1], instance_index="0", expected_journal=mapped_history
+    )
+    assert result.status == "unknown"
+    assert result.launch_allowed is False
+    assert snapshot(tmp_path) == before
+    assert len(result.declared_journals) == 1
+    assert result.declared_journals[0].path == str(other)
+    if kind == "missing":
+        assert "declared_journal_missing" in result.reasons
+    elif kind == "hardlink":
+        assert "journal_alias_unresolved" in result.reasons
+    elif kind == "second_db":
+        assert "multiple_journals" in result.reasons
+    else:
+        assert "declared_journal_invalid" in result.reasons
+
+
+def test_explicit_same_original_path_is_recorded_not_duplicate(setup, mapped_history):
+    from dataclasses import replace
+
+    scope = replace(setup[3], journal_arguments=(mapped_history, mapped_history))
+    result = inspect_enrollment(
+        scope, manager=setup[1], instance_index="0", expected_journal=mapped_history
+    )
+    assert result.status == "existing"
+    assert result.runtime_state == "unverified"
+    assert len(result.declared_journals) == 1
+    assert result.declared_journals[0].status == "present"
+
+
+def test_explicit_nonstandard_original_filename_is_inspected(setup, mapped_history):
+    from dataclasses import replace
+
+    other = mapped_history.with_name("history.data")
+    mapped_history.rename(other)
+    scope = replace(setup[3], journal_arguments=(other,))
+    result = inspect_enrollment(scope, manager=setup[1], instance_index="0", expected_journal=other)
+    assert result.status == "existing"
+    assert result.launch_allowed is False
+    assert result.declared_journals[0].status == "present"
+
+
+def test_declared_alias_is_not_followed(setup, mapped_history, symlink_or_skip):
+    from dataclasses import replace
+
+    other = setup[2] / "history.data"
+    symlink_or_skip(other, mapped_history)
+    scope = replace(setup[3], journal_arguments=(other,))
+    result = inspect_enrollment(
+        scope, manager=setup[1], instance_index="0", expected_journal=mapped_history
+    )
+    assert result.status == "unknown"
+    assert result.declared_journals[0].status == "invalid"
+
+
+def test_unreadable_declared_history_is_not_ignored(setup, mapped_history, monkeypatch):
+    from dataclasses import replace
+
+    other = setup[2] / "history.data"
+    other.write_bytes(mapped_history.read_bytes())
+    original_open = os.open
+
+    def denied(path, flags, *args, **kwargs):
+        if path == other:
+            raise PermissionError("private details")
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", denied)
+    scope = replace(setup[3], journal_arguments=(other,))
+    result = inspect_enrollment(
+        scope, manager=setup[1], instance_index="0", expected_journal=mapped_history
+    )
+    assert result.status == "unknown"
+    assert result.declared_journals[0].status == "unreadable"
+    assert "declared_journal_unreadable" in result.reasons
+    assert "private details" not in str(result.public_summary())
