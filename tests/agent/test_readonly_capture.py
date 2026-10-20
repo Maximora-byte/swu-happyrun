@@ -212,8 +212,21 @@ def test_unreaped_child_with_closed_pipes_blocks_new_capture(monkeypatch, delay_
     assert child("print('recovered')") == "recovered\n"
 
 
-def test_interrupted_cleanup_releases_lock_but_retains_live_child(monkeypatch):
+@pytest.mark.parametrize("delay_reader_exit", [False, True])
+def test_interrupted_cleanup_releases_lock_but_retains_live_child(monkeypatch, delay_reader_exit):
+    from threading import Event
+
     from swu_happyrun.drivers import command
+
+    release_readers = Event()
+    original_reader = command._read_pipe
+    if delay_reader_exit:
+
+        def delayed_reader(*args):
+            original_reader(*args)
+            release_readers.wait(timeout=5)
+
+        monkeypatch.setattr(command, "_read_pipe", delayed_reader)
 
     original = command.subprocess.Popen
     processes = []
@@ -236,8 +249,22 @@ def test_interrupted_cleanup_releases_lock_but_retains_live_child(monkeypatch):
             child("print('must-not-launch')")
         assert len(processes) == 1
     finally:
-        for process in processes:
-            process.wait(timeout=5)
+        try:
+            for process in processes:
+                process.wait(timeout=5)
+            if delay_reader_exit:
+                with pytest.raises(ProbeError, match="command_cleanup_unconfirmed"):
+                    child("print('must-not-launch-before-reader-exit')")
+                assert len(processes) == 1
+        finally:
+            release_readers.set()
+            pending = command._PENDING_CAPTURE
+            assert pending is not None and pending[0] is processes[0]
+            deadline = time.monotonic() + 5
+            for thread, _pipe, done in pending[1]:
+                thread.join(timeout=max(0, deadline - time.monotonic()))
+                assert done.is_set() and not thread.is_alive()
+    monkeypatch.setattr(command, "_read_pipe", original_reader)
     assert child("print('recovered')") == "recovered\n"
 
 
@@ -365,3 +392,10 @@ def test_thread_start_interruption_retains_started_reader(monkeypatch):
     finally:
         for process in process_holder:
             process.wait(timeout=5)
+        # Do not leave the owned reader alive for a later test's capture.
+        pending = command._PENDING_CAPTURE
+        assert pending is not None and pending[0] is process_holder[0]
+        deadline = time.monotonic() + 5
+        for thread, _pipe, done in pending[1]:
+            thread.join(timeout=max(0, deadline - time.monotonic()))
+            assert done.is_set() and not thread.is_alive()
