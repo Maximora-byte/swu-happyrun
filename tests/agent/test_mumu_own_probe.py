@@ -506,3 +506,32 @@ def test_private_cleanup_interruption_latches_recovery(bridge, monkeypatch, inte
     with pytest.raises(ProbeError, match="observation_recovery_required"):
         probe.sample("location", duration_ms=10)
     assert len(calls) == count
+
+
+def test_private_envelope_preserves_correlation_without_public_changes(bridge):
+    probe, calls, _ = bridge
+    assert hasattr(probe, "sample_private")
+    result = probe.sample_private("location", duration_ms=10)
+    assert result.nonce == probe._test_nonce
+    assert result.binding_digest == "a" * 64
+    assert result.boot_id == "synthetic-boot"
+    assert result.window_start_ns == 10**12
+    assert result.window_end_ns == 10**12 + 10_000_000
+    assert result.samples[0].accuracy == 3.5
+    assert "synthetic-boot" not in repr(result)
+    assert sum("instrument" in c for c in calls) == 1
+
+
+def test_private_envelope_is_not_returned_after_cleanup_failure(bridge, monkeypatch):
+    probe, _, _ = bridge
+    assert hasattr(probe, "sample_private")
+    original = probe._command
+
+    def command(args, *, timeout):
+        if "rm" in args:
+            raise ProbeError("command_failed")
+        return original(args, timeout=timeout)
+
+    monkeypatch.setattr(probe, "_command", command)
+    with pytest.raises(ProbeError, match="private_cleanup_unconfirmed"):
+        probe.sample_private("location", duration_ms=10)

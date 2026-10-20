@@ -42,6 +42,20 @@ class OwnSample:
     accuracy: float | int
 
 
+@dataclass(frozen=True, repr=False)
+class OwnObservation:
+    """Validated private envelope; never a public report or execution authority."""
+
+    nonce: str
+    binding_digest: str
+    boot_id: str
+    channel: Channel
+    duration_ms: int
+    window_start_ns: int
+    window_end_ns: int
+    samples: tuple[OwnSample, ...]
+
+
 class OwnProbe:
     capabilities: tuple = ()
 
@@ -63,6 +77,10 @@ class OwnProbe:
         self._authorization_check()
 
     def sample(self, channel: Channel, *, duration_ms: int) -> tuple[OwnSample, ...]:
+        return self.sample_private(channel, duration_ms=duration_ms).samples
+
+    def sample_private(self, channel: Channel, *, duration_ms: int) -> OwnObservation:
+        """One existing bounded window, retaining its validated private correlation."""
         if self._binding.package != _PACKAGE:
             raise ProbeError("own_target_required")
         if channel not in ("location", "gravity"):
@@ -130,7 +148,7 @@ class OwnProbe:
                 raw = self._command(
                     ("exec-out", "run-as", _PACKAGE, "cat", private_file), timeout=5
                 )
-                samples = self._decode(raw, nonce, channel, duration_ms)
+                observation = self._decode_private(raw, nonce, channel, duration_ms)
                 self._guard()
             except BaseException as error:
                 primary_code = (
@@ -157,11 +175,14 @@ class OwnProbe:
                     raise ProbeError(
                         "private_cleanup_unconfirmed", primary_code=primary_code
                     ) from None
-            return samples
+            return observation
         finally:
             self._lock.release()
 
     def _decode(self, raw: bytes, nonce: str, channel: Channel, duration_ms: int):
+        return self._decode_private(raw, nonce, channel, duration_ms).samples
+
+    def _decode_private(self, raw: bytes, nonce: str, channel: Channel, duration_ms: int):
         def unique(pairs):
             result = {}
             for key, value in pairs:
@@ -268,7 +289,16 @@ class OwnProbe:
                 raise ProbeError("observation_sample_invalid")
             result.append(OwnSample(tuple(float(v) for v in points), ts, channel, accuracy))
             previous = ts
-        return tuple(result)
+        return OwnObservation(
+            nonce,
+            report["binding_digest"],
+            report["boot_id"],
+            channel,
+            duration_ms,
+            start,
+            end,
+            tuple(result),
+        )
 
     @staticmethod
     def public_report(channel: Channel, samples: tuple[OwnSample, ...]) -> dict:
