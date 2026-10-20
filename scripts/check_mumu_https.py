@@ -353,6 +353,9 @@ def verify_public_bundle(args):
         apksigner=args.apksigner,
         apkanalyzer=args.apkanalyzer,
         aapt2=args.aapt2,
+        source_root=getattr(args, "source_root", None),
+        expected_source_commit=getattr(args, "expected_source_commit", None),
+        expected_source_tree=getattr(args, "expected_source_tree", None),
     )
 
 
@@ -367,6 +370,9 @@ def main(argv=None):
     parser.add_argument("--apksigner", default="apksigner")
     parser.add_argument("--apkanalyzer", default="apkanalyzer")
     parser.add_argument("--aapt2", default="aapt2")
+    parser.add_argument("--source-root", type=Path)
+    parser.add_argument("--expected-source-commit")
+    parser.add_argument("--expected-source-tree")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--execute-own-app-simulation", action="store_true")
     parser.add_argument("--allow-own-package-force-stop", action="store_true")
