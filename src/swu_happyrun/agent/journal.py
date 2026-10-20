@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 import sqlite3
+import stat
+import weakref
 from contextlib import contextmanager
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -66,6 +68,44 @@ class RunJournal:
             event_id TEXT NOT NULL, PRIMARY KEY(job_id, fence, revision))""")
         self._db.commit()
 
+    @classmethod
+    @contextmanager
+    def lock_existing(cls, path: Path, device_id: str):
+        """Hold the original device OS lock before a possible RW SQLite open.
+
+        This is storage exclusion, NOT authority to initialize or run a device.
+        The MuMu caller must hold its independent account admission lock first.
+        No directory, lock, database, or reservation is created here.
+        """
+        token = _ExistingDeviceLock(path, device_id)
+        with token.hold():
+            yield token
+
+    @classmethod
+    @contextmanager
+    def open_existing_locked(cls, token, *, approval_check=None):
+        """Open once under a live original lock; never lock its byte twice."""
+        if type(token) is not _ExistingDeviceLock or token not in _ACTIVE_ORIGINAL_LOCKS:
+            raise UnsafeReplay("original_lock_required")
+        if approval_check is not None:
+            approval_check()
+        token.validate()
+        if token.opened:
+            raise UnsafeReplay("original_lock_already_used")
+        token.opened = True
+        journal = cls(token.path, existing_only=True)
+        token.journal = journal
+        journal._approval_check = approval_check
+        journal._preopen_token = token
+        journal._device_owners[token.device_id] = token
+        try:
+            token.validate()
+            yield journal
+        finally:
+            journal.close()
+            journal._device_owners.clear()
+            journal._replay_reservations.clear()
+
     def __enter__(self):
         return self
 
@@ -77,6 +117,12 @@ class RunJournal:
             self._db.close()
 
     def _require_database(self):
+        approval_check = getattr(self, "_approval_check", None)
+        if approval_check is not None:
+            approval_check()
+        token = getattr(self, "_preopen_token", None)
+        if token is not None:
+            token.validate(check_marker=False)
         if self._read_only:
             raise UnsafeReplay("original_lock_inspection_only")
 
@@ -336,6 +382,7 @@ class RunJournal:
         permit.marker = value
 
     def _write_reservation(self, device_id, value):
+        self._require_database()
         if self._read_only:
             raise UnsafeReplay("original_journal_read_only")
         path = self._reservation_path(device_id)
@@ -364,3 +411,191 @@ class _ReplayReservation:
         self.device_id = device_id
         self.marker = marker
         self.recovery_only = recovery_only
+
+
+_ACTIVE_ORIGINAL_LOCKS = weakref.WeakSet()
+
+
+def _original_chain(path, *, directory=False):
+    """Snapshot same-domain identities without resolving away a symlink."""
+    path = Path(path)
+    if not path.is_absolute() or ".." in path.parts:
+        raise UnsafeReplay("original_path_invalid")
+    result = []
+    try:
+        for item in (*reversed(path.parents), path):
+            info = item.lstat()
+            expected = stat.S_ISDIR if item != path or directory else stat.S_ISREG
+            if (
+                not expected(info.st_mode)
+                or getattr(info, "st_file_attributes", 0) & 0x400
+                or (item == path and not directory and info.st_nlink != 1)
+            ):
+                raise UnsafeReplay("original_path_invalid")
+            result.append((str(item), info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode)))
+    except OSError:
+        raise UnsafeReplay("original_path_unavailable") from None
+    return tuple(result)
+
+
+def _original_read(path, limit):
+    chain = _original_chain(path)
+    descriptor = None
+    try:
+        descriptor = os.open(
+            path,
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_BINARY", 0),
+        )
+        info = os.fstat(descriptor)
+        if (info.st_dev, info.st_ino) != chain[-1][1:3] or info.st_size > limit:
+            raise UnsafeReplay("original_file_invalid")
+        data = os.read(descriptor, limit + 1)
+        if len(data) > limit or _original_chain(path) != chain:
+            raise UnsafeReplay("original_file_changed")
+        return data
+    except OSError:
+        raise UnsafeReplay("original_file_unavailable") from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+class _ExistingDeviceLock:
+    """Only registered live instances can be used; never serialize this object."""
+
+    def __init__(self, path, device_id):
+        if not isinstance(device_id, str) or not device_id or len(device_id) > 256:
+            raise UnsafeReplay("original_device_invalid")
+        self.path = Path(path).absolute()
+        self.device_id = device_id
+        digest = hashlib.sha256(device_id.encode()).hexdigest()
+        self.lock_path = self.path.parent / f"device-{digest}.lock"
+        self.marker_path = self.path.parent / f"replay-{digest}.json"
+        self.journal_chain = _original_chain(self.path)
+        self.lock_chain = _original_chain(self.lock_path)
+        self.fd = None
+        self.opened = False
+        self.journal = None
+
+    def _marker(self):
+        try:
+            self.marker_path.lstat()
+        except FileNotFoundError:
+            return
+        except OSError:
+            raise UnsafeReplay("replay_journal_invalid") from None
+        data = _original_read(self.marker_path, 4096)
+
+        # Reuse the schema parser without reopening the file: the private
+        # temporary inspector has no database or mutable storage privileges.
+        def unique(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError
+                value[key] = item
+            return value
+
+        try:
+            value = json.loads(data.decode("utf-8"), object_pairs_hook=unique)
+            if (
+                type(value) is not dict
+                or set(value)
+                != {
+                    "schema",
+                    "owner",
+                    "device_digest",
+                    "session_id",
+                    "status",
+                    "generation",
+                    "probe_pending",
+                }
+                or type(value["schema"]) is not int
+                or value["schema"] != 1
+                or value["owner"] != "local_virtual_replay"
+                or value["device_digest"] != hashlib.sha256(self.device_id.encode()).hexdigest()
+                or value["status"] not in {"active", "stopped", "uncertain"}
+                or not isinstance(value["session_id"], str)
+                or str(UUID(value["session_id"])) != value["session_id"]
+                or type(value["generation"]) is not int
+                or value["generation"] < 1
+                or type(value["probe_pending"]) is not bool
+                or (value["status"] == "stopped" and value["probe_pending"])
+            ):
+                raise ValueError
+        except (ValueError, TypeError, KeyError, AttributeError):
+            raise UnsafeReplay("replay_journal_invalid") from None
+        if value["status"] != "stopped":
+            raise UnsafeReplay("replay_recovery_requires_stop")
+
+    def validate(self, *, check_marker=True):
+        if self not in _ACTIVE_ORIGINAL_LOCKS or self.fd is None:
+            raise UnsafeReplay("original_lock_required")
+        try:
+            info = os.fstat(self.fd)
+            if (
+                (info.st_dev, info.st_ino) != self.lock_chain[-1][1:3]
+                or info.st_size != 1
+                or _original_chain(self.path) != self.journal_chain
+                or _original_chain(self.lock_path) != self.lock_chain
+            ):
+                raise UnsafeReplay("original_path_changed")
+        except OSError:
+            raise UnsafeReplay("original_lock_unavailable") from None
+        if check_marker:
+            self._marker()
+
+    @contextmanager
+    def hold(self):
+        locked = False
+        try:
+            self.fd = os.open(
+                self.lock_path,
+                os.O_RDWR
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_NONBLOCK", 0)
+                | getattr(os, "O_BINARY", 0),
+            )
+            info = os.fstat(self.fd)
+            if (info.st_dev, info.st_ino) != self.lock_chain[-1][1:3] or info.st_size != 1:
+                raise UnsafeReplay("original_lock_invalid")
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(self.fd, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            locked = True
+            _ACTIVE_ORIGINAL_LOCKS.add(self)
+            self.validate()
+            yield self
+        except OSError:
+            raise UnsafeReplay("original_lock_unavailable") from None
+        finally:
+            try:
+                if self.journal is not None:
+                    self.journal.close()
+                    self.journal._device_owners.clear()
+                    self.journal._replay_reservations.clear()
+            finally:
+                _ACTIVE_ORIGINAL_LOCKS.discard(self)
+                if self.fd is not None:
+                    try:
+                        if locked:
+                            if os.name == "nt":
+                                import msvcrt
+
+                                os.lseek(self.fd, 0, os.SEEK_SET)
+                                msvcrt.locking(self.fd, msvcrt.LK_UNLCK, 1)
+                            else:
+                                import fcntl
+
+                                fcntl.flock(self.fd, fcntl.LOCK_UN)
+                    finally:
+                        os.close(self.fd)
+                        self.fd = None

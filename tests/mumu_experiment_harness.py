@@ -21,6 +21,23 @@ from swu_happyrun.drivers.mumu.point_evidence import PointObservation
 
 
 @contextmanager
+def _locked_journal(registration, *, existing_only=False):
+    journal = RunJournal(registration.journal, existing_only=existing_only)
+    close_attempted = False
+    try:
+        with journal.device_lock(registration.device_id):
+            try:
+                yield journal
+            finally:
+                # Close SQLite while the original exclusion is still held.
+                close_attempted = True
+                journal.close()
+    finally:
+        if not close_attempted:  # Lock acquisition itself may have failed.
+            journal.close()
+
+
+@contextmanager
 def _original_journal(registration):
     # Internal synthetic adapters retain their existing interface; a real loader
     # snapshot uses only the original files and holds path guards through cleanup.
@@ -31,10 +48,10 @@ def _original_journal(registration):
 
     if isinstance(registration, OriginalRegistration):
         with original_paths(registration):
-            with RunJournal(registration.journal, existing_only=True) as journal:
+            with _locked_journal(registration, existing_only=True) as journal:
                 yield journal
     else:
-        with RunJournal(registration.journal) as journal:
+        with _locked_journal(registration) as journal:
             yield journal
 
 
@@ -45,7 +62,36 @@ def _recheck_original(registration):
         registration.revalidate()
 
 
-def run_synthetic_experiment(registration, *, adapter, store, clock):
+class _ProducerApprovalClosed(RuntimeError):
+    """Synthetic producer rejection, never a production permission decision."""
+
+
+class _SyntheticProducerGate:
+    def __init__(self, current_approval):
+        self._current_approval = current_approval
+        self._closed = False
+
+    def close(self):
+        self._closed = True
+
+    def require(self):
+        if self._closed:
+            raise _ProducerApprovalClosed
+        try:
+            approved = self._current_approval is None or self._current_approval() is True
+        except BaseException:
+            self.close()
+            raise
+        if not approved:
+            self.close()
+            raise _ProducerApprovalClosed
+
+
+class _ShutdownBudgetExpired(TimeoutError):
+    """The one cleanup deadline has no remaining budget."""
+
+
+def run_synthetic_experiment(registration, *, adapter, store, clock, current_approval=None):
     """Run an internal trusted adapter exactly once, retaining unresolved exclusion.
 
     adapter launch/prepare must be bounded and cancellation-aware. prepare verifies
@@ -54,6 +100,13 @@ def run_synthetic_experiment(registration, *, adapter, store, clock):
     observe_point uses OwnProbe location 1000ms/128 samples. Production discovery,
     and process attribution are not installed. Windows ACL support is implemented
     but awaits independent native Windows validation.
+
+    current_approval is an optional TEST-ONLY, no-argument callback returning
+    exactly True. Rejection/error irreversibly closes this invocation's producer
+    gate; the retained reservation prevents a fresh invocation from restarting.
+    It is checked immediately before each producer boundary, never for cleanup.
+    It cannot preempt an in-flight adapter, observe a transient approval change
+    between checks, or establish production approval/cleanup authority.
     """
     report = {
         "status": "needs_attention",
@@ -61,6 +114,7 @@ def run_synthetic_experiment(registration, *, adapter, store, clock):
         "observation_status": "not_attempted",
         "sample_count": 0,
         "shutdown_status": "shutdown_not_attempted",
+        "shutdown_attempted": False,
         "shutdown_reason": "not_started",
         "stop_status": "stop_unconfirmed",
         "replay_enabled": False,
@@ -85,10 +139,11 @@ def run_synthetic_experiment(registration, *, adapter, store, clock):
     started = False
     storage_reliable = True
     session = str(uuid4())
+    producer_gate = _SyntheticProducerGate(current_approval)
     try:
+        # Held before preflight/launch through cleanup, result and journal close.
         with _original_journal(registration) as journal:
-            # Crucially before preflight/launch, and held through all cleanup.
-            with journal.device_lock(registration.device_id):
+            try:
                 _recheck_original(registration)
                 if adapter.check_stopped_registration(registration) is not True:
                     report["primary_error"] = "registration_invalid"
@@ -98,8 +153,10 @@ def run_synthetic_experiment(registration, *, adapter, store, clock):
                 store.claim_intent("launch")
                 try:
                     _recheck_original(registration)
+                    producer_gate.require()
                     started = True  # An exception may mean launch already happened.
                     adapter.launch()
+                    producer_gate.require()
                     adapter.prepare()
                     try:
                         store.claim_intent("location")
@@ -107,6 +164,7 @@ def run_synthetic_experiment(registration, *, adapter, store, clock):
                         storage_reliable = False
                         report["evidence_error"] = "location_intent_failed"
                         raise
+                    producer_gate.require()
                     capture = adapter.capture_point()
                     report["command_status"] = (
                         capture.status if capture.status in _WRITE_CODES else "write_capture_failed"
@@ -120,6 +178,7 @@ def run_synthetic_experiment(registration, *, adapter, store, clock):
                         report["evidence_error"] = "private_evidence_failed"
                         raise
                     if capture.status == "write_ack_unconfirmed" and capture.complete is True:
+                        producer_gate.require()
                         report["observation_status"] = "observation_failed"
                         try:
                             observation = adapter.observe_point(duration_ms=1000, max_samples=128)
@@ -151,8 +210,13 @@ def run_synthetic_experiment(registration, *, adapter, store, clock):
                         report["sample_count"] = observation.sample_count
                         report["observation_status"] = observation.observation_status
                 except BaseException as error:
-                    report["primary_error"] = _error(error)
+                    report["primary_error"] = (
+                        "producer_approval_closed"
+                        if isinstance(error, _ProducerApprovalClosed)
+                        else _error(error)
+                    )
                 finally:
+                    producer_gate.close()
                     if started:
                         _close_experiment(adapter, store, clock, report, storage_reliable)
                     # Never record a successful native stop or clear reservation.
@@ -160,12 +224,35 @@ def run_synthetic_experiment(registration, *, adapter, store, clock):
                         journal.record_result(session, 1, "start", "uncertain")
                     except BaseException:
                         report["journal_error"] = "journal_result_failed"
+            finally:
+                producer_gate.close()
     except BaseException as error:
         report["primary_error"] = report["primary_error"] or _error(error)
+    finally:
+        if "shutdown_started_monotonic" in report:
+            # Final journal persistence/close also consumes the original budget.
+            _record_shutdown_finished(
+                clock, report, deadline=report["shutdown_started_monotonic"] + 45.0
+            )
     return report
 
 
+def _record_shutdown_finished(clock, report, *, deadline):
+    report["shutdown_finished_monotonic"] = clock.monotonic()
+    if report["shutdown_finished_monotonic"] > deadline:
+        report["shutdown_reason"] = "shutdown_budget_expired"
+        if report["shutdown_attempted"]:
+            report["shutdown_status"] = "shutdown_unknown"
+
+
 def _close_experiment(adapter, store, clock, report, storage_reliable):
+    """Synthetic bounded cleanup, independent of the current producer approval.
+
+    All timed adapters receive one absolute deadline. seal and storage have no
+    timeout API: elapsed time is charged and overruns become unknown/unconfirmed,
+    but Python cannot forcibly interrupt these operations or guarantee hard
+    real-time completion. No production cleanup capability is installed here.
+    """
     from dataclasses import asdict
 
     began = clock.monotonic()
@@ -175,7 +262,7 @@ def _close_experiment(adapter, store, clock, report, storage_reliable):
     def remaining(limit):
         value = min(limit, deadline - clock.monotonic())
         if value <= 0:
-            raise TimeoutError
+            raise _ShutdownBudgetExpired
         return value
 
     try:
@@ -191,16 +278,19 @@ def _close_experiment(adapter, store, clock, report, storage_reliable):
         if adapter.verify_shutdown_identity(timeout=remaining(1), deadline=deadline) is not True:
             report["shutdown_reason"] = "target_identity_unverified"
             return
+        remaining(5)
         try:
             store.claim_intent("shutdown")
         except BaseException as error:
             report["shutdown_error"] = _error(error)
             report["shutdown_reason"] = "shutdown_intent_failed"
             return
-        remaining(5)
+        shutdown_timeout = remaining(5)
+        report["shutdown_attempted"] = True
         report["shutdown_status"] = "shutdown_unknown"
         report["shutdown_reason"] = "shutdown_attempted"
-        adapter.shutdown(timeout=remaining(5), deadline=deadline)
+        adapter.shutdown(timeout=shutdown_timeout, deadline=deadline)
+        remaining(1)
         observation = observe_shutdown(adapter, clock=clock, deadline=deadline)
         # Persistence time is part of the SAME absolute 45 second budget.
         try:
@@ -213,8 +303,10 @@ def _close_experiment(adapter, store, clock, report, storage_reliable):
             report["shutdown_status"] = observation.status
         else:
             report["shutdown_reason"] = "shutdown_budget_expired"
+    except _ShutdownBudgetExpired:
+        report["shutdown_reason"] = "shutdown_budget_expired"
     except BaseException as error:
         report["shutdown_error"] = _error(error)
         report["shutdown_reason"] = "shutdown_interrupted_or_failed"
     finally:
-        report["shutdown_finished_monotonic"] = clock.monotonic()
+        _record_shutdown_finished(clock, report, deadline=deadline)

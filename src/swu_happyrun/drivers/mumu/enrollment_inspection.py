@@ -155,7 +155,7 @@ def read_existing_host_id() -> str:
     return value
 
 
-def _scan(root, budget=MAX_SCAN_ENTRIES):
+def _scan(root, budget=MAX_SCAN_ENTRIES, *, _live_staging=()):
     journals, artifacts, errors, exclusions = [], [], [], []
     entries = files = 0
     identity = None
@@ -186,6 +186,26 @@ def _scan(root, budget=MAX_SCAN_ENTRIES):
                     for entry in iterator:
                         entries += 1
                         path = Path(entry.path)
+                        live = next((item for item in _live_staging if item.path == path), None)
+                        if live is not None:
+                            # Internal transaction-only metadata from the exact
+                            # still-owned CREATE_NEW share=0 handle. The name must
+                            # actually be enumerated; never exempt a journal or
+                            # other arbitrary caller-named file from inspection.
+                            if (
+                                not path.name.startswith(".")
+                                or not path.name.endswith(".staged")
+                                or live.file_type != "regular"
+                                or live.size < 0
+                                or (live.parent_identity.volume, live.parent_identity.file_index)
+                                != directory_before[-1][1]
+                            ):
+                                raise ValueError("live_staging_invalid")
+                            files += 1
+                            if entries >= budget:
+                                errors.append("scan_limit_reached")
+                                break
+                            continue
                         info = entry.stat(follow_symlinks=False)
                         if stat.S_ISLNK(info.st_mode) or (
                             getattr(info, "st_file_attributes", 0) & 0x400
@@ -286,6 +306,7 @@ def inspect_enrollment(
     manager: Path,
     instance_index: str,
     expected_journal: Path | None = None,
+    _live_staging: tuple = (),
 ) -> EnrollmentInspection:
     """Inspect a declared scope; no result grants initialization or execution.
 
@@ -372,7 +393,11 @@ def inspect_enrollment(
                 )
             )
             continue
-        observation = _scan(root, budget)
+        observation = (
+            _scan(root, budget, _live_staging=_live_staging)
+            if _live_staging
+            else _scan(root, budget)
+        )
         budget -= observation.entry_count
         collected.append(observation)
     roots = tuple(collected)

@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   contracts-and-diagnostics:
-    timeout-minutes: 15
+    # Native filesystem validation makes the Windows full suite substantially
+    # slower. Keep a finite job budget; product operation deadlines are unchanged.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 30 || 15 }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,7 +31,12 @@ jobs:
       - run: uv sync --extra server --extra agent --extra dev --frozen
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
-      - run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20
+      - name: Full Python suite on Linux
+        if: runner.os != 'Windows'
+        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20
+      - name: Windows Python suite except separately tested pin pipeline
+        if: runner.os == 'Windows'
+        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 --ignore=tests/agent/test_enrollment_review_pin.py
       - run: uv run --no-sync python scripts/export_schema.py --check
       - run: uv build
       - run: uv run --no-sync python scripts/check_distribution_privacy.py
@@ -48,6 +55,33 @@ jobs:
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 7
+
+  windows-review-pin:
+    # Exhaustive partition: this exact file is excluded only from Windows main
+    # above; Linux still runs everything. No native QA opt-in is enabled here.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+        group: [boundaries, remaining]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.12.19"
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - run: uv sync --extra server --extra agent --extra dev --frozen
+      - name: Pin authority and lock boundaries
+        if: matrix.group == 'boundaries'
+        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 tests/agent/test_enrollment_review_pin.py -k "test_authority_at_each_pin_mutation_stops_immediately or test_publish_failure_retains_pin_attempt_without_repair or test_lock_conflict_has_zero_sqlite_storage_mkdir_or_native or test_original_device_byte_uses_owner_fd_no_second_handle or test_issue_and_read_pin_readonly_never_ready"
+      - name: All remaining pin cases
+        if: matrix.group == 'remaining'
+        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 tests/agent/test_enrollment_review_pin.py -k "not (test_authority_at_each_pin_mutation_stops_immediately or test_publish_failure_retains_pin_attempt_without_repair or test_lock_conflict_has_zero_sqlite_storage_mkdir_or_native or test_original_device_byte_uses_owner_fd_no_second_handle or test_issue_and_read_pin_readonly_never_ready)"
 
   console-browser-qa:
     runs-on: ubuntu-latest
