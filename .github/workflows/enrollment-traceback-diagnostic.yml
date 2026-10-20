@@ -1,0 +1,36 @@
+name: enrollment-traceback-diagnostic
+
+on:
+  push:
+    branches: [dot/enrollment-traceback-diagnostic]
+
+permissions:
+  contents: read
+
+jobs:
+  reporter-comparison:
+    # One fresh process per arm, no retries, no native QA, no product changes.
+    # A passing arm does not prove the intermittent crash's root cause.
+    runs-on: windows-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        reporter: [async, python-thread]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+        with:
+          version: "0.12.19"
+          python-version: "3.11.9"
+          enable-cache: true
+      - run: uv sync --extra server --extra agent --extra dev --frozen
+      - name: Confirm exact interpreter and commit
+        run: |
+          git rev-parse HEAD
+          uv run --no-sync python -VV
+          uv run --no-sync python -c "import sys; assert sys.version_info[:3] == (3, 11, 9)"
+      - name: Run one fixed node with selected reporter
+        run: uv run --no-sync python -m diagnostics.traceback_probe ${{ matrix.reporter }}
