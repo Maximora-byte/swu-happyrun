@@ -150,18 +150,13 @@ class PrivateEvidenceStore:
             with windows_private.verified_directory(self.root, self._identity) as (api, sid, _):
                 path = self.root / name
                 try:
-                    fd = os.open(
-                        path,
-                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
-                        0o600,
-                    )
+                    fd = api.create_private_file(path, sid)
                 except FileExistsError:
                     raise PrivateEvidenceError(exists_code) from None
                 if not stat.S_ISREG(os.fstat(fd).st_mode):
                     raise PrivateEvidenceError("private_file_invalid")
-                # Inherit only the already-verified protected current-user DACL.
-                # Verify the resulting file ACL before writing any private bytes.
-                windows_private.validate_sddl(api.security(path), sid, protected=False)
+                # Native CREATE_NEW set explicit current-user owner/protected DACL
+                # and verified that same handle before transferring ownership here.
                 view = memoryview(data)
                 while view:
                     written = os.write(fd, view)

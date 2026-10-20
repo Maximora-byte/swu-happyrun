@@ -2,6 +2,8 @@
 
 Reference APIs and SDDL grammar:
 https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getnamedsecurityinfow
+https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo
+https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/open-osfhandle
 https://learn.microsoft.com/en-us/windows/win32/secauthz/security-descriptor-string-format
 https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-getsecuritydescriptorowner
 https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-getace
@@ -78,6 +80,8 @@ class _WinAPI:
         self._bind(self.kernel, "CloseHandle", [wt.HANDLE], wt.BOOL)
         self._bind(self.kernel, "LocalFree", [P], P)
         self._bind(self.kernel, "GetFileAttributesW", [wt.LPCWSTR], wt.DWORD)
+        self._bind(self.kernel, "GetFileType", [wt.HANDLE], wt.DWORD)
+        self._bind(self.kernel, "GetFileInformationByHandle", [wt.HANDLE, P], wt.BOOL)
         self._bind(self.kernel, "CreateDirectoryW", [wt.LPCWSTR, P], wt.BOOL)
         self._bind(
             self.kernel,
@@ -96,6 +100,9 @@ class _WinAPI:
             "GetNamedSecurityInfoW",
             [wt.LPWSTR, ct.c_int, wt.DWORD, P, P, P, P, P],
             wt.DWORD,
+        )
+        self._bind(
+            self.advapi, "GetSecurityInfo", [wt.HANDLE, ct.c_int, wt.DWORD, P, P, P, P, P], wt.DWORD
         )
         self._bind(self.advapi, "GetSecurityDescriptorLength", [P], wt.DWORD)
         self._bind(self.advapi, "GetSecurityDescriptorOwner", [P, P, P], wt.BOOL)
@@ -162,6 +169,18 @@ class _WinAPI:
             str(path), 1, 5, None, None, None, None, ct.byref(descriptor)
         )
         self._require(status == 0 and descriptor.value)
+        return self._descriptor_text(descriptor)
+
+    def security_handle(self, handle) -> str:
+        """Read owner/DACL from the exact newly created handle, never reopen a path."""
+        descriptor = ct.c_void_p()
+        status = self.advapi.GetSecurityInfo(
+            handle, 1, 5, None, None, None, None, ct.byref(descriptor)
+        )
+        self._require(status == 0 and descriptor.value)
+        return self._descriptor_text(descriptor)
+
+    def _descriptor_text(self, descriptor) -> str:
         try:
             self._require(0 < self.advapi.GetSecurityDescriptorLength(descriptor) <= 65536)
             text = wt.LPWSTR()
@@ -257,6 +276,50 @@ class _WinAPI:
             raise WindowsPrivacyError("private_acl_unverified")
         return handle
 
+    def create_private_file(self, path: Path, sid: str) -> int:
+        """Atomically create explicit owner/DACL, verify same HANDLE, transfer once.
+
+        Elevated tokens can otherwise create an Administrators-owned file despite
+        a current-user-only inherited DACL. Never relax owner validation to accept
+        that case. Failed validation leaves the exclusive file as a permanent
+        attempted marker; no bytes have been written and no existing ACL changes.
+        """
+        self._require(re.fullmatch(r"S-1-(?:\d+-){1,14}\d+", sid))
+        descriptor = ct.c_void_p()
+        handle = None
+        self._require(
+            self.advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                f"O:{sid}D:P(A;;FA;;;{sid})", 1, ct.byref(descriptor), None
+            )
+        )
+        try:
+            attributes = _SecurityAttributes(ct.sizeof(_SecurityAttributes), descriptor, False)
+            handle = self.kernel.CreateFileW(
+                str(path), 0x40020080, 0, ct.byref(attributes), 1, 0x00200080, None
+            )
+            if handle in {None, ct.c_void_p(-1).value}:
+                handle = None
+                if ct.get_last_error() in {80, 183}:
+                    raise FileExistsError()
+                raise WindowsPrivacyError("private_acl_unverified")
+            self._require(self.kernel.GetFileType(handle) == 1)
+            information = ct.create_string_buffer(52)
+            self._require(self.kernel.GetFileInformationByHandle(handle, information))
+            values = struct.unpack("<13I", information.raw)
+            self._require(not values[0] & (0x10 | 0x400) and values[10] == 1)
+            validate_sddl(self.security_handle(handle), sid, protected=True)
+            fd = _open_osfhandle(handle)
+            handle = None  # CRT now owns this exact handle, including on close(fd).
+            return fd
+        except FileExistsError:
+            raise
+        except OSError:
+            raise WindowsPrivacyError("private_acl_unverified") from None
+        finally:
+            if handle is not None:
+                self.kernel.CloseHandle(handle)
+            self.kernel.LocalFree(descriptor)
+
     def create_private_directory(self, path: Path, sid: str):
         descriptor = ct.c_void_p()
         self._require(
@@ -322,3 +385,10 @@ def provision_private_directory(root: Path) -> None:
         if api is not None:
             for handle in reversed(handles):
                 api.kernel.CloseHandle(handle)
+
+
+def _open_osfhandle(handle) -> int:
+    """Transfer ownership to CRT only after native identity and ACL verification."""
+    import msvcrt
+
+    return msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
