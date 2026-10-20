@@ -20,17 +20,41 @@ last real one. A larger or deeper scope still stops unknown and requires a
 separately reviewed software policy, not local policy editing. Ledger bytes
 remain bounded by 2 MiB; oversize evidence also fails closed.
 
+An additional fixed scan-session-wide ceiling of 28,800 metadata operations applies
+to the actual work, not just reported inventory entries. Each no-follow path stat
+(including each ancestor-chain component), directory-open attempt and iterator
+advance (including end-of-directory) consumes one unit before the operation.
+Discovery membership snapshots, payload traversal, pre-descent checks, completion
+checks and final cross-root checks share this allowance. Close-only cleanup does
+not require further observations. Exhaustion stops unknown, including exhaustion
+while validating an otherwise complete inventory. Effective coverage is therefore
+strictly smaller than 28,800 logical entries and depends on directory structure.
+This is a conservative fixed implementation refusal, not a ledger setting or a
+caller-adjustable budget; logical entry counts and 450-entry pages stay separate.
+This counter covers scanner operations, not unchanged separately bounded host,
+configuration and journal reads elsewhere in the enrollment inspection.
+
 The scanner retains its open directory iterator across page boundaries and an
 internal pending subtree list. It captures each pending directory's chain,
-identity and modification/change times before descending, verifies them before
-reading, and rechecks all observed directories at completion. Cross-root final
+identity, timestamps and immediate-child membership before descending. Membership
+records names, fresh no-follow file kinds and identities, not cached DirEntry
+metadata. It verifies membership before payload traversal and rechecks all
+observed directories at completion. Membership checks are not repeated at every
+450-entry page boundary; those retain bounded metadata checks. Cross-root final
 revalidation catches an earlier root changing during a later root's scan.
+Each scoped directory observation receives at most four membership enumerations (discovery,
+pre-payload, root completion and scope completion), plus one payload iterator.
+The same work ceiling applies to all of them, including failed attempts.
 Redirects, special files, inaccessible paths, depth exhaustion or incomplete
 traversal produce unknown, never a silently excluded success. An interrupted
 directory and discovered pending subtrees are retained in the private exclusions
 list so an operator can see the unfinished coverage; any exclusion still blocks
 a reviewed ledger. Missing roots
 retain a checked-parent observation and are checked again, not manufactured.
+Missing-root ancestor checks do not inventory unrelated sibling directories.
+Exact enumerated transaction-owned staging files reuse their existing owned-handle
+observation rather than stat an exclusively held file by name; arbitrary names
+and staging suffixes do not receive this exception.
 These observations detect ordinary filesystem changes; they do not establish an
 atomic filesystem snapshot or resist an administrator/hostile same-user writer.
 The independent legacy-writer exclusion requirement therefore remains essential.
@@ -122,3 +146,31 @@ snapshot or a substitute for independently excluding concurrent legacy writers.
 A page-boundary unit test must make its simulated metadata change visible
 explicitly rather than assume that creating a file immediately updates directory
 timestamps on every platform; its early-stop assertions must remain intact.
+
+## Corrected-identity CI and membership gap
+
+The subsequent identity correction was published as
+`ae89a527c6fa37ca1bab5891eeba8f0b86c7fee4`, tree
+`90b7f9ad6f77bf8df48848332103cf01fb7dcb0e`. Its original
+[push checks](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39456888495)
+ended in failure and [PR checks](https://github.com/Maximora-byte/swu-happyrun/actions/runs/39456894986)
+ended cancelled. All four Windows main jobs were cancelled during testing near
+30 minutes, not successful full-suite results. No cancellation actor is inferred.
+PR-event pin shards passed all 42 cases on both Python 3.11 and 3.13; push 3.13
+passed all 42, while both push 3.11 shards suffered fatal diagnostic crashes.
+
+All four main jobs passed the three Windows identity/cache regressions and both
+beyond-450 initializer/pin integrations. However, PR Python 3.13 recorded an actual
+failure of `test_pending_directory_change_is_rejected_before_descent[False]`:
+a changed pending directory was entered before its mutation was detected. The
+other three jobs passed that assertion. The failing job's partial result was
+1 failed, 653 passed and 8 skipped; cancellation prevents full acceptance.
+
+Timestamp-only comparison cannot establish unchanged membership. The next
+correction retains the strict no-payload-descent assertion and adds deterministic
+unchanged-timestamp add/remove/replacement tests. Fresh, bounded membership
+snapshots supplement rather than remove identity and timestamp checks. Fixed
+work exhaustion refuses the inspection; it never converts incomplete verification
+into a successful ledger. These repeated observations still are not an atomic
+filesystem snapshot and do not defeat a hostile writer restoring state between
+observations. The independent legacy-writer exclusion remains required.
