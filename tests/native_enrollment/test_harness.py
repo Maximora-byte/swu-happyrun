@@ -9,6 +9,7 @@ import sys
 import time
 from contextlib import closing
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,6 +17,13 @@ from .harness import OwnedChild, delegated_call, gate_reason, invoke
 
 REPO = Path(__file__).resolve().parents[2]
 NATIVE_TEST = "tests/native_enrollment/test_native_mechanisms.py"
+
+
+def _stat_with(info, **changes):
+    """Keep named OS fields and nanosecond precision when changing one fixture field."""
+    values = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
+    values.update(changes)
+    return SimpleNamespace(**values)
 
 
 @pytest.mark.parametrize(
@@ -242,9 +250,7 @@ def test_snapshot_rejects_special_metadata_before_any_open(tmp_path, monkeypatch
     def lstat(target):
         original = real_lstat(target)
         if target == path:
-            values = list(original)
-            values[0] = mode | 0o600
-            return os.stat_result(values)
+            return _stat_with(original, st_mode=mode | 0o600)
         return original
 
     monkeypatch.setattr(Path, "lstat", lstat)
@@ -264,8 +270,6 @@ def test_snapshot_real_fifo_never_opens_it(tmp_path, monkeypatch):
 
 
 def test_snapshot_rejects_reparse_metadata_before_descending(tmp_path, monkeypatch):
-    from types import SimpleNamespace
-
     from . import harness
 
     redirected = tmp_path / "redirected"
@@ -413,10 +417,188 @@ def test_snapshot_and_original_observation_helpers_are_owned_children(tmp_path):
     from .worker import observe_files, snapshot_state
 
     path = tmp_path / "payload"
-    path.write_bytes(b"abc")
-    digest = hashlib.sha256(b"abc").hexdigest()
+    raw = b"binary:\x00\x1a\xff\r\n"
+    path.write_bytes(raw)
+    digest = hashlib.sha256(raw).hexdigest()
     captured = invoke(snapshot_state, tmp_path, ())
     assert captured["snapshot"]["payload"]["sha256"] == digest
     observed = invoke(observe_files, {"fixture": path})
     assert observed["observations"]["fixture"]["sha256"] == digest
-    assert observed["observations"]["fixture"]["size"] == 3
+    assert observed["observations"]["fixture"]["size"] == len(raw)
+
+
+def test_stat_fixture_preserves_named_windows_fields_and_nanoseconds(tmp_path):
+    original = _stat_with(
+        tmp_path.lstat(),
+        st_file_attributes=0x20,
+        st_reparse_tag=0,
+        st_birthtime_ns=123456789,
+        st_ctime_ns=987654321,
+    )
+    changed = _stat_with(original, st_mode=stat.S_IFIFO | 0o600)
+    assert vars(changed) == {**vars(original), "st_mode": stat.S_IFIFO | 0o600}
+
+
+@pytest.mark.parametrize("filename", ["payload", "manager.exe"], ids=["data", "exe"])
+def test_snapshot_accepts_windows_cross_api_ctime_and_execute_bit_semantics(
+    tmp_path,
+    monkeypatch,
+    filename,
+):
+    """Simulate CPython 3.13 Windows metadata only; real regular-file reads remain."""
+    import hashlib
+
+    from . import harness
+
+    path = tmp_path / filename
+    path.write_bytes(b"abc")
+    real_lstat, real_fstat = Path.lstat, os.fstat
+
+    def lstat(target):
+        original = real_lstat(target)
+        if target != path:
+            return original
+        return _stat_with(
+            original,
+            st_file_attributes=0x20,
+            st_birthtime_ns=100,
+            st_ctime_ns=100,
+            st_mode=original.st_mode | (0o111 if filename.endswith(".exe") else 0),
+        )
+
+    def fstat(fd):
+        original = real_fstat(fd)
+        return _stat_with(
+            original,
+            st_file_attributes=0x20,
+            st_birthtime_ns=100,
+            st_ctime_ns=200,
+            st_mode=original.st_mode & ~0o111,
+        )
+
+    monkeypatch.setattr(Path, "lstat", lstat)
+    monkeypatch.setattr(harness.os, "fstat", fstat)
+    assert harness.snapshot(tmp_path)[filename]["sha256"] == hashlib.sha256(b"abc").hexdigest()
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["st_ctime_ns", "st_mode", "st_ino", "st_mtime_ns"],
+    ids=["ctime", "mode", "id", "mtime"],
+)
+def test_snapshot_rejects_same_fd_changes_and_closes_handle(tmp_path, monkeypatch, field):
+    from . import harness
+
+    path = tmp_path / "payload"
+    path.write_bytes(b"abc")
+    expected = path.lstat()
+    real_fstat, real_close = os.fstat, os.close
+    calls, closed = [], []
+
+    def fstat(fd):
+        original = real_fstat(fd)
+        calls.append(fd)
+        if len(calls) == 2:
+            return _stat_with(original, **{field: getattr(original, field) + 1})
+        return original
+
+    def close(fd):
+        closed.append(fd)
+        return real_close(fd)
+
+    monkeypatch.setattr(harness.os, "fstat", fstat)
+    monkeypatch.setattr(harness.os, "close", close)
+    with pytest.raises(RuntimeError, match="snapshot_changed_fd"):
+        harness._snapshot_digest(path, expected, 3)
+    assert len(calls) == 2 and closed == [calls[0]]
+    with pytest.raises(OSError):
+        real_fstat(closed[0])
+
+
+@pytest.mark.parametrize("field", ["st_ctime_ns", "st_mode"], ids=["ctime", "mode"])
+def test_snapshot_retains_full_same_path_checks_before_open(tmp_path, monkeypatch, field):
+    from . import harness
+
+    path = tmp_path / "payload"
+    path.write_bytes(b"abc")
+    expected = path.lstat()
+    monkeypatch.setattr(
+        Path,
+        "lstat",
+        lambda target: _stat_with(expected, **{field: getattr(expected, field) + 1}),
+    )
+    monkeypatch.setattr(harness.os, "open", lambda *a, **k: pytest.fail("opened changed path"))
+    with pytest.raises(RuntimeError, match="snapshot_changed_path"):
+        harness._snapshot_digest(path, expected, 3)
+
+
+@pytest.mark.parametrize("known", [False, True], ids=["unknown", "snapshot-reason"])
+def test_worker_error_reports_only_whitelisted_type_and_snapshot_reason(known):
+    from .harness import WorkerFailure
+    from .worker import _send_error
+
+    error = (
+        RuntimeError("native_qa_snapshot_changed_opened")
+        if known
+        else type("private-path-secret", (RuntimeError,), {})("private path and detail")
+    )
+    events = []
+    _send_error(SimpleNamespace(send=events.append), error, phase="snapshot_retained_state")
+    assert events == [
+        {
+            "event": "error",
+            "phase": "snapshot_retained_state",
+            "error_type": "RuntimeError" if known else "OtherError",
+            "reason": "native_qa_snapshot_changed_opened" if known else "unspecified",
+        }
+    ]
+    rendered = str(WorkerFailure(events[0]))
+    assert events[0]["error_type"] in rendered and events[0]["reason"] in rendered
+    assert "private" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("field", "changed"),
+    [
+        ("st_dev", 99),
+        ("st_ino", 99),
+        ("st_mode", stat.S_IFREG | 0o444),
+        ("st_size", 4),
+        ("st_mtime_ns", 99),
+        ("st_birthtime_ns", 99),
+        ("st_file_attributes", 0x21),
+    ],
+    ids=["device", "inode", "read-only-mode", "size", "mtime", "birthtime", "attributes"],
+)
+def test_windows_cross_api_signature_retains_compatible_fields(field, changed):
+    from .harness import _snapshot_signature
+
+    expected = SimpleNamespace(
+        st_dev=1,
+        st_ino=2,
+        st_mode=stat.S_IFREG | 0o666,
+        st_size=3,
+        st_mtime_ns=10,
+        st_ctime_ns=11,
+        st_birthtime_ns=11,
+        st_file_attributes=0x20,
+    )
+    opened = _stat_with(expected, st_ctime_ns=12)
+    assert _snapshot_signature(opened, cross_api=True) == _snapshot_signature(
+        expected, cross_api=True
+    )
+    altered = _stat_with(opened, **{field: changed})
+    assert _snapshot_signature(altered, cross_api=True) != _snapshot_signature(
+        expected, cross_api=True
+    )
+
+
+def test_owned_snapshot_worker_failure_exposes_safe_type_without_raw_path(tmp_path):
+    from .harness import WorkerFailure
+    from .worker import snapshot_state
+
+    path = tmp_path / "private-not-present"
+    with pytest.raises(WorkerFailure, match="snapshot_retained_state:FileNotFoundError") as caught:
+        invoke(snapshot_state, path, ())
+    assert caught.value.evidence["reason"] == "unspecified"
+    assert "private" not in str(caught.value) and str(path) not in json.dumps(caught.value.evidence)

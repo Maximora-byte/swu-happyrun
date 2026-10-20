@@ -18,12 +18,45 @@ CHILD_SECONDS = 90
 MAX_SNAPSHOT_ENTRIES = 256
 MAX_SNAPSHOT_FILE_BYTES = 16 * 1024 * 1024
 MAX_SNAPSHOT_TOTAL_BYTES = 32 * 1024 * 1024
+WORKER_ERROR_TYPES = frozenset(
+    {
+        "AssertionError",
+        "EOFError",
+        "FileNotFoundError",
+        "OSError",
+        "PermissionError",
+        "RuntimeError",
+        "TimeoutError",
+        "TypeError",
+        "ValueError",
+        "OtherError",
+    }
+)
+SNAPSHOT_ERROR_REASONS = frozenset(
+    {
+        "native_qa_artifact_limit",
+        "native_qa_redirected_artifact",
+        "native_qa_snapshot_changed_fd",
+        "native_qa_snapshot_changed_opened",
+        "native_qa_snapshot_changed_path",
+        "native_qa_snapshot_changed_read_size",
+        "native_qa_snapshot_limit",
+        "native_qa_snapshot_root_invalid",
+        "native_qa_special_artifact",
+    }
+)
 
 
 class WorkerFailure(RuntimeError):
     def __init__(self, evidence):
         self.evidence = evidence
-        super().__init__("native_qa_worker_failed:" + evidence["phase"])
+        error_type = evidence.get("error_type")
+        if error_type not in WORKER_ERROR_TYPES:
+            error_type = "OtherError"
+        reason = evidence.get("reason")
+        if reason not in SNAPSHOT_ERROR_REASONS:
+            reason = "unspecified"
+        super().__init__(f"native_qa_worker_failed:{evidence['phase']}:{error_type}:{reason}")
 
 
 def gate_reason(*, enabled, authorized, root, platform):
@@ -109,14 +142,21 @@ def invoke(target, *args):
         return result
 
 
-def _snapshot_signature(info):
+def _snapshot_signature(info, *, cross_api=False):
+    # CPython 3.13 Windows path stat reports birthtime as ctime and adds execute
+    # bits based on the filename; fd stat reports ChangeTime and has no filename.
+    # Compare compatible fields across those APIs, but retain each API's complete
+    # signature for its own pre/post checks, including ctime and all mode bits.
+    windows_fields = hasattr(info, "st_file_attributes")
     return (
         info.st_dev,
         info.st_ino,
-        info.st_mode,
+        info.st_mode & ~0o111 if cross_api and windows_fields else info.st_mode,
         info.st_size,
         info.st_mtime_ns,
-        info.st_ctime_ns,
+        None if cross_api and windows_fields else info.st_ctime_ns,
+        getattr(info, "st_birthtime_ns", None),
+        getattr(info, "st_file_attributes", None),
     )
 
 
@@ -131,7 +171,7 @@ def _snapshot_recheck(path, expected):
     current = path.lstat()
     _snapshot_kind(current)
     if _snapshot_signature(current) != _snapshot_signature(expected):
-        raise RuntimeError("native_qa_snapshot_changed")
+        raise RuntimeError("native_qa_snapshot_changed_path")
 
 
 def _snapshot_digest(path, expected, budget):
@@ -154,8 +194,10 @@ def _snapshot_digest(path, expected, budget):
         _snapshot_kind(opened)
         if not stat.S_ISREG(opened.st_mode):
             raise RuntimeError("native_qa_special_artifact")
-        if _snapshot_signature(opened) != _snapshot_signature(expected):
-            raise RuntimeError("native_qa_snapshot_changed")
+        if _snapshot_signature(opened, cross_api=True) != _snapshot_signature(
+            expected, cross_api=True
+        ):
+            raise RuntimeError("native_qa_snapshot_changed_opened")
         _snapshot_recheck(path, expected)
         digest, count = hashlib.sha256(), 0
         while count <= cap:
@@ -166,10 +208,12 @@ def _snapshot_digest(path, expected, budget):
             digest.update(raw)
         if count > cap:
             raise RuntimeError("native_qa_artifact_limit")
-        if count != expected.st_size or (
-            _snapshot_signature(os.fstat(fd)) != _snapshot_signature(expected)
-        ):
-            raise RuntimeError("native_qa_snapshot_changed")
+        final = os.fstat(fd)
+        _snapshot_kind(final)
+        if _snapshot_signature(final) != _snapshot_signature(opened):
+            raise RuntimeError("native_qa_snapshot_changed_fd")
+        if count != expected.st_size:
+            raise RuntimeError("native_qa_snapshot_changed_read_size")
         _snapshot_recheck(path, expected)
         return digest.hexdigest(), count
     finally:

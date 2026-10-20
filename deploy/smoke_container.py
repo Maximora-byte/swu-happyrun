@@ -30,18 +30,79 @@ SmokeFailure = _fixture.SmokeFailure
 require = _fixture.require
 
 
+class ApiStatusFailure(SmokeFailure):
+    """Sanitized protocol status, never arbitrary response text or identifiers."""
+
+    def __init__(self, status, expected, code, retryable):
+        self.status = status
+        self.code = code
+        self.retryable = retryable
+        super().__init__(f"Unexpected API status {status}; expected {expected}; code={code}")
+
+
+def _status_failure(response, expected):
+    code, retryable = "unclassified", False
+    # Parse only a bounded protocol error; serialize only these fixed literals.
+    if len(response.content) <= 8192:
+        try:
+            error = response.json().get("error")
+            if type(error) is dict:
+                if error.get("code") in {
+                    "database_busy",
+                    "storage_unavailable",
+                    "not_ready",
+                    "internal_error",
+                    "invalid_input",
+                    "unauthorized",
+                    "forbidden",
+                    "not_found",
+                    "http_error",
+                }:
+                    code = error["code"]
+                    retryable = error.get("retryable") is True
+        except (ValueError, AttributeError, TypeError):
+            pass
+    return ApiStatusFailure(response.status_code, expected, code, retryable)
+
+
+def wait_for_scheduled_jobs(api, *, deadline):
+    """Read-only polling, accepting only the documented transient busy contract.
+
+    The caller's original absolute deadline is never extended. HTTP timeout
+    bounds individual I/O phases, not hard real-time OS completion; late results
+    are rejected rather than accepted as within-budget success.
+    """
+    while True:
+        remaining = deadline - time.monotonic()
+        require(remaining > 0, "Scheduler did not create one occurrence")
+        try:
+            items = api.call("GET", "jobs?limit=100", timeout=min(5.0, remaining))["items"]
+        except ApiStatusFailure as error:
+            if not (error.status == 503 and error.code == "database_busy" and error.retryable):
+                raise
+        else:
+            require(time.monotonic() < deadline, "Scheduler did not create one occurrence")
+            if len(items) == 3:
+                return items
+        remaining = deadline - time.monotonic()
+        require(remaining > 0, "Scheduler did not create one occurrence")
+        time.sleep(min(0.2, remaining))
+
+
 class Api:
     def __init__(self, base, admin, agent, other):
         require(base == BASE, "Container probe requires fixed private loopback")
         self.tokens = {"admin": admin, "agent": agent, "other": other}
         self.http = httpx.Client(base_url=base + "/api/v1/", trust_env=False, timeout=5)
 
-    def call(self, method, path, body=None, *, role="admin", expected=200, key=None):
+    def call(self, method, path, body=None, *, role="admin", expected=200, key=None, timeout=None):
         headers = {} if role is None else {"Authorization": "Bearer " + self.tokens[role]}
         if key:
             headers["Idempotency-Key"] = key
-        response = self.http.request(method, path, json=body, headers=headers)
-        require(response.status_code == expected, "Unexpected API status at " + path.split("/")[0])
+        options = {} if timeout is None else {"timeout": timeout}
+        response = self.http.request(method, path, json=body, headers=headers, **options)
+        if response.status_code != expected:
+            raise _status_failure(response, expected)
         require(
             all(t not in response.text for t in self.tokens.values()), "Response leaked credential"
         )
@@ -349,12 +410,7 @@ def exercise(api, root, env, agent_id, device_id, recreate):
     }
     api.call("POST", "schedules", schedule, expected=201)
     deadline = time.monotonic() + 80
-    while True:
-        items = api.call("GET", "jobs?limit=100")["items"]
-        if len(items) == 3:
-            break
-        require(time.monotonic() < deadline, "Scheduler did not create one occurrence")
-        time.sleep(0.2)
+    items = wait_for_scheduled_jobs(api, deadline=deadline)
     ids = {item["job_id"] for item in items}
     recreate()
     api.ready()

@@ -27,7 +27,7 @@ def test_windows_pin_partition_is_exhaustive_and_does_not_enable_native_qa():
     pin = workflow.split("  windows-review-pin:\n", 1)[1].split("  console-browser-qa:", 1)[0]
     command = "uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20"
     pipeline = "tests/agent/test_enrollment_review_pin.py"
-    # Exact selectors establish all-tests-minus-P plus P, with no -k/-m filters,
+    # Exact selectors establish all-tests-minus-P plus P, with no hidden filters,
     # no native opt-in and no unrelated ignored paths. Linux remains all-tests.
     lines = main.splitlines()
     test_steps = [
@@ -39,9 +39,30 @@ def test_windows_pin_partition_is_exhaustive_and_does_not_enable_native_qa():
         ("if: runner.os != 'Windows'", "run: " + command),
         ("if: runner.os == 'Windows'", "run: " + command + " --ignore=" + pipeline),
     ]
-    assert [line.strip() for line in pin.splitlines() if "python -m pytest" in line] == [
-        "- run: " + command + " " + pipeline
+    expression = (
+        "test_authority_at_each_pin_mutation_stops_immediately or "
+        "test_publish_failure_retains_pin_attempt_without_repair or "
+        "test_lock_conflict_has_zero_sqlite_storage_mkdir_or_native or "
+        "test_original_device_byte_uses_owner_fd_no_second_handle or "
+        "test_issue_and_read_pin_readonly_never_ready"
+    )
+    pin_lines = pin.splitlines()
+    steps = [
+        (pin_lines[i - 1].strip(), line.strip())
+        for i, line in enumerate(pin_lines)
+        if "python -m pytest" in line
     ]
+    assert steps == [
+        (
+            "if: matrix.group == 'boundaries'",
+            "run: " + command + " " + pipeline + ' -k "' + expression + '"',
+        ),
+        (
+            "if: matrix.group == 'remaining'",
+            "run: " + command + " " + pipeline + ' -k "not (' + expression + ')"',
+        ),
+    ]
+    assert "group: [boundaries, remaining]" in pin
     assert "runs-on: windows-latest" in pin
     assert "timeout-minutes: 30" in pin
     assert 'python: ["3.11", "3.13"]' in pin

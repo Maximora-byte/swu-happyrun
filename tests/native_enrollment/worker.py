@@ -17,7 +17,14 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from .harness import CHILD_SECONDS, MAX_SNAPSHOT_TOTAL_BYTES, _snapshot_digest, delegated_call
+from .harness import (
+    CHILD_SECONDS,
+    MAX_SNAPSHOT_TOTAL_BYTES,
+    SNAPSHOT_ERROR_REASONS,
+    WORKER_ERROR_TYPES,
+    _snapshot_digest,
+    delegated_call,
+)
 
 HOST = "11111111-1111-4111-8111-111111111111"
 INSTANCE = "22222222-2222-4222-8222-222222222222"
@@ -35,7 +42,20 @@ def identity(path):
 
 def _send_error(connection, error, *, phase):
     # No raw exception text, environment, command lines, or stack in the report.
-    connection.send({"event": "error", "error_type": type(error).__name__, "phase": phase})
+    error_type = type(error).__name__
+    if error_type not in WORKER_ERROR_TYPES:
+        error_type = "OtherError"
+    reason = error.args[0] if len(error.args) == 1 else None
+    if not isinstance(reason, str) or reason not in SNAPSHOT_ERROR_REASONS:
+        reason = "unspecified"
+    connection.send(
+        {
+            "event": "error",
+            "error_type": error_type,
+            "phase": phase,
+            "reason": reason,
+        }
+    )
 
 
 def _native_only():

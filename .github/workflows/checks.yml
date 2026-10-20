@@ -65,6 +65,7 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.11", "3.13"]
+        group: [boundaries, remaining]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -75,7 +76,12 @@ jobs:
           python-version: ${{ matrix.python }}
           enable-cache: true
       - run: uv sync --extra server --extra agent --extra dev --frozen
-      - run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 tests/agent/test_enrollment_review_pin.py
+      - name: Pin authority and lock boundaries
+        if: matrix.group == 'boundaries'
+        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 tests/agent/test_enrollment_review_pin.py -k "test_authority_at_each_pin_mutation_stops_immediately or test_publish_failure_retains_pin_attempt_without_repair or test_lock_conflict_has_zero_sqlite_storage_mkdir_or_native or test_original_device_byte_uses_owner_fd_no_second_handle or test_issue_and_read_pin_readonly_never_ready"
+      - name: All remaining pin cases
+        if: matrix.group == 'remaining'
+        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 tests/agent/test_enrollment_review_pin.py -k "not (test_authority_at_each_pin_mutation_stops_immediately or test_publish_failure_retains_pin_attempt_without_repair or test_lock_conflict_has_zero_sqlite_storage_mkdir_or_native or test_original_device_byte_uses_owner_fd_no_second_handle or test_issue_and_read_pin_readonly_never_ready)"
 
   console-browser-qa:
     runs-on: ubuntu-latest
