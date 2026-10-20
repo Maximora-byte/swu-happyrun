@@ -151,8 +151,24 @@ def test_simultaneous_capture_is_rejected_without_launch(tmp_path):
     assert child("print('next')") == "next\n"
 
 
-def test_unreaped_child_with_closed_pipes_blocks_new_capture(monkeypatch):
+@pytest.mark.parametrize("delay_reader_exit", [False, True])
+def test_unreaped_child_with_closed_pipes_blocks_new_capture(monkeypatch, delay_reader_exit):
+    from threading import Event
+
     from swu_happyrun.drivers import command
+
+    release_readers = Event()
+    original_reader = command._read_pipe
+
+    if delay_reader_exit:
+
+        def delayed_reader(*args):
+            original_reader(*args)
+            # Model EOF observed before the reader thread has actually exited.
+            # The test owns this finite wait and releases it in finally.
+            release_readers.wait(timeout=5)
+
+        monkeypatch.setattr(command, "_read_pipe", delayed_reader)
 
     original = command.subprocess.Popen
     processes = []
@@ -176,8 +192,23 @@ def test_unreaped_child_with_closed_pipes_blocks_new_capture(monkeypatch):
             child("print('must-not-launch')")
         assert len(processes) == 1
     finally:
-        for process in processes:
-            process.wait(timeout=5)  # Known isolated fixture exits naturally.
+        try:
+            for process in processes:
+                process.wait(timeout=5)  # Known isolated fixture exits naturally.
+            if delay_reader_exit:
+                # Process exit alone must not release capture ownership.
+                with pytest.raises(ProbeError, match="command_cleanup_unconfirmed"):
+                    child("print('must-not-launch-before-reader-exit')")
+                assert len(processes) == 1
+        finally:
+            release_readers.set()
+            pending = command._PENDING_CAPTURE
+            assert pending is not None and pending[0] is processes[0]
+            deadline = time.monotonic() + 5
+            for thread, _pipe, done in pending[1]:
+                thread.join(timeout=max(0, deadline - time.monotonic()))
+                assert done.is_set() and not thread.is_alive()
+    monkeypatch.setattr(command, "_read_pipe", original_reader)
     assert child("print('recovered')") == "recovered\n"
 
 
