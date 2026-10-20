@@ -1,0 +1,51 @@
+name: finite-windows-pin-diagnostic
+
+on:
+  push:
+    branches: [diagnostics/windows-pin-finite]
+    paths:
+      - .github/workflows/windows-pin-finite-diagnostic.yml
+      - diagnostics/pin_ab.py
+      - diagnostics/test_pin_ab.py
+
+permissions:
+  contents: read
+
+jobs:
+  finite-diagnostic:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - name: Start total session budget before provisioning
+        shell: pwsh
+        run: |
+          $start = python -c "import time; print(time.monotonic())"
+          "DIAGNOSTIC_MONOTONIC_START=$start" >> $env:GITHUB_ENV
+      - name: Checkout diagnostic controller, not product under test
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: harness
+          persist-credentials: false
+      - name: Checkout immutable failed PR merge source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 6acdbeabd9fb54f33d27749bf0a2fd343c844b0d
+          path: source
+          persist-credentials: false
+      - name: Provision exact uv without choosing another interpreter
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+        with:
+          version: "0.12.19"
+          enable-cache: false
+      - name: Validate controller helpers
+        run: python -m unittest discover -s harness/diagnostics -p test_pin_ab.py
+      - name: Verify distribution availability and run finite comparison
+        run: python harness/diagnostics/pin_ab.py
+      - name: Preserve all outcomes, including incomplete and failed cells
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: finite-pin-diagnostic-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: diagnostic-evidence/
+          if-no-files-found: warn
+          retention-days: 7
