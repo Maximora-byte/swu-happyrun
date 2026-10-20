@@ -459,9 +459,9 @@ def test_actual_execution_missing_evidence_is_blocked_without_processes(
                 "--isolated-no-personal-data",
             ]
         )
-        == 2
+        == 3
     )
-    assert json.loads(capsys.readouterr().out)["reason_code"] == "replay_local_evidence_missing"
+    assert json.loads(capsys.readouterr().out)["reason_code"] == "enrollment_execution_not_ready"
 
 
 def test_oversized_control_line_is_bounded_and_requests_stop(controller):

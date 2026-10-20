@@ -44,7 +44,7 @@ def test_owned_observation_callbacks(tmp_path):
     # Exercise actual Java serializer -> actual strict Python decoder, not a Python-only fake.
     from types import SimpleNamespace
 
-    from swu_happyrun.drivers.mumu.own_probe import OwnProbe
+    from mumu_synthetic import OwnProbe
 
     report = subprocess.run(
         [

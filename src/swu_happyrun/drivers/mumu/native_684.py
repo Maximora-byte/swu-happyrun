@@ -20,8 +20,6 @@ from swu_happyrun.drivers.base import DriverError
 from swu_happyrun.drivers.command import (
     CaptureEvidence,
     ProbeError,
-    _run_bounded_bytes,
-    run_readonly,
 )
 from swu_happyrun.drivers.mumu.binding import MumuBinding
 from swu_happyrun.drivers.mumu.commands_684 import MuMu684Commands
@@ -48,7 +46,7 @@ class CommandDelivery:
     stderr_sha256: str
 
 
-class MuMuNative684:
+class _CommandProtocol684:
     """Single-command controlled entry; all normal driver capabilities stay closed.
 
     No coordinate transformation or gyro-unit claim is made. Input numbers are
@@ -66,6 +64,8 @@ class MuMuNative684:
         authorization_check: Callable[[], None],
         clock: Clock,
         evidence: CaptureEvidence | None = None,
+        readonly_transport: Callable,
+        capture_transport: Callable,
     ) -> None:
         if not isinstance(binding, MumuBinding) or binding.host_version != "6.8.4.0":
             raise DriverError("transport_version_unverified")
@@ -73,6 +73,8 @@ class MuMuNative684:
             raise DriverError("own_target_required")
         if not callable(binding_check) or not callable(authorization_check):
             raise DriverError("execution_guard_required")
+        self._readonly_transport = readonly_transport
+        self._capture_transport = capture_transport
         self._manager, self._adb = Path(manager), Path(adb)
         self._binding = binding
         self._binding_check, self._authorization_check = binding_check, authorization_check
@@ -123,7 +125,7 @@ class MuMuNative684:
         self._authorization_check()
         remaining = self._remaining(deadline, wall_deadline)
         try:
-            sdk = run_readonly(
+            sdk = self._readonly_transport(
                 self._adb,
                 "-s",
                 self._binding.adb_serial,
@@ -150,7 +152,7 @@ class MuMuNative684:
             self._remaining(deadline, wall_deadline)
 
         try:
-            stdout, stderr, returncode = _run_bounded_bytes(
+            stdout, stderr, returncode = self._capture_transport(
                 self._manager,
                 *args,
                 timeout=self._remaining(deadline, wall_deadline),
@@ -200,3 +202,12 @@ class MuMuNative684:
         # Neither child exit, reader EOF, nor a newly constructed empty instance
         # proves that MuMu's queue is empty. No documented stop command is known.
         raise DriverError("stop_unconfirmed")
+
+
+class MuMuNative684(_CommandProtocol684):
+    """Production factory: closed until the independent enrollment resolver exists."""
+
+    def __init__(self, *args, **kwargs):
+        from swu_happyrun.drivers.mumu.enrollment import require_native_enrollment
+
+        require_native_enrollment()

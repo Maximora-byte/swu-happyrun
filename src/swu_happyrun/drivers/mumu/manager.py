@@ -66,9 +66,12 @@ class MuMuManager:
         return result
 
     def capability(self, instance: MuMuInstance) -> DeviceCapability:
+        from swu_happyrun.drivers.mumu.enrollment_inspection import read_existing_host_id
+
+        namespace = self.host_id if self.host_id is not None else read_existing_host_id()
         identity = f"{os.path.normcase(str(self.path.resolve()))}:{instance.index}"
         return DeviceCapability(
-            device_id=device_id("mumu", identity, host_id=self.host_id),
+            device_id=device_id("mumu", identity, host_id=namespace),
             backend="mumu",
             app_version=None,
             capabilities=[],

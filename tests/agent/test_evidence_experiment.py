@@ -5,11 +5,11 @@ from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
+import mumu_experiment_harness as subject
 import pytest
 from test_experiment_shutdown import Clock
 
 from swu_happyrun.agent.journal import RunJournal
-from swu_happyrun.drivers.mumu import evidence_experiment as subject
 from swu_happyrun.drivers.mumu.experiment_shutdown import Signal
 from swu_happyrun.drivers.mumu.private_evidence import PrivateEvidenceStore
 
@@ -102,7 +102,7 @@ def case(tmp_path):
 
 def run(case):
     registration, adapter, store, clock = case
-    return subject.run_experiment(registration, adapter=adapter, store=store, clock=clock)
+    return subject.run_synthetic_experiment(registration, adapter=adapter, store=store, clock=clock)
 
 
 def test_normal_path_keeps_reservation_and_never_claims_native_ack(case):
@@ -144,7 +144,7 @@ def test_wrong_registration_and_relocated_output_block_launch(case):
     run(case)
     assert "launch" not in adapter.calls
     adapter.calls.clear()
-    result = subject.run_experiment(
+    result = subject.run_synthetic_experiment(
         replace(reg, evidence_root=Path("/wrong")), adapter=adapter, store=store, clock=clock
     )
     assert adapter.calls == []
@@ -216,7 +216,7 @@ def test_nonzero_capture_keeps_binary_but_never_probes(case):
 
 
 def test_missing_registration_is_not_ready(case):
-    result = subject.run_experiment(None, adapter=case[1], store=case[2], clock=case[3])
+    result = subject.run_synthetic_experiment(None, adapter=case[1], store=case[2], clock=case[3])
     assert case[1].calls == []
     assert result["primary_error"] == "registration_invalid"
 
@@ -225,7 +225,7 @@ def test_missing_registration_is_not_ready(case):
 def test_original_registry_rejects_changed_lock_mapping(case, field):
     reg, adapter, store, clock = case
     changed = str(uuid4()) if field == "device_id" else reg.journal.with_name("other.db")
-    result = subject.run_experiment(
+    result = subject.run_synthetic_experiment(
         replace(reg, **{field: changed}), adapter=adapter, store=store, clock=clock
     )
     assert adapter.calls == ["preflight"]
@@ -249,7 +249,7 @@ def _held_experiment(registration, entered, release, queue):
                 raise TimeoutError
 
     adapter = Held(registration)
-    result = subject.run_experiment(
+    result = subject.run_synthetic_experiment(
         registration,
         adapter=adapter,
         store=PrivateEvidenceStore(registration.evidence_root),

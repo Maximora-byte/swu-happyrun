@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from swu_happyrun.drivers.command import ProbeError, run_readonly
+from swu_happyrun.drivers.command import ProbeError
 from swu_happyrun.drivers.mumu.binding import MumuBinding
 
 Channel = Literal["location", "gravity"]
@@ -56,7 +56,7 @@ class OwnObservation:
     samples: tuple[OwnSample, ...]
 
 
-class OwnProbe:
+class _ObservationProtocol:
     capabilities: tuple = ()
 
     def __init__(
@@ -66,7 +66,9 @@ class OwnProbe:
         *,
         binding_check: Callable[[], None],
         authorization_check: Callable[[], None],
+        readonly_transport: Callable,
     ):
+        self._readonly_transport = readonly_transport
         self._adb, self._binding = Path(adb), binding
         self._binding_check, self._authorization_check = binding_check, authorization_check
         self._lock = threading.Lock()
@@ -319,6 +321,15 @@ class OwnProbe:
         private temporary report. It does not authorize arbitrary device writes.
         UTF-8/newline normalization does not change JSON numeric sample values.
         """
-        return run_readonly(
+        return self._readonly_transport(
             self._adb, "-s", self._binding.adb_serial, *args, timeout=timeout
         ).encode("utf-8")
+
+
+class OwnProbe(_ObservationProtocol):
+    """Production instrumentation factory; inspection does not grant execution."""
+
+    def __init__(self, *args, **kwargs):
+        from swu_happyrun.drivers.mumu.enrollment import require_native_enrollment
+
+        require_native_enrollment()
