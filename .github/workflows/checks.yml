@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   contracts-and-diagnostics:
-    timeout-minutes: 15
+    # Native filesystem validation makes the Windows full suite substantially
+    # slower. Keep a finite job budget; product operation deadlines are unchanged.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 30 || 15 }}
     strategy:
       fail-fast: false
       matrix:

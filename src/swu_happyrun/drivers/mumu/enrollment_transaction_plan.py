@@ -17,7 +17,7 @@ import re
 import stat
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from uuid import UUID
 
 from swu_happyrun.drivers.identity import device_id
@@ -74,6 +74,15 @@ def _keys(value, expected):
     _require(type(value) is dict and set(value) == expected)
 
 
+def _reserved_component(part):
+    # Python 3.13 deprecates PurePath.is_reserved; do not produce millions of
+    # warnings while repeatedly revalidating a pinned Windows transaction.
+    checker = getattr(os.path, "isreserved", None)
+    if checker is not None:
+        return checker(part)
+    return PureWindowsPath(part).is_reserved()
+
+
 def _path(value):
     _require(type(value) is str and 1 <= len(value) <= 1024 and "\0" not in value)
     path = Path(value)
@@ -91,7 +100,7 @@ def _path(value):
             _require(
                 not part.endswith((".", " "))
                 and not any(character in part for character in '<>:"|?*')
-                and not path.__class__(part).is_reserved()
+                and not _reserved_component(part)
             )
     return path
 

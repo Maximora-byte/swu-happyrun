@@ -4,6 +4,7 @@ import json
 import os
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -589,3 +590,33 @@ def test_frozen_device_mapping_preserves_original_resolved_manager_identity(tmp_
     monkeypatch.setattr(Path, "resolve", canonical_manager)
     with pytest.raises(ApprovalNotReady):
         api.validate_frozen_inputs(plan)
+
+
+@pytest.mark.parametrize("part", ["CON", "NUL.txt", "COM1", "LPT9.log", "ordinary.txt"])
+def test_windows_reserved_component_uses_supported_api_when_available(monkeypatch, part):
+    plan = module()
+    calls = []
+
+    def supported(value):
+        calls.append(value)
+        return value != "ordinary.txt"
+
+    monkeypatch.setattr(plan.os.path, "isreserved", supported, raising=False)
+    monkeypatch.setattr(
+        plan.PureWindowsPath,
+        "is_reserved",
+        lambda _: pytest.fail("deprecated fallback must not run when supported API exists"),
+    )
+    assert plan._reserved_component(part) == (part != "ordinary.txt")
+    assert calls == [part]
+
+
+@pytest.mark.parametrize(
+    "part, expected",
+    [("CON", True), ("NUL.txt", True), ("COM1", True), ("LPT9.log", True), ("ordinary.txt", False)],
+)
+def test_windows_reserved_component_compatibility_fallback(monkeypatch, part, expected):
+    plan = module()
+    monkeypatch.setattr(plan, "os", SimpleNamespace(path=SimpleNamespace()))
+    # This fallback is used only on Python versions predating os.path.isreserved.
+    assert plan._reserved_component(part) is expected

@@ -652,29 +652,50 @@ def test_live_staging_never_path_stats_exclusively_open_stage(synthetic, monkeyp
     assert staged.destination.read_bytes() == PAYLOAD
 
 
-def test_replaced_live_stage_is_not_a_phase_scope_exemption(synthetic):
+@pytest.mark.parametrize("inject_identity_mismatch", [False, True])
+def test_replaced_live_stage_is_not_a_phase_scope_exemption(synthetic, inject_identity_mismatch):
     storage, root, api, context = synthetic
     sessions = []
     replaced = False
+    blocked = False
 
     def current():
-        nonlocal replaced
+        nonlocal replaced, blocked
         if sessions and sessions[0]._phase == "write" and not replaced:
             path = root / (".ready.json." + TX + ".staged")
-            path.rename(root / "original-stage")
-            path.write_bytes(b"foreign")
-            replaced = True
+            if inject_identity_mismatch:
+                foreign = root / "foreign-stage"
+                foreign.write_bytes(b"foreign")
+                original_check = sessions[0]._io.check_path
+                sessions[0]._io.check_path = lambda fd, _: original_check(fd, foreign)
+                replaced = True
+            else:
+                try:
+                    path.rename(root / "original-stage")
+                except PermissionError:
+                    # Windows CRT denies renaming this open synthetic fd. This
+                    # is prevention, not evidence that replacement was detected.
+                    assert os.name == "nt"
+                    blocked = True
+                    raise
+                path.write_bytes(b"foreign")
+                replaced = True
             _ = sessions[0].live_staging_observations
 
     with context(current) as session:
         sessions.append(session)
         with pytest.raises(storage.StorageIncomplete):
             session.stage("ready.json", PAYLOAD, transaction_id=TX)
-        assert replaced
+        assert replaced or blocked
         assert not any(event[0] == "write" for event in api.events)
         with pytest.raises(storage.StorageIncomplete):
             _ = session.live_staging_observations
-    assert (root / "original-stage").read_bytes() == b""
+    if replaced and not inject_identity_mismatch:
+        assert (root / "original-stage").read_bytes() == b""
+    else:
+        assert (root / (".ready.json." + TX + ".staged")).read_bytes() == b""
+    if blocked:
+        assert not (root / "original-stage").exists()
     assert not (root / "ready.json").exists()
 
 

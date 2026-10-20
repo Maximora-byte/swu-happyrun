@@ -6,7 +6,7 @@ import importlib.util
 import json
 import os
 import sqlite3
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 
 import pytest
 
@@ -268,7 +268,7 @@ def test_first_use_completes_candidate_but_never_ready(synthetic):
     assert receipt["journal_file"]["identity"] == identity(paths["journal"])
     assert receipt["lock_identity"] == identity(paths["device_lock"])
     assert receipt["evidence_root"] == plan["directories"]["evidence"]["path"]
-    with sqlite3.connect(paths["journal"]) as db:
+    with closing(sqlite3.connect(paths["journal"])) as db:
         assert db.execute("SELECT COUNT(*) FROM intents").fetchone() == (0,)
         assert db.execute("SELECT COUNT(*) FROM stop_acks").fetchone() == (0,)
 
@@ -482,7 +482,7 @@ def test_complete_candidate_diagnosis_allows_changed_journal_bytes_not_identity(
     transaction, _, bundle = synthetic
     _, anchors, reviewed, _, paths = bundle()
     assert transaction.initialize_candidate(anchors, reviewed).status == "candidate_unpinned"
-    with sqlite3.connect(paths["journal"]) as db:
+    with closing(sqlite3.connect(paths["journal"])) as db:
         db.execute("INSERT INTO intents VALUES ('later', 'start', 1, NULL)")
         db.commit()
     assert transaction.diagnose_candidate(anchors, reviewed).status == "candidate_unpinned"

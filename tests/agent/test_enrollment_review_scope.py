@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 import sqlite3
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -78,7 +79,7 @@ def encoded(payload):
 def existing(observed):
     root = observed[0].roots[0]
     journal = root / "history.sqlite"
-    with sqlite3.connect(journal) as database:
+    with closing(sqlite3.connect(journal)) as database, database:
         database.execute("CREATE TABLE synthetic (id INTEGER)")
     lock = root / f"device-{hashlib.sha256(observed[3].encode()).hexdigest()}.lock"
     lock.write_bytes(b"0")
@@ -347,7 +348,7 @@ def test_missing_root_becoming_present_is_changed_scope(observed):
 def test_existing_mutable_sql_contents_are_not_permanently_hash_pinned(observed):
     journal = existing(observed)
     reviewed = build(observed, expected_journal=journal)
-    with sqlite3.connect(journal) as database:
+    with closing(sqlite3.connect(journal)) as database, database:
         database.execute("INSERT INTO synthetic VALUES (1)")
     api().require_matching_reinspection(reviewed, observation(observed, expected_journal=journal))
 
