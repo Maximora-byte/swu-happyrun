@@ -235,6 +235,7 @@ def test_exact_child_handle_precedes_go_and_cdb_exit_does_not_replace_child(
     events = []
     target = tmp_path / "raw.log"
     nonce = "a" * 32
+    target_pid = 42 if native.os.getpid() != 42 else 43
     session = object.__new__(native.Session)
 
     def create(*args):
@@ -242,7 +243,7 @@ def test_exact_child_handle_precedes_go_and_cdb_exit_does_not_replace_child(
         return 101, 102, 103, 104
 
     def resume(handle):
-        target.write_text(f"SWU_{nonce}_READY 2a\n")
+        target.write_text(f"SWU_{nonce}_READY {target_pid:x}\n")
         events.append(("resume", handle))
         return 1
 
@@ -304,10 +305,10 @@ def test_exact_child_handle_precedes_go_and_cdb_exit_does_not_replace_child(
         assert result[3] == "api_error" and result[4] is terminated
         return
     assert events.index(("assign", 301, 101)) < events.index(("resume", 102))
-    assert ("open", 0x101000, False, 42) in events
+    assert ("open", 0x101000, False, target_pid) in events
     assert result[2] == 0
     if open_ok:
-        assert events.index(("open", 0x101000, False, 42)) < events.index(("write", b"g\n"))
+        assert events.index(("open", 0x101000, False, target_pid)) < events.index(("write", b"g\n"))
         assert result[1] == 0xC0000005
         assert result[3] == "exited"
         if delayed_exit:
@@ -413,3 +414,179 @@ def test_out_of_order_capture_sections_are_incomplete_not_errors(capture):
         .replace("_TEMP", "_MODULES")
     )
     assert not capture.parse_capture(raw, "a" * 32)["complete"]
+
+
+def test_setup_correction_is_single_predecessor_guarded_and_observable():
+    workflow = (ROOT / ".github/workflows/issue110-native-capture.yml").read_text()
+    predecessor = "github.event.before == '909b96ddd59067512ddb337b5f46567b06c2483f'"
+    assert workflow.count(predecessor) == 2
+    assert "github.event.created" not in workflow
+    assert workflow.count("github.run_attempt == 1") == 2
+    setup = (ROOT / "scripts/diagnostics/issue110_setup.ps1").read_text()
+    assert setup.index("'python_install'") < setup.index("'python_find'")
+    assert "@('python', 'install', '3.11.16')" in setup
+    assert "@('python', 'find', '--managed-python', '3.11.16')" in setup
+    assert setup.index("IsNullOrWhiteSpace($found)") < setup.index("$found.Trim()")
+    assert "WaitForExit([Math]::Min(100, $milliseconds))" in setup and "AddSeconds(300)" in setup
+    assert "original_group_started = $false" in setup
+    assert "tool_exit = $null" in setup and "tool_exit = $process.ExitCode" in setup
+    assert "Write-Error" not in setup and "Write-Output" not in setup
+    assert "issue110_setup.ps1" in workflow
+    assert "ProcessStartInfo" in setup and "ArgumentList.Add($argument)" in setup
+    assert "Start-Process" not in setup
+    assert "UV_PYTHON_DOWNLOADS_JSON_URL" in setup and "UV_ASTRAL_MIRROR_URL" in setup
+    assert "setup_descendant_cleanup = 'unverified'" in setup
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "success",
+        "install_failure",
+        "find_failure",
+        "empty_find",
+        "deadline",
+        "timeout",
+        "source_override",
+    ],
+)
+def test_powershell_setup_stages_fail_closed_without_raw_artifacts(tmp_path, scenario):
+    """Mandatory on the Windows runner; this Linux host has no PowerShell runtime."""
+    import os
+    import shutil
+    import subprocess
+    import time
+
+    shell = shutil.which("pwsh.exe") or shutil.which("pwsh")
+    if shell is None and os.name == "nt":
+        installed = Path(os.environ["SystemRoot"]).parent / "Program Files/PowerShell/7/pwsh.exe"
+        shell = str(installed) if installed.is_file() else None
+    if shell is None:
+        if os.name == "nt":
+            pytest.fail("PowerShell setup gate prerequisite missing")
+        pytest.skip("PowerShell is not installed on this non-Windows host")
+    script = ROOT / "scripts/diagnostics/issue110_setup.ps1"
+    driver = tmp_path / "setup-test.ps1"
+    driver.write_text(
+        r"""
+param([string]$Setup)
+function Get-Command {
+    param($Name, $CommandType)
+    [pscustomobject]@{Source='fake-uv.exe'}
+}
+function New-Object {
+    param($TypeName)
+    if ($TypeName -eq 'System.Diagnostics.ProcessStartInfo') {
+        return [System.Diagnostics.ProcessStartInfo]::new()
+    }
+    $process = [pscustomobject]@{
+        StartInfo=$null; ExitCode=0; HasExited=($env:SCENARIO -ne 'timeout')
+        StandardOutput=$null; StandardError=$null
+    }
+    $process | Add-Member -MemberType ScriptMethod -Name Start -Value {
+        $arguments = @($this.StartInfo.ArgumentList)
+        if ($arguments[0] -eq '--no-config') { $arguments = $arguments[1..($arguments.Count-1)] }
+        $stage = switch ($arguments[0]) {
+            'python' { 'python_' + $arguments[1] }
+            'export' { 'frozen_export' }
+            'pip' { if ($arguments[1] -eq 'sync') { 'frozen_sync' } else { 'editable_install' } }
+        }
+        $calls = Join-Path $env:RUNNER_TEMP 'calls.txt'
+        Add-Content -LiteralPath $calls -Value ($stage + ':' + ($arguments -join '|'))
+        if (($stage -eq 'python_install' -and $env:SCENARIO -eq 'install_failure') -or
+            ($stage -eq 'python_find' -and $env:SCENARIO -eq 'find_failure')) {
+            $this.ExitCode = 23
+        }
+        $body = if ($stage -eq 'python_find' -and $env:SCENARIO -ne 'empty_find') {
+            $env:FAKE_PYTHON
+        } else { '' }
+        $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+        $this.StandardOutput = [IO.StreamReader]::new([IO.MemoryStream]::new($bytes))
+        $errorBytes = [Text.Encoding]::UTF8.GetBytes('PRIVATE_RAW_CANARY')
+        $this.StandardError = [IO.StreamReader]::new([IO.MemoryStream]::new($errorBytes))
+        return $true
+    }
+    $process | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
+        param($ms)
+        return $this.HasExited
+    }
+    $process | Add-Member -MemberType ScriptMethod -Name Kill -Value {
+        param($tree)
+        $this.HasExited = $true
+        Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'killed.txt') -Value $tree
+    }
+    $process | Add-Member -MemberType ScriptMethod -Name Dispose -Value { }
+    return $process
+}
+if ($env:SCENARIO -eq 'timeout') {
+    $env:ISSUE110_SETUP_STARTED = [DateTimeOffset]::UtcNow.AddSeconds(-294).ToUnixTimeSeconds()
+}
+& $Setup -Group '1'
+exit $LASTEXITCODE
+""",
+        encoding="utf-8",
+    )
+    python = tmp_path / "fake python.exe"
+    python.touch()
+    env = dict(
+        os.environ,
+        RUNNER_TEMP=str(tmp_path),
+        GITHUB_WORKSPACE=str(tmp_path),
+        GITHUB_ENV=str(tmp_path / "github-env"),
+        SCENARIO=scenario,
+        FAKE_PYTHON=str(python),
+        ISSUE110_SETUP_STARTED=str(int(time.time()) - (301 if scenario == "deadline" else 0)),
+    )
+    if scenario == "source_override":
+        env["UV_PYTHON_INSTALL_MIRROR"] = "https://invalid.example/PRIVATE_RAW_CANARY"
+    result = subprocess.run(
+        [shell, "-NoProfile", "-NonInteractive", "-File", str(driver), str(script)],
+        env=env,
+        capture_output=True,
+        timeout=15,
+        check=False,
+    )
+    receipt_text = (tmp_path / "evidence/group-1.json").read_text(encoding="utf-8-sig")
+    receipt = json.loads(receipt_text)
+    assert "PRIVATE_RAW_CANARY" not in receipt_text
+    assert "PRIVATE_RAW_CANARY" not in result.stdout.decode(errors="replace")
+    assert "PRIVATE_RAW_CANARY" not in result.stderr.decode(errors="replace")
+    calls_path = tmp_path / "calls.txt"
+    stages = (
+        [line.split(":")[0] for line in calls_path.read_text().splitlines()]
+        if calls_path.exists()
+        else []
+    )
+    if scenario == "success":
+        assert result.returncode == 0
+        assert stages == [
+            "python_install",
+            "python_find",
+            "frozen_export",
+            "frozen_sync",
+            "editable_install",
+        ]
+        assert receipt["status"] == "setup_complete" and receipt["original_group_started"] is None
+        assert (tmp_path / "github-env").read_text().strip() == f"ISSUE110_PYTHON={python}"
+    else:
+        assert result.returncode == 1
+        assert receipt["status"] == "prerequisites_missing"
+        assert receipt["original_group_started"] is False
+        assert not (tmp_path / "github-env").exists()
+        if scenario == "source_override":
+            assert stages == [] and receipt["blocker"] == "python_source_override"
+        elif scenario == "deadline":
+            assert stages == [] and receipt["blocker"] == "setup_deadline"
+        elif scenario == "timeout":
+            assert stages == ["python_install"] and receipt["tool_exit"] is None
+            assert (tmp_path / "killed.txt").exists()
+        else:
+            assert stages == (
+                ["python_install"]
+                if scenario == "install_failure"
+                else ["python_install", "python_find"]
+            )
+            assert receipt["tool_exit"] == (0 if scenario == "empty_find" else 23)
+            assert receipt["blocker"] == (
+                "python_path_missing" if scenario == "empty_find" else "setup_stage_failed"
+            )
