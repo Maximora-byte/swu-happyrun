@@ -905,7 +905,7 @@ def test_native_preflight_workflow_is_one_job_without_original_entry():
     path = ROOT / ".github/workflows/issue110-native-preflight.yml"
     assert path.exists()
     workflow = path.read_text()
-    assert "github.event.before == '5d8bdd26471994a682f79ec93217897713fdbe47'" in workflow
+    assert "github.event.before == 'f2f35c7dbaad759bfabf775d1447c1d33ab82a7d'" in workflow
     assert "github.repository == 'Maximora-byte/swu-happyrun'" in workflow
     assert "github.ref == 'refs/heads/diagnostics/issue110-native-capture'" in workflow
     assert workflow.count("github.run_attempt == 1") == 1
@@ -921,7 +921,7 @@ def test_native_preflight_workflow_is_one_job_without_original_entry():
     assert "retention-days: 1" in workflow
     assert "*.log" not in workflow and "*.xml" not in workflow and "*.dmp" not in workflow
     for name in ("issue110-native-capture.yml", "issue110-setup-only.yml"):
-        assert "5d8bdd26471994a682f79ec93217897713fdbe47" not in (path.parent / name).read_text()
+        assert "f2f35c7dbaad759bfabf775d1447c1d33ab82a7d" not in (path.parent / name).read_text()
 
 
 def signature_markers(count=14, nonce="b" * 32):
