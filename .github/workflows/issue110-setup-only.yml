@@ -1,0 +1,71 @@
+name: issue110-setup-only
+
+on:
+  push:
+    branches: ["diagnostics/issue110-native-capture"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue110-setup-only-1
+  cancel-in-progress: false
+
+jobs:
+  setup-only:
+    if: >-
+      github.repository == 'Maximora-byte/swu-happyrun' &&
+      github.ref == 'refs/heads/diagnostics/issue110-native-capture' &&
+      github.event.before == '6ce2d7d848479bae43ae42b4b394f4560053eaf5' &&
+      github.run_attempt == 1
+    runs-on: windows-2025
+    timeout-minutes: 8
+    steps:
+      - name: Start shared five minute setup-only budget
+        shell: pwsh
+        run: |
+          "ISSUE110_SETUP_STARTED=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" >> $env:GITHUB_ENV
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        timeout-minutes: 1
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        timeout-minutes: 1
+        with:
+          ref: 6a0dac84bf66125c7e2bd506bb0d8c988b1dcc34
+          path: subject
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        timeout-minutes: 1
+        with:
+          version: "0.12.19"
+          enable-cache: false
+      - name: Independent Windows negatives, then one real setup and identity check
+        timeout-minutes: 6
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [void](New-Item -ItemType Directory -Force -Path evidence)
+          @{schema=1;status='prerequisites_missing';setup_stage='preinstalled_tools';original_group_started=$false;native_started=$false;setup_descendant_cleanup='unverified'} | ConvertTo-Json | Set-Content evidence/setup-only.json
+          $versions = @(Get-ChildItem (Join-Path $env:RUNNER_TOOL_CACHE 'Python') -Directory | Where-Object Name -Match '^3\.12\.\d+$' | Sort-Object { [version]$_.Name } -Descending)
+          if (-not $versions.Count) { throw 'Preinstalled Python prerequisite missing' }
+          $python = Join-Path $versions[0].FullName 'x64/python.exe'
+          $pwsh = Join-Path $PSHOME 'pwsh.exe'
+          foreach ($tool in @(@($python, 'Python Software Foundation'), @($pwsh, 'Microsoft Corporation'))) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $tool[0]
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch [regex]::Escape($tool[1])) { throw 'Installed tool signature prerequisite failed' }
+          }
+          $uv = (Get-Command uv -CommandType Application).Source
+          & $python -I harness/scripts/diagnostics/issue110_setup_verify.py --pwsh $pwsh --uv $uv
+          exit $LASTEXITCODE
+      - name: Retain fixed setup receipts only
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: issue110-setup-only-${{ github.run_id }}
+          path: |
+            evidence/setup-only.json
+            evidence/group-1.json
+          if-no-files-found: error
+          retention-days: 1

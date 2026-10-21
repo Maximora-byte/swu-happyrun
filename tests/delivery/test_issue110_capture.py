@@ -394,7 +394,7 @@ def test_every_existing_push_workflow_excludes_diagnostic_branch():
         "mumu-adapter-build-only.yml": ["dot/mumu-own-https-runner"],
     }
     files = {p.name: p for p in (ROOT / ".github/workflows").glob("*.yml")}
-    assert set(files) == {*expected, "issue110-native-capture.yml"}
+    assert set(files) == {*expected, "issue110-native-capture.yml", "issue110-setup-only.yml"}
     for name, patterns in expected.items():
         trigger = files[name].read_text().split("\npermissions:")[0]
         match = re.search(r"  push:\s*\n    branches: \[([^\]]+)\]", trigger)
@@ -424,7 +424,7 @@ def test_setup_correction_is_single_predecessor_guarded_and_observable():
     assert workflow.count("github.run_attempt == 1") == 2
     setup = (ROOT / "scripts/diagnostics/issue110_setup.ps1").read_text()
     assert setup.index("'python_install'") < setup.index("'python_find'")
-    assert "@('python', 'install', '3.11.16')" in setup
+    assert "@('python', 'install', '3.11.16', '--no-bin')" in setup
     assert "@('python', 'find', '--managed-python', '3.11.16')" in setup
     assert setup.index("IsNullOrWhiteSpace($found)") < setup.index("$found.Trim()")
     assert "WaitForExit([Math]::Min(100, $milliseconds))" in setup and "AddSeconds(300)" in setup
@@ -435,7 +435,22 @@ def test_setup_correction_is_single_predecessor_guarded_and_observable():
     assert "ProcessStartInfo" in setup and "ArgumentList.Add($argument)" in setup
     assert "Start-Process" not in setup
     assert "UV_PYTHON_DOWNLOADS_JSON_URL" in setup and "UV_ASTRAL_MIRROR_URL" in setup
+    assert "'UV_WORKING_DIR'" in setup and "'UV_PROJECT'" in setup
     assert "setup_descendant_cleanup = 'unverified'" in setup
+
+
+def test_managed_base_install_override_is_explicit_and_limited_to_both_write_stages():
+    setup = (ROOT / "scripts/diagnostics/issue110_setup.ps1").read_text()
+    lines = [line for line in setup.splitlines() if "Invoke-UvStage '" in line]
+    writes = [line for line in lines if "@('pip'," in line]
+    assert len(writes) == 2
+    assert all("'--python', $python, '--break-system-packages'" in line for line in writes)
+    assert setup.count("'--break-system-packages'") == 2
+    assert "'--system'" not in setup
+    assert "UV_BREAK_SYSTEM_PACKAGES" not in setup
+    assert "$info.Environment['UV_PYTHON_INSTALL_DIR'] = $installRoot" in setup
+    assert "[void](New-Item -ItemType Directory -Path $installRoot)" in setup
+    assert "[IO.FileAttributes]::ReparsePoint" in setup
 
 
 @pytest.mark.parametrize(
@@ -448,6 +463,16 @@ def test_setup_correction_is_single_predecessor_guarded_and_observable():
         "deadline",
         "timeout",
         "source_override",
+        "working_dir_override",
+        "project_override",
+        "external_path",
+        "prefix_collision",
+        "traversal_path",
+        "junction_path",
+        "existing_install_dir",
+        "frozen_export_failure",
+        "frozen_sync_failure",
+        "editable_install_failure",
     ],
 )
 def test_powershell_setup_stages_fail_closed_without_raw_artifacts(tmp_path, scenario):
@@ -485,6 +510,7 @@ function New-Object {
     }
     $process | Add-Member -MemberType ScriptMethod -Name Start -Value {
         $arguments = @($this.StartInfo.ArgumentList)
+        if ($arguments[0] -ne '--no-config') { $this.ExitCode = 24 }
         if ($arguments[0] -eq '--no-config') { $arguments = $arguments[1..($arguments.Count-1)] }
         $stage = switch ($arguments[0]) {
             'python' { 'python_' + $arguments[1] }
@@ -493,9 +519,31 @@ function New-Object {
         }
         $calls = Join-Path $env:RUNNER_TEMP 'calls.txt'
         Add-Content -LiteralPath $calls -Value ($stage + ':' + ($arguments -join '|'))
+        if ($stage -eq 'python_install') {
+            $owned = Join-Path $env:RUNNER_TEMP 'issue110-python-1'
+            if ($this.StartInfo.Environment['UV_PYTHON_INSTALL_DIR'] -ne $owned -or
+                '--no-bin' -notin $arguments) {
+                $this.ExitCode = 24
+            }
+            if ($env:SCENARIO -eq 'junction_path') {
+                $outside = Join-Path $env:RUNNER_TEMP 'outside'
+                [void](New-Item -ItemType Directory -Path $outside)
+                $kind = if ($IsWindows) { 'Junction' } else { 'SymbolicLink' }
+                $link = Split-Path $env:FAKE_PYTHON
+                [void](New-Item -ItemType $kind -Path $link -Target $outside)
+            } else {
+                [void](New-Item -ItemType Directory -Force -Path (Split-Path $env:FAKE_PYTHON))
+            }
+            Set-Content -LiteralPath $env:FAKE_PYTHON -Value 'fake interpreter'
+        }
         if (($stage -eq 'python_install' -and $env:SCENARIO -eq 'install_failure') -or
             ($stage -eq 'python_find' -and $env:SCENARIO -eq 'find_failure')) {
             $this.ExitCode = 23
+        }
+        if ($env:SCENARIO -eq ($stage + '_failure')) { $this.ExitCode = 23 }
+        # uv 0.12.19 refuses writes to its managed base without this explicit flag.
+        if ($arguments[0] -eq 'pip' -and '--break-system-packages' -notin $arguments) {
+            $this.ExitCode = 2
         }
         $body = if ($stage -eq 'python_find' -and $env:SCENARIO -ne 'empty_find') {
             $env:FAKE_PYTHON
@@ -526,8 +574,18 @@ exit $LASTEXITCODE
 """,
         encoding="utf-8",
     )
-    python = tmp_path / "fake python.exe"
-    python.touch()
+    install_root = tmp_path / "issue110-python-1"
+    python = install_root / "cpython-3.11.16" / "fake python.exe"
+    if scenario == "external_path":
+        python = tmp_path / "external python.exe"
+    elif scenario == "prefix_collision":
+        python = tmp_path / "issue110-python-1-other" / "fake python.exe"
+    elif scenario == "traversal_path":
+        python = install_root / ".." / "external python.exe"
+    elif scenario == "junction_path":
+        python = install_root / "linked" / "fake python.exe"
+    elif scenario == "existing_install_dir":
+        install_root.mkdir()
     env = dict(
         os.environ,
         RUNNER_TEMP=str(tmp_path),
@@ -539,6 +597,10 @@ exit $LASTEXITCODE
     )
     if scenario == "source_override":
         env["UV_PYTHON_INSTALL_MIRROR"] = "https://invalid.example/PRIVATE_RAW_CANARY"
+    elif scenario == "working_dir_override":
+        env["UV_WORKING_DIR"] = str(tmp_path)
+    elif scenario == "project_override":
+        env["UV_PROJECT"] = str(tmp_path)
     result = subprocess.run(
         [shell, "-NoProfile", "-NonInteractive", "-File", str(driver), str(script)],
         env=env,
@@ -573,8 +635,29 @@ exit $LASTEXITCODE
         assert receipt["status"] == "prerequisites_missing"
         assert receipt["original_group_started"] is False
         assert not (tmp_path / "github-env").exists()
-        if scenario == "source_override":
+        if scenario in {"source_override", "working_dir_override", "project_override"}:
             assert stages == [] and receipt["blocker"] == "python_source_override"
+        elif scenario == "existing_install_dir":
+            assert stages == [] and receipt["blocker"] == "python_install_directory_exists"
+        elif scenario in {"external_path", "prefix_collision", "traversal_path", "junction_path"}:
+            assert stages == ["python_install", "python_find"]
+            assert receipt["blocker"] == "python_path_not_owned"
+        elif scenario in {
+            "frozen_export_failure",
+            "frozen_sync_failure",
+            "editable_install_failure",
+        }:
+            order = [
+                "python_install",
+                "python_find",
+                "frozen_export",
+                "frozen_sync",
+                "editable_install",
+            ]
+            failed_stage = scenario.removesuffix("_failure")
+            assert stages == order[: order.index(failed_stage) + 1]
+            assert receipt["setup_stage"] == failed_stage and receipt["tool_exit"] == 23
+            assert receipt["blocker"] == "setup_stage_failed"
         elif scenario == "deadline":
             assert stages == [] and receipt["blocker"] == "setup_deadline"
         elif scenario == "timeout":
