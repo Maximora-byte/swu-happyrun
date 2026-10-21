@@ -10,8 +10,8 @@ permissions:
 
 jobs:
   contracts-and-diagnostics:
-    # Native filesystem validation makes the Windows full suite substantially
-    # slower. Keep a finite job budget; product operation deadlines are unchanged.
+    # Windows tests run in full-node shards below; retain both-platform packaging
+    # and diagnostics. Product deadlines and the original reporter stay unchanged.
     timeout-minutes: ${{ matrix.os == 'windows-latest' && 30 || 15 }}
     strategy:
       fail-fast: false
@@ -31,12 +31,13 @@ jobs:
       - run: uv sync --extra server --extra agent --extra dev --frozen
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
-      - name: Full Python suite on Linux
+      - name: Full Python suite on Linux with collection receipt
         if: runner.os != 'Windows'
-        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20
-      - name: Windows Python suite except separately tested pin pipeline
-        if: runner.os == 'Windows'
-        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 --ignore=tests/agent/test_enrollment_review_pin.py
+        run: >-
+          uv run --no-sync python scripts/ci_python_suite.py run
+          --output qa/python-suite/${{ runner.os }}-${{ matrix.python }}-0
+          --index 0 --count 1 --budget-seconds 750
+          --expected-sha ${{ github.sha }}
       - run: uv run --no-sync python scripts/export_schema.py --check
       - run: uv build
       - run: uv run --no-sync python scripts/check_distribution_privacy.py
@@ -55,17 +56,26 @@ jobs:
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 7
+      - name: Upload Linux full-suite receipt even on failure
+        if: always() && runner.os != 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-suite-${{ runner.os }}-${{ matrix.python }}-0-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: qa/python-suite/
+          if-no-files-found: error
+          retention-days: 7
 
-  windows-review-pin:
-    # Exhaustive partition: this exact file is excluded only from Windows main
-    # above; Linux still runs everything. No native QA opt-in is enabled here.
+  windows-full-suite:
+    # Every platform/interpreter collects its own entire suite. No filename or
+    # keyword allowlist: original-order nodes[index::6] is checked again below.
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
         python: ["3.11", "3.13"]
-        group: [boundaries, remaining]
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -76,12 +86,43 @@ jobs:
           python-version: ${{ matrix.python }}
           enable-cache: true
       - run: uv sync --extra server --extra agent --extra dev --frozen
-      - name: Pin authority and lock boundaries
-        if: matrix.group == 'boundaries'
-        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 tests/agent/test_enrollment_review_pin.py -k "test_authority_at_each_pin_mutation_stops_immediately or test_publish_failure_retains_pin_attempt_without_repair or test_lock_conflict_has_zero_sqlite_storage_mkdir_or_native or test_original_device_byte_uses_owner_fd_no_second_handle or test_issue_and_read_pin_readonly_never_ready"
-      - name: All remaining pin cases
-        if: matrix.group == 'remaining'
-        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 tests/agent/test_enrollment_review_pin.py -k "not (test_authority_at_each_pin_mutation_stops_immediately or test_publish_failure_retains_pin_attempt_without_repair or test_lock_conflict_has_zero_sqlite_storage_mkdir_or_native or test_original_device_byte_uses_owner_fd_no_second_handle or test_issue_and_read_pin_readonly_never_ready)"
+      - name: Run one finite full-suite shard
+        run: >-
+          uv run --no-sync python scripts/ci_python_suite.py run
+          --output qa/python-suite/${{ runner.os }}-${{ matrix.python }}-${{ matrix.shard }}
+          --index ${{ matrix.shard }} --count 6 --budget-seconds 1500
+          --expected-sha ${{ github.sha }}
+      - name: Upload shard receipt even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-suite-${{ runner.os }}-${{ matrix.python }}-${{ matrix.shard }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: qa/python-suite/
+          if-no-files-found: error
+          retention-days: 7
+
+  python-suite-completeness:
+    needs: [contracts-and-diagnostics, windows-full-suite]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: python-suite-*-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: qa/python-suite-receipts/
+      - name: Require all candidate nodes exactly once per platform and Python
+        run: >-
+          python scripts/ci_python_suite.py verify
+          --root qa/python-suite-receipts --expected-sha ${{ github.sha }}
+          --run-id ${{ github.run_id }} --attempt ${{ github.run_attempt }}
+          --expect "Linux:3.11:1" --expect "Linux:3.13:1"
+          --expect "Windows:3.11:6" --expect "Windows:3.13:6"
+          --job-result "${{ needs.contracts-and-diagnostics.result }}"
+          --job-result "${{ needs.windows-full-suite.result }}"
 
   console-browser-qa:
     runs-on: ubuntu-latest

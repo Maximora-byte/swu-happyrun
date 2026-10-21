@@ -72,6 +72,13 @@ def test_wrong_adb_alias_has_no_capabilities():
         ("observed_at", (NOW - timedelta(seconds=31)).isoformat()),
         ("observed_at", (NOW + timedelta(seconds=1)).isoformat()),
     ],
+    ids=[
+        "wrong-display",
+        "wrong-task",
+        "ambiguous-task",
+        "stale-observation",
+        "future-observation",
+    ],
 )
 def test_wrong_display_or_stale_observation_blocks_actions(field, value):
     observation = sample()

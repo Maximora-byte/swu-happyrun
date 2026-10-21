@@ -63,6 +63,7 @@ def record(grant, **changes):
         ("profile_revision", "f" * 64),
         ("app_version", "wrong-version"),
     ],
+    ids=["wrong-job", "wrong-run-session", "wrong-profile-revision", "wrong-app-version"],
 )
 def test_wrong_record_binding_never_succeeds(client, spec, field, value):
     grant = device_job(client, spec)
