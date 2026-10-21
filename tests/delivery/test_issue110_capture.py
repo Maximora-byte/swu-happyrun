@@ -932,6 +932,10 @@ def signature_markers_v3(count=18, nonce="b" * 32):
     return "".join(f"SWU_SIG_V3_{nonce} {index} {index * 10}\n" for index in range(count)).encode()
 
 
+def signature_markers_v4(count=27, nonce="b" * 32):
+    return "".join(f"SWU_SIG_V4_{nonce} {index} {index * 10}\n" for index in range(count)).encode()
+
+
 @pytest.mark.parametrize("count", [0, 1, 2, 3, 4, 5, 9, 13, 14])
 def test_signature_progress_accepts_only_the_fixed_ordered_prefix(capture, count):
     result = capture.parse_signature_progress(signature_markers(count), "b" * 32)
@@ -983,8 +987,17 @@ def test_signature_progress_preserves_only_complete_lines_before_truncation(capt
 
 
 @pytest.mark.parametrize("deadline, expected_timeout", [(150, 30), (105, 5)])
+@pytest.mark.parametrize(
+    "count, last_stage",
+    [
+        (8, "version_start"),
+        (9, "item_returned"),
+        (10, "version_info_returned"),
+        (11, "version_parts_returned"),
+    ],
+)
 def test_signature_timeout_keeps_safe_partial_markers_and_the_original_timeout(
-    capture, monkeypatch, tmp_path, deadline, expected_timeout
+    capture, monkeypatch, tmp_path, deadline, expected_timeout, count, last_stage
 ):
     from types import SimpleNamespace
 
@@ -997,7 +1010,7 @@ def test_signature_timeout_keeps_safe_partial_markers_and_the_original_timeout(
         "PRIVATE_CANARY",
         30,
         output=b"PRIVATE_CANARY",
-        stderr=signature_markers_v3(10) + b"PRIVATE_CANARY\n",
+        stderr=signature_markers_v4(count) + b"PRIVATE_CANARY\n",
     )
 
     def run(argv, **kwargs):
@@ -1029,11 +1042,26 @@ def test_signature_timeout_keeps_safe_partial_markers_and_the_original_timeout(
         for excluded in ("Join-Path", "Test-Path", "-Force", "PSModuleAutoLoadingPreference"):
             assert excluded not in script
         call = "$s=Get-AuthenticodeSignature -LiteralPath $p"
-        assert script.index("Mark (5+4*$i)") < script.index(call)
-        assert script.index(call) < script.index("Mark (6+4*$i)")
-        assert script.index("Mark (7+4*$i)") < script.index("Get-Item")
-        assert script.index("Get-Item") < script.index("Mark (8+4*$i)")
-        assert script.index("ConvertTo-Json") < script.index("Mark 17")
+        assert script.index("Mark (5+7*$i)") < script.index(call)
+        assert script.index(call) < script.index("Mark (6+7*$i)")
+        ordered = [
+            "Mark (7+7*$i)",
+            "$item=Get-Item -LiteralPath $p;",
+            "Mark (8+7*$i)",
+            "$v=$item.VersionInfo;",
+            "Mark (9+7*$i)",
+            "$parts=@($v.FileMajorPart,$v.FileMinorPart,$v.FileBuildPart,$v.FilePrivatePart);",
+            "Mark (10+7*$i)",
+            "$items+=@{name=[IO.Path]::GetFileName($p); version=($parts -join '.')};",
+            "Mark (11+7*$i)",
+            "ConvertTo-Json -Compress -InputObject @($items)",
+            "Mark 26",
+        ]
+        positions = [script.index(statement) for statement in ordered]
+        assert positions == sorted(positions)
+        assert script.count("Get-Item") == script.count(".VersionInfo") == 1
+        assert "Microsoft.PowerShell.Management" not in script
+        assert "FileVersionInfo]::GetVersionInfo" not in script
         raise error
 
     monkeypatch.setattr(capture.subprocess, "run", run)
@@ -1043,9 +1071,9 @@ def test_signature_timeout_keeps_safe_partial_markers_and_the_original_timeout(
         )
     assert raised.value is error
     assert receipt["tool_exit"] is None and receipt["stage"] == "signature_check"
-    assert receipt["progress"]["marker_count"] == 10
-    assert receipt["progress"]["last_stage"] == "trust_start"
-    assert receipt["progress"]["file_index"] == 1
+    assert receipt["progress"]["marker_count"] == count
+    assert receipt["progress"]["last_stage"] == last_stage
+    assert receipt["progress"]["file_index"] == 0
     assert receipt["run_timeout_seconds"] == expected_timeout
     assert receipt["run_elapsed_ms"] == 0
     assert "PRIVATE_CANARY" not in json.dumps(receipt)
@@ -1070,7 +1098,7 @@ def test_signature_markers_never_replace_process_trust_verdict(
         capture.subprocess,
         "run",
         lambda *a, **kw: SimpleNamespace(
-            returncode=code, stdout=json.dumps(data).encode(), stderr=signature_markers_v3()
+            returncode=code, stdout=json.dumps(data).encode(), stderr=signature_markers_v4()
         ),
     )
     if code:
@@ -1086,7 +1114,7 @@ def test_signature_markers_never_replace_process_trust_verdict(
             capture.time.monotonic() + 300,
             receipt=receipt,
         )
-        assert len(binaries) == 3
+        assert binaries == [item | {"sha256": "0" * 64} for item in data]
     assert receipt["tool_exit"] == code
     assert receipt["progress"]["complete"] is True
     assert receipt["stage"] == ("signature_check" if code else "complete")
@@ -1304,7 +1332,7 @@ def test_signature_v2_maps_discovery_without_reinterpreting_legacy(
     )
 
 
-@pytest.mark.parametrize("version", [-1, 0, 4, True, "2"])
+@pytest.mark.parametrize("version", [-1, 0, 5, True, "2"])
 def test_signature_progress_rejects_unsupported_protocol(capture, version):
     result = capture.parse_signature_progress(signature_markers_v2(), "b" * 32, version=version)
     assert result["rejection"] == "unsupported_version"
@@ -1366,7 +1394,7 @@ def test_signature_parent_elapsed_is_total_call_not_script_or_timeout(
 
     monkeypatch.setattr(capture, "parse_signature_progress", parse)
     error = (
-        capture.subprocess.TimeoutExpired("PRIVATE_CANARY", 30, stderr=signature_markers_v3(2))
+        capture.subprocess.TimeoutExpired("PRIVATE_CANARY", 30, stderr=signature_markers_v4(2))
         if outcome == "timeout"
         else OSError("PRIVATE_CANARY")
     )
@@ -1384,7 +1412,7 @@ def test_signature_parent_elapsed_is_total_call_not_script_or_timeout(
         return SimpleNamespace(
             returncode=3 if outcome == "trust" else 0,
             stdout=json.dumps(data).encode(),
-            stderr=signature_markers_v3(),
+            stderr=signature_markers_v4(),
         )
 
     monkeypatch.setattr(capture.subprocess, "run", run)
@@ -1553,7 +1581,7 @@ def test_signature_missing_fixed_manifest_is_explicit_without_raw_error_or_fallb
         return SimpleNamespace(
             returncode=4,
             stdout=b"PRIVATE_CANARY",
-            stderr=signature_markers_v3(prefix_count) + b"PRIVATE_CANARY\n",
+            stderr=signature_markers_v4(prefix_count) + b"PRIVATE_CANARY\n",
         )
 
     monkeypatch.setattr(capture.subprocess, "run", run)
@@ -1571,3 +1599,70 @@ def test_signature_missing_fixed_manifest_is_explicit_without_raw_error_or_fallb
         assert receipt["stage"] == "signature_check" and "blocker" not in receipt
     assert not receipt["progress"]["complete"]
     assert "PRIVATE_CANARY" not in json.dumps(receipt, allow_nan=False)
+
+
+@pytest.mark.parametrize(
+    "count, stage, file_index",
+    [
+        (0, None, None),
+        (1, "script_start", None),
+        (2, "import_start", None),
+        (3, "import_done", None),
+        (4, "resolve_start", None),
+        (5, "resolve_done", None),
+        (6, "trust_start", 0),
+        (7, "trust_returned", 0),
+        (8, "version_start", 0),
+        (9, "item_returned", 0),
+        (10, "version_info_returned", 0),
+        (11, "version_parts_returned", 0),
+        (12, "version_done", 0),
+        (13, "trust_start", 1),
+        (20, "trust_start", 2),
+        (26, "version_done", 2),
+        (27, "script_done", None),
+    ],
+)
+def test_signature_v4_separates_item_property_and_integer_reads(capture, count, stage, file_index):
+    result = capture.parse_signature_progress(signature_markers_v4(count), "b" * 32, version=4)
+    assert result["protocol_version"] == 4 and result["marker_count"] == count
+    assert result["last_stage"] == stage and result["file_index"] == file_index
+    assert result["complete"] is (count == 27)
+
+
+def test_archived_v3_version_start_receipt_keeps_its_original_meaning(capture):
+    times = [13, 27, 154, 155, 162, 168, 209, 221]
+    raw = "".join(
+        f"SWU_SIG_V3_{'b' * 32} {index} {elapsed}\n" for index, elapsed in enumerate(times)
+    ).encode()
+    result = capture.parse_signature_progress(raw, "b" * 32, version=3)
+    assert result["last_stage"] == "version_start" and result["file_index"] == 0
+    assert result["checkpoints_ms"] == times and result["marker_count"] == 8
+    assert not result["complete"]
+    later = capture.parse_signature_progress(signature_markers_v3(9), "b" * 32, version=3)
+    assert later["last_stage"] == "version_done"
+    assert capture.parse_signature_progress(raw, "b" * 32, version=4)["marker_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "raw, rejection",
+    [
+        (signature_markers(), "no_markers"),
+        (signature_markers_v2(), "no_markers"),
+        (signature_markers_v3(), "no_markers"),
+        (signature_markers_v4(9) + signature_markers_v4(9), "invalid_markers"),
+        (signature_markers_v4(9) + b"SWU_SIG_V4_" + b"b" * 32 + b" 10 100\n", "invalid_markers"),
+        (signature_markers_v4(9) + b"SWU_SIG_V4_" + b"b" * 32 + b" 9 1\n", "invalid_markers"),
+        (signature_markers_v4() + b"SWU_SIG_V4_" + b"b" * 32 + b"\t27 270\n", "invalid_markers"),
+        (signature_markers_v4(9) + b"SWU_SIG_V4_" + b"b" * 32 + b" 9 ", "truncated"),
+        (signature_markers_v4() + b"SWU_SIG_V4_bbbb", "truncated"),
+    ],
+)
+def test_signature_v4_rejects_foreign_malformed_and_truncated_streams(capture, raw, rejection):
+    result = capture.parse_signature_progress(raw, "b" * 32, version=4)
+    assert not result["complete"] and result["rejection"] == rejection
+    if rejection == "truncated" and result["marker_count"] == 9:
+        assert result["last_stage"] == "item_returned" and result["file_index"] == 0
+    for version in (1, 2, 3):
+        legacy = capture.parse_signature_progress(signature_markers_v4(), "b" * 32, version=version)
+        assert legacy["marker_count"] == 0 and not legacy["complete"]
