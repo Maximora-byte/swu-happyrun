@@ -261,11 +261,13 @@ def parse_signature_progress(raw, nonce, *, version=1):
         "checkpoints_ms": [],
         "rejection": "no_markers",
     }
-    if type(version) is not int or version not in (1, 2):
+    if type(version) is not int or version not in (1, 2, 3):
         return result | {"rejection": "unsupported_version"}
     stages = [("script_start", None)]
-    if version == 2:
-        result["protocol_version"] = 2
+    if version > 1:
+        result["protocol_version"] = version
+        if version == 3:
+            stages += [("import_start", None), ("import_done", None)]
         stages += [("resolve_start", None), ("resolve_done", None)]
     stages += [
         (stage, file_index)
@@ -279,7 +281,7 @@ def parse_signature_progress(raw, nonce, *, version=1):
         return result | {"rejection": "output_limit"}
     if isinstance(raw, bytes):
         raw = raw.decode("ascii", errors="replace")
-    tag = ("SWU_SIG_" if version == 1 else "SWU_SIG_V2_") + nonce
+    tag = ("SWU_SIG_" if version == 1 else f"SWU_SIG_V{version}_") + nonce
     prefix = tag + " "
     times = []
     truncated = False
@@ -334,28 +336,36 @@ def installed_debugger(env, deadline, *, receipt=None):
     if not all(path.is_file() and x64_pe(path) for path in paths):
         raise ValueError("installed_x64_debugger_missing")
     # Script timings exclude process startup. Trust-returned is not a verdict.
-    # Explicit discovery can move module initialization earlier; this is not passive timing.
+    # Explicit import changes dispatch preparation; it is not passive timing or a trust verdict.
+    # Only the fixed PSHOME manifest is tried; its presence on the runner is not assumed.
     # Only a generated hex nonce varies in this fixed script; no external shell content.
     nonce = uuid.uuid4().hex
-    script = """$ErrorActionPreference='Stop'; $clock=[Diagnostics.Stopwatch]::StartNew();
+    script = (
+        """$ErrorActionPreference='Stop'; $clock=[Diagnostics.Stopwatch]::StartNew();
     function Mark([int]$n) {
-      [Console]::Error.WriteLine(('SWU_SIG_V2_NONCE {0} {1}' -f $n,$clock.ElapsedMilliseconds));
+      [Console]::Error.WriteLine(('SWU_SIG_V3_NONCE {0} {1}' -f $n,$clock.ElapsedMilliseconds));
       [Console]::Error.Flush();
     };
-    Mark 0; Mark 1;
-    $null=Get-Command -Name Get-AuthenticodeSignature -CommandType Cmdlet -ErrorAction Stop;
-    Mark 2; $items=@(); $i=0; foreach($p in $args) {
-    Mark (3+4*$i);
+    Mark 0;
+    $manifest=[IO.Path]::Combine($PSHOME,'Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1');
+    if(-not [IO.File]::Exists($manifest)) {exit 4};
+    Mark 1; $null=Import-Module -Name $manifest -ErrorAction Stop; Mark 2;
+    Mark 3;
+    $null=Get-Command -ListImported -Name Get-AuthenticodeSignature """
+        """-CommandType Cmdlet -ErrorAction Stop;
+    Mark 4; $items=@(); $i=0; foreach($p in $args) {
+    Mark (5+4*$i);
     $s=Get-AuthenticodeSignature -LiteralPath $p;
-    Mark (4+4*$i);
+    Mark (6+4*$i);
     $publisher='(^|,\\s*)O=Microsoft Corporation(,|$)';
     if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch $publisher) {exit 3};
-    Mark (5+4*$i);
+    Mark (7+4*$i);
     $v=(Get-Item -LiteralPath $p).VersionInfo;
     $parts=@($v.FileMajorPart,$v.FileMinorPart,$v.FileBuildPart,$v.FilePrivatePart);
     $items+=@{name=[IO.Path]::GetFileName($p); version=($parts -join '.')};
-    Mark (6+4*$i); $i++;
-    }; ConvertTo-Json -Compress -InputObject @($items); Mark 15""".replace("NONCE", nonce)
+    Mark (8+4*$i); $i++;
+    }; ConvertTo-Json -Compress -InputObject @($items); Mark 17"""
+    ).replace("NONCE", nonce)
     # -File keeps filenames out of PowerShell's command-language parser.
     checker = Path(env["TEMP"]).parent / "verify-signatures.ps1"
     checker.write_text(script, encoding="utf-8")
@@ -390,11 +400,17 @@ def installed_debugger(env, deadline, *, receipt=None):
                 # Optional timing must never replace the subprocess outcome or exception.
                 pass
     except subprocess.TimeoutExpired as error:
-        receipt["progress"] = parse_signature_progress(error.stderr, nonce, version=2)
+        receipt["progress"] = parse_signature_progress(error.stderr, nonce, version=3)
         raise
-    receipt["progress"] = parse_signature_progress(verified.stderr, nonce, version=2)
+    receipt["progress"] = parse_signature_progress(verified.stderr, nonce, version=3)
     receipt["tool_exit"] = verified.returncode
     if verified.returncode != 0:
+        if (
+            verified.returncode == 4
+            and receipt["progress"]["marker_count"] == 1
+            and receipt["progress"]["rejection"] == "incomplete"
+        ):
+            receipt.update(stage="security_module_manifest", blocker="manifest_unavailable")
         raise ValueError("debugger_signature_unverified")
     receipt["stage"] = "signature_json"
     data = json.loads(verified.stdout)
