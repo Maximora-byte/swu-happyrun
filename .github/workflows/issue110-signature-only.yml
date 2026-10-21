@@ -1,0 +1,66 @@
+name: issue110-signature-only
+
+on:
+  push:
+    branches: ["diagnostics/issue110-native-capture"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue110-signature-only-1
+  cancel-in-progress: false
+
+jobs:
+  signature:
+    # One changed-instrumentation signature check; no debugger or crash-test execution.
+    if: >-
+      github.repository == 'Maximora-byte/swu-happyrun' &&
+      github.ref == 'refs/heads/diagnostics/issue110-native-capture' &&
+      github.event.before == 'ebab9de3b4522691e3fec4213f03102f20edcfda' &&
+      github.run_attempt == 1
+    runs-on: windows-2025
+    timeout-minutes: 8
+    steps:
+      - name: Start five minute setup budget
+        shell: pwsh
+        run: |
+          "ISSUE110_SETUP_STARTED=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" >> $env:GITHUB_ENV
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        timeout-minutes: 1
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        timeout-minutes: 1
+        with:
+          ref: 6a0dac84bf66125c7e2bd506bb0d8c988b1dcc34
+          path: subject
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        timeout-minutes: 1
+        with:
+          version: "0.12.19"
+          python-version: "3.11.16"
+          enable-cache: false
+      - name: Frozen dependencies and original editable project in disposable direct interpreter
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          & harness/scripts/diagnostics/issue110_setup.ps1 -Group '1'
+          exit $LASTEXITCODE
+      - name: Verify signatures only; never execute the debugger or crash tests
+        shell: pwsh
+        run: |
+          & $env:ISSUE110_PYTHON harness/scripts/diagnostics/issue110_signature_only.py --subject "$env:GITHUB_WORKSPACE/subject" --private "$env:RUNNER_TEMP/issue110-1" --output "$env:GITHUB_WORKSPACE/evidence/signature.json" --setup-started $env:ISSUE110_SETUP_STARTED
+          exit $LASTEXITCODE
+      - name: Publish only allowlisted evidence, never raw output or memory
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: issue110-signature-only-${{ github.run_id }}
+          path: |
+            evidence/group-1.json
+            evidence/signature.json
+          if-no-files-found: error
+          retention-days: 1

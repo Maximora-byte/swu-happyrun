@@ -251,6 +251,70 @@ def remaining(deadline, maximum):
     return seconds
 
 
+def parse_signature_progress(raw, nonce):
+    result = {
+        "complete": False,
+        "marker_count": 0,
+        "last_stage": None,
+        "file_index": None,
+        "elapsed_ms": None,
+        "checkpoints_ms": [],
+        "rejection": "no_markers",
+    }
+    if raw is None:
+        return result
+    if len(raw) > 65536:
+        return result | {"rejection": "output_limit"}
+    if isinstance(raw, bytes):
+        raw = raw.decode("ascii", errors="replace")
+    tag = "SWU_SIG_" + nonce
+    prefix = tag + " "
+    times = []
+    truncated = False
+    for line in raw.splitlines(keepends=True):
+        partial_tag = (
+            not line.endswith("\n") and line.startswith("SWU_SIG_") and tag.startswith(line)
+        )
+        if partial_tag:
+            truncated = True
+            break
+        if not line.startswith(tag):
+            continue
+        if not line.endswith("\n"):
+            truncated = True
+            break
+        match = re.fullmatch(re.escape(prefix) + r"([0-9]{1,2}) ([0-9]{1,6})\r?\n", line)
+        if not match:
+            return result | {"rejection": "invalid_markers"}
+        index, elapsed = map(int, match.groups())
+        if index != len(times) or index >= 14 or not (0 <= elapsed <= 300000):
+            return result | {"rejection": "invalid_markers"}
+        if times and elapsed < times[-1]:
+            return result | {"rejection": "invalid_markers"}
+        times.append(elapsed)
+    if times:
+        index = len(times) - 1
+        stage = (
+            "script_start"
+            if index == 0
+            else "script_done"
+            if index == 13
+            else ("trust_start", "trust_returned", "version_start", "version_done")[(index - 1) % 4]
+        )
+        result.update(
+            marker_count=len(times),
+            last_stage=stage,
+            file_index=(index - 1) // 4 if 1 <= index <= 12 else None,
+            elapsed_ms=times[-1],
+            checkpoints_ms=times,
+            complete=len(times) == 14 and not truncated,
+            rejection=None if len(times) == 14 else "incomplete",
+        )
+    if truncated:
+        result["rejection"] = "truncated"
+    return result
+
+
 def installed_debugger(env, deadline, *, receipt=None):
     receipt = {} if receipt is None else receipt
     receipt.update(stage="binary_presence", tool_exit=None)
@@ -261,27 +325,50 @@ def installed_debugger(env, deadline, *, receipt=None):
     paths = [root / name for name in ("cdb.exe", "dbgeng.dll", "dbghelp.dll")]
     if not all(path.is_file() and x64_pe(path) for path in paths):
         raise ValueError("installed_x64_debugger_missing")
-    # Static script; no arbitrary shell content or external installation.
-    script = """$ErrorActionPreference='Stop'; $items=@(); foreach($p in $args) {
+    # Timings begin inside PowerShell, not at process startup. Trust-returned is not a verdict.
+    # Only a generated hex nonce varies in this fixed script; no external shell content.
+    nonce = uuid.uuid4().hex
+    script = """$ErrorActionPreference='Stop'; $clock=[Diagnostics.Stopwatch]::StartNew();
+    function Mark([int]$n) {
+      [Console]::Error.WriteLine(('SWU_SIG_NONCE {0} {1}' -f $n,$clock.ElapsedMilliseconds));
+      [Console]::Error.Flush();
+    };
+    Mark 0; $items=@(); $i=0; foreach($p in $args) {
+    Mark (1+4*$i);
     $s=Get-AuthenticodeSignature -LiteralPath $p;
+    Mark (2+4*$i);
     $publisher='(^|,\\s*)O=Microsoft Corporation(,|$)';
     if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch $publisher) {exit 3};
+    Mark (3+4*$i);
     $v=(Get-Item -LiteralPath $p).VersionInfo;
     $parts=@($v.FileMajorPart,$v.FileMinorPart,$v.FileBuildPart,$v.FilePrivatePart);
     $items+=@{name=[IO.Path]::GetFileName($p); version=($parts -join '.')};
-    }; ConvertTo-Json -Compress -InputObject @($items)"""
+    Mark (4+4*$i); $i++;
+    }; ConvertTo-Json -Compress -InputObject @($items); Mark 13""".replace("NONCE", nonce)
     # -File keeps filenames out of PowerShell's command-language parser.
     checker = Path(env["TEMP"]).parent / "verify-signatures.ps1"
     checker.write_text(script, encoding="utf-8")
     powershell = Path(env["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     receipt["stage"] = "signature_check"
-    verified = subprocess.run(
-        [str(powershell), "-NoProfile", "-NonInteractive", "-File", str(checker), *map(str, paths)],
-        env=env,
-        capture_output=True,
-        timeout=remaining(deadline, 30),
-        check=False,
-    )
+    try:
+        verified = subprocess.run(
+            [
+                str(powershell),
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                str(checker),
+                *map(str, paths),
+            ],
+            env=env,
+            capture_output=True,
+            timeout=remaining(deadline, 30),
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        receipt["progress"] = parse_signature_progress(error.stderr, nonce)
+        raise
+    receipt["progress"] = parse_signature_progress(verified.stderr, nonce)
     receipt["tool_exit"] = verified.returncode
     if verified.returncode != 0:
         raise ValueError("debugger_signature_unverified")

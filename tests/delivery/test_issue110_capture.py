@@ -399,6 +399,7 @@ def test_every_existing_push_workflow_excludes_diagnostic_branch():
         "issue110-native-capture.yml",
         "issue110-setup-only.yml",
         "issue110-native-preflight.yml",
+        "issue110-signature-only.yml",
     }
     for name, patterns in expected.items():
         trigger = files[name].read_text().split("\npermissions:")[0]
@@ -750,7 +751,7 @@ def test_debugger_check_failure_keeps_fixed_substage_without_private_error(
             raise capture.subprocess.TimeoutExpired(
                 "PRIVATE_CANARY", kwargs["timeout"], output=b"PRIVATE_CANARY"
             )
-        return SimpleNamespace(returncode=0, stdout=b"PRIVATE_CANARY")
+        return SimpleNamespace(returncode=0, stdout=b"PRIVATE_CANARY", stderr=b"")
 
     monkeypatch.setattr(capture.subprocess, "run", run)
     error = capture.subprocess.TimeoutExpired if failure == "timeout" else json.JSONDecodeError
@@ -917,3 +918,327 @@ def test_native_preflight_workflow_is_one_job_without_original_entry():
     assert "*.log" not in workflow and "*.xml" not in workflow and "*.dmp" not in workflow
     for name in ("issue110-native-capture.yml", "issue110-setup-only.yml"):
         assert "5d8bdd26471994a682f79ec93217897713fdbe47" not in (path.parent / name).read_text()
+
+
+def signature_markers(count=14, nonce="b" * 32):
+    return "".join(f"SWU_SIG_{nonce} {index} {index * 10}\n" for index in range(count)).encode()
+
+
+@pytest.mark.parametrize("count", [0, 1, 2, 3, 4, 5, 9, 13, 14])
+def test_signature_progress_accepts_only_the_fixed_ordered_prefix(capture, count):
+    result = capture.parse_signature_progress(signature_markers(count), "b" * 32)
+    assert result["marker_count"] == count
+    assert result["complete"] is (count == 14)
+    assert result["elapsed_ms"] == ((count - 1) * 10 if count else None)
+    assert result["rejection"] == (None if count == 14 else "incomplete" if count else "no_markers")
+    if count == 2:
+        assert result["last_stage"] == "trust_start"
+        assert result["file_index"] == 0
+    if count == 9:
+        assert result["last_stage"] == "version_done"
+        assert result["file_index"] == 1
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        signature_markers(2) + signature_markers(2),
+        signature_markers(1) + b"SWU_SIG_" + b"b" * 32 + b" 9 10\n",
+        signature_markers(2) + b"SWU_SIG_" + b"b" * 32 + b" 2 1\n",
+        b"SWU_SIG_" + b"b" * 32 + b" 0 -1\n",
+        b"SWU_SIG_" + b"b" * 32 + b" 0 300001\n",
+        b"SWU_SIG_" + b"b" * 32 + b" 0 PRIVATE_CANARY\n",
+        signature_markers() + b"SWU_SIG_" + b"b" * 32 + b" 14 140\n",
+    ],
+)
+def test_signature_progress_rejects_malformed_ambiguous_or_nonmonotonic_markers(capture, raw):
+    result = capture.parse_signature_progress(raw, "b" * 32)
+    assert result["complete"] is False and result["marker_count"] == 0
+    assert result["rejection"] == "invalid_markers"
+    assert "PRIVATE_CANARY" not in json.dumps(result)
+
+
+def test_signature_progress_preserves_only_complete_lines_before_truncation(capture):
+    raw = b"PRIVATE_CANARY\n" + signature_markers(2) + b"SWU_SIG_" + b"b" * 32 + b" 2 "
+    result = capture.parse_signature_progress(raw, "b" * 32)
+    assert result["marker_count"] == 2 and result["last_stage"] == "trust_start"
+    assert result["rejection"] == "truncated" and result["complete"] is False
+    assert "PRIVATE_CANARY" not in json.dumps(result)
+    assert (
+        capture.parse_signature_progress(signature_markers(nonce="c" * 32), "b" * 32)[
+            "marker_count"
+        ]
+        == 0
+    )
+    assert capture.parse_signature_progress(None, "b" * 32)["rejection"] == "no_markers"
+    assert capture.parse_signature_progress(b"X" * 65537, "b" * 32)["rejection"] == "output_limit"
+
+
+@pytest.mark.parametrize("deadline, expected_timeout", [(150, 30), (105, 5)])
+def test_signature_timeout_keeps_safe_partial_markers_and_the_original_timeout(
+    capture, monkeypatch, tmp_path, deadline, expected_timeout
+):
+    from types import SimpleNamespace
+
+    receipt = {}
+    monkeypatch.setattr(capture.Path, "is_file", lambda self: True)
+    monkeypatch.setattr(capture, "x64_pe", lambda path: True)
+    monkeypatch.setattr(capture.uuid, "uuid4", lambda: SimpleNamespace(hex="b" * 32))
+    monkeypatch.setattr(capture.time, "monotonic", lambda: 100)
+    error = capture.subprocess.TimeoutExpired(
+        "PRIVATE_CANARY",
+        30,
+        output=b"PRIVATE_CANARY",
+        stderr=signature_markers(6) + b"PRIVATE_CANARY\n",
+    )
+
+    def run(argv, **kwargs):
+        assert kwargs["timeout"] == expected_timeout and kwargs["check"] is False
+        assert argv[1:4] == ["-NoProfile", "-NonInteractive", "-File"]
+        script = Path(argv[4]).read_text()
+        assert "Get-AuthenticodeSignature -LiteralPath $p" in script
+        assert "$s.Status -ne 'Valid'" in script
+        assert "$s.SignerCertificate.Subject -notmatch $publisher" in script
+        assert "Microsoft Corporation" in script
+        assert "[Console]::Error.Flush()" in script
+        assert script.index("Mark 0") < script.index("foreach($p in $args)")
+        assert script.index("Mark (1+4*$i)") < script.index("Get-AuthenticodeSignature")
+        assert script.index("Get-AuthenticodeSignature") < script.index("Mark (2+4*$i)")
+        assert script.index("Mark (3+4*$i)") < script.index("Get-Item")
+        assert script.index("Get-Item") < script.index("Mark (4+4*$i)")
+        assert script.index("ConvertTo-Json") < script.index("Mark 13")
+        raise error
+
+    monkeypatch.setattr(capture.subprocess, "run", run)
+    with pytest.raises(capture.subprocess.TimeoutExpired) as raised:
+        capture.installed_debugger(
+            {"TEMP": str(tmp_path / "temp"), "SystemRoot": "windows"}, deadline, receipt=receipt
+        )
+    assert raised.value is error
+    assert receipt["tool_exit"] is None and receipt["stage"] == "signature_check"
+    assert receipt["progress"]["marker_count"] == 6
+    assert receipt["progress"]["last_stage"] == "trust_start"
+    assert receipt["progress"]["file_index"] == 1
+    assert "PRIVATE_CANARY" not in json.dumps(receipt)
+
+
+@pytest.mark.parametrize("code", [0, 3])
+def test_signature_markers_never_replace_process_trust_verdict(
+    capture, monkeypatch, tmp_path, code
+):
+    from types import SimpleNamespace
+
+    receipt = {}
+    monkeypatch.setattr(capture.Path, "is_file", lambda self: True)
+    monkeypatch.setattr(capture, "x64_pe", lambda path: True)
+    monkeypatch.setattr(capture, "sha256", lambda path: "0" * 64)
+    monkeypatch.setattr(capture.uuid, "uuid4", lambda: SimpleNamespace(hex="b" * 32))
+    data = [
+        {"name": name, "version": "10.0.26100.8249"}
+        for name in ("cdb.exe", "dbgeng.dll", "dbghelp.dll")
+    ]
+    monkeypatch.setattr(
+        capture.subprocess,
+        "run",
+        lambda *a, **kw: SimpleNamespace(
+            returncode=code, stdout=json.dumps(data).encode(), stderr=signature_markers()
+        ),
+    )
+    if code:
+        with pytest.raises(ValueError, match="debugger_signature_unverified"):
+            capture.installed_debugger(
+                {"TEMP": str(tmp_path / "temp"), "SystemRoot": "windows"},
+                capture.time.monotonic() + 300,
+                receipt=receipt,
+            )
+    else:
+        _, binaries = capture.installed_debugger(
+            {"TEMP": str(tmp_path / "temp"), "SystemRoot": "windows"},
+            capture.time.monotonic() + 300,
+            receipt=receipt,
+        )
+        assert len(binaries) == 3
+    assert receipt["tool_exit"] == code
+    assert receipt["progress"]["complete"] is True
+    assert receipt["stage"] == ("signature_check" if code else "complete")
+
+
+@pytest.mark.parametrize(
+    "suffix, rejection",
+    [
+        (b"SWU_SIG_" + b"b" * 32 + b"X 0 1\n", "invalid_markers"),
+        (b"SWU_SIG_" + b"b" * 32 + b"\t0 1\n", "invalid_markers"),
+        (b"SWU_SIG_" + b"b" * 32 + b"\n", "invalid_markers"),
+        (b"SWU_SIG_" + b"b" * 32, "truncated"),
+        (b"SWU_SIG_bbbb", "truncated"),
+    ],
+)
+def test_signature_same_nonce_corruption_cannot_leave_complete(capture, suffix, rejection):
+    result = capture.parse_signature_progress(signature_markers() + suffix, "b" * 32)
+    assert result["complete"] is False
+    assert result["rejection"] == rejection
+
+
+@pytest.mark.parametrize("failure", [None, "subject", "timeout", "trust", "expired", "scope"])
+def test_signature_only_entry_cannot_reach_native_or_original_paths(
+    capture, monkeypatch, tmp_path, failure
+):
+    import runpy
+    import sys
+
+    path = ROOT / "scripts/diagnostics/issue110_signature_only.py"
+    assert path.exists(), "fixed signature-only entry is missing"
+    output = tmp_path / "receipt.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(path),
+            "--subject",
+            str(tmp_path),
+            "--private",
+            str(tmp_path / "private"),
+            "--output",
+            str(output),
+            "--setup-started",
+            "600" if failure == "expired" else "990",
+        ],
+    )
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2" if failure == "scope" else "1")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "Maximora-byte/swu-happyrun")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/diagnostics/issue110-native-capture")
+    monkeypatch.setenv("SystemRoot", "windows")
+    monkeypatch.setitem(sys.modules, "issue110_capture", capture)
+    monkeypatch.setattr(capture.time, "time", lambda: 1000)
+    monkeypatch.setattr(capture.time, "monotonic", lambda: 200)
+    calls = []
+
+    def subject(path, deadline):
+        calls.append("subject")
+        assert deadline == 490
+        if failure == "subject":
+            raise ValueError("subject_mismatch")
+        return {}
+
+    def debugger(env, deadline, *, receipt):
+        calls.append("signature")
+        assert deadline == 490
+        assert "GITHUB_TOKEN" not in env
+        receipt.update(stage="signature_check", tool_exit=None)
+        if failure == "timeout":
+            receipt["progress"] = capture.parse_signature_progress(signature_markers(2), "b" * 32)
+            raise capture.subprocess.TimeoutExpired("PRIVATE_CANARY", 30, output=b"PRIVATE_CANARY")
+        if failure == "trust":
+            receipt["tool_exit"] = 3
+            raise ValueError("debugger_signature_unverified")
+        receipt.update(stage="complete", tool_exit=0)
+        return "cdb.exe", []
+
+    def prohibited(*args, **kwargs):
+        pytest.fail("signature-only entry reached a prohibited controller/native/original path")
+
+    for name in (
+        "main",
+        "controller_tests",
+        "smoke",
+        "run_one",
+        "load_manifest",
+        "consume",
+        "pytest_argv",
+        "cdb_argv",
+        "debugger_scripts",
+    ):
+        monkeypatch.setattr(capture, name, prohibited)
+    monkeypatch.setattr(capture, "verify_subject", subject)
+    monkeypatch.setattr(capture, "installed_debugger", debugger)
+    with pytest.raises(SystemExit) as error:
+        runpy.run_path(str(path), run_name="__main__")
+    assert error.value.code == (1 if failure else 0)
+    report = json.loads(output.read_text())
+    assert report["mode"] == "signature_only"
+    assert report["original_invocation_attempted"] is False
+    assert report["original_group_started"] is False
+    assert report["debugger_invocation_attempted"] is False
+    assert report["root_cause_established"] is False
+    assert report["signature_budget_seconds"] == 30
+    assert report["setup_budget_seconds"] == 300
+    assert "PRIVATE_CANARY" not in output.read_text()
+    assert calls == (
+        []
+        if failure in ("expired", "scope")
+        else ["subject"]
+        if failure == "subject"
+        else ["subject", "signature"]
+    )
+    if failure == "timeout":
+        assert report["error_category"] == "subprocess_timeout"
+        assert report["debugger_check"]["progress"]["last_stage"] == "trust_start"
+        assert report["debugger_check"]["tool_exit"] is None
+    elif not failure:
+        assert report["status"] == "signature_verified"
+
+
+def test_signature_only_entry_has_no_mode_override(capture, monkeypatch, tmp_path):
+    import runpy
+    import sys
+
+    path = ROOT / "scripts/diagnostics/issue110_signature_only.py"
+    assert path.exists()
+    monkeypatch.setitem(sys.modules, "issue110_capture", capture)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(path),
+            "--subject",
+            str(tmp_path),
+            "--private",
+            str(tmp_path / "private"),
+            "--output",
+            str(tmp_path / "receipt.json"),
+            "--setup-started",
+            "0",
+            "--group",
+            "1",
+        ],
+    )
+    with pytest.raises(SystemExit) as error:
+        runpy.run_path(str(path), run_name="__main__")
+    assert error.value.code == 2
+    assert not (tmp_path / "receipt.json").exists()
+
+
+def test_signature_only_workflow_has_one_spent_predecessor_and_no_wider_entry():
+    path = ROOT / ".github/workflows/issue110-signature-only.yml"
+    assert path.exists(), "signature-only workflow is missing"
+    workflow = path.read_text()
+    predecessor = "ebab9de3b4522691e3fec4213f03102f20edcfda"
+    assert workflow.count("github.event.before == '" + predecessor + "'") == 1
+    assert "github.repository == 'Maximora-byte/swu-happyrun'" in workflow
+    assert "github.ref == 'refs/heads/diagnostics/issue110-native-capture'" in workflow
+    assert workflow.count("github.run_attempt == 1") == 1
+    assert 'branches: ["diagnostics/issue110-native-capture"]' in workflow
+    assert "timeout-minutes: 8" in workflow
+    assert "ISSUE110_SETUP_STARTED" in workflow and "issue110_setup.ps1 -Group '1'" in workflow
+    assert "3.11.16" in workflow and '"0.12.19"' in workflow
+    assert "ref: 6a0dac84bf66125c7e2bd506bb0d8c988b1dcc34" in workflow
+    assert workflow.count("issue110_signature_only.py") == 1
+    for excluded in (
+        "workflow_dispatch",
+        "pull_request",
+        "strategy:",
+        "matrix.",
+        "aggregate:",
+        "issue110_capture.py",
+        "issue110_preflight.py",
+        "--group",
+        "pytest",
+        "cdb.exe",
+    ):
+        assert excluded not in workflow
+    published = workflow.split("          path: |\n")[1].split("          if-no-files-found:")[0]
+    assert published.split() == ["evidence/group-1.json", "evidence/signature.json"]
+    assert "retention-days: 1" in workflow
+    for other in path.parent.glob("*.yml"):
+        if other != path:
+            assert predecessor not in other.read_text()
