@@ -261,7 +261,7 @@ def parse_signature_progress(raw, nonce, *, version=1):
         "checkpoints_ms": [],
         "rejection": "no_markers",
     }
-    if type(version) is not int or version not in (1, 2, 3, 4):
+    if type(version) is not int or version not in (1, 2, 3, 4, 5):
         return result | {"rejection": "unsupported_version"}
     stages = [("script_start", None)]
     if version > 1:
@@ -269,8 +269,15 @@ def parse_signature_progress(raw, nonce, *, version=1):
         if version >= 3:
             stages += [("import_start", None), ("import_done", None)]
         stages += [("resolve_start", None), ("resolve_done", None)]
+    if version == 5:
+        stages += [
+            ("management_import_start", None),
+            ("management_import_done", None),
+            ("item_resolve_start", None),
+            ("item_resolve_done", None),
+        ]
     file_stages = ["trust_start", "trust_returned", "version_start"]
-    if version == 4:
+    if version >= 4:
         file_stages += ["item_returned", "version_info_returned", "version_parts_returned"]
     file_stages.append("version_done")
     stages += [(stage, file_index) for file_index in range(3) for stage in file_stages]
@@ -336,14 +343,15 @@ def installed_debugger(env, deadline, *, receipt=None):
     if not all(path.is_file() and x64_pe(path) for path in paths):
         raise ValueError("installed_x64_debugger_missing")
     # Script timings exclude process startup. Trust-returned is not a verdict.
-    # Explicit import changes dispatch preparation; it is not passive timing or a trust verdict.
-    # Only the fixed PSHOME manifest is tried; its presence on the runner is not assumed.
+    # Explicit imports change initialization order before trust; this is not passive timing
+    # or proof that autoload caused a prior timeout. No signature predicate is changed.
+    # Only the fixed PSHOME manifests are tried; their presence on the runner is not assumed.
     # Only a generated hex nonce varies in this fixed script; no external shell content.
     nonce = uuid.uuid4().hex
     script = (
         """$ErrorActionPreference='Stop'; $clock=[Diagnostics.Stopwatch]::StartNew();
     function Mark([int]$n) {
-      [Console]::Error.WriteLine(('SWU_SIG_V4_NONCE {0} {1}' -f $n,$clock.ElapsedMilliseconds));
+      [Console]::Error.WriteLine(('SWU_SIG_V5_NONCE {0} {1}' -f $n,$clock.ElapsedMilliseconds));
       [Console]::Error.Flush();
     };
     Mark 0;
@@ -353,22 +361,28 @@ def installed_debugger(env, deadline, *, receipt=None):
     Mark 3;
     $null=Get-Command -ListImported -Name Get-AuthenticodeSignature """
         """-CommandType Cmdlet -ErrorAction Stop;
-    Mark 4; $items=@(); $i=0; foreach($p in $args) {
-    Mark (5+7*$i);
+    Mark 4;
+    $management=[IO.Path]::Combine($PSHOME,'Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1');
+    if(-not [IO.File]::Exists($management)) {exit 5};
+    Mark 5; $null=Import-Module -Name $management -ErrorAction Stop; Mark 6;
+    Mark 7;
+    $null=Get-Command -ListImported -Name Get-Item -CommandType Cmdlet -ErrorAction Stop;
+    Mark 8; $items=@(); $i=0; foreach($p in $args) {
+    Mark (9+7*$i);
     $s=Get-AuthenticodeSignature -LiteralPath $p;
-    Mark (6+7*$i);
+    Mark (10+7*$i);
     $publisher='(^|,\\s*)O=Microsoft Corporation(,|$)';
     if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch $publisher) {exit 3};
-    Mark (7+7*$i);
+    Mark (11+7*$i);
     $item=Get-Item -LiteralPath $p;
-    Mark (8+7*$i);
+    Mark (12+7*$i);
     $v=$item.VersionInfo;
-    Mark (9+7*$i);
+    Mark (13+7*$i);
     $parts=@($v.FileMajorPart,$v.FileMinorPart,$v.FileBuildPart,$v.FilePrivatePart);
-    Mark (10+7*$i);
+    Mark (14+7*$i);
     $items+=@{name=[IO.Path]::GetFileName($p); version=($parts -join '.')};
-    Mark (11+7*$i); $i++;
-    }; ConvertTo-Json -Compress -InputObject @($items); Mark 26"""
+    Mark (15+7*$i); $i++;
+    }; ConvertTo-Json -Compress -InputObject @($items); Mark 30"""
     ).replace("NONCE", nonce)
     # -File keeps filenames out of PowerShell's command-language parser.
     checker = Path(env["TEMP"]).parent / "verify-signatures.ps1"
@@ -404,9 +418,9 @@ def installed_debugger(env, deadline, *, receipt=None):
                 # Optional timing must never replace the subprocess outcome or exception.
                 pass
     except subprocess.TimeoutExpired as error:
-        receipt["progress"] = parse_signature_progress(error.stderr, nonce, version=4)
+        receipt["progress"] = parse_signature_progress(error.stderr, nonce, version=5)
         raise
-    receipt["progress"] = parse_signature_progress(verified.stderr, nonce, version=4)
+    receipt["progress"] = parse_signature_progress(verified.stderr, nonce, version=5)
     receipt["tool_exit"] = verified.returncode
     if verified.returncode != 0:
         if (
@@ -415,6 +429,12 @@ def installed_debugger(env, deadline, *, receipt=None):
             and receipt["progress"]["rejection"] == "incomplete"
         ):
             receipt.update(stage="security_module_manifest", blocker="manifest_unavailable")
+        elif (
+            verified.returncode == 5
+            and receipt["progress"]["marker_count"] == 5
+            and receipt["progress"]["rejection"] == "incomplete"
+        ):
+            receipt.update(stage="management_module_manifest", blocker="manifest_unavailable")
         raise ValueError("debugger_signature_unverified")
     receipt["stage"] = "signature_json"
     data = json.loads(verified.stdout)
