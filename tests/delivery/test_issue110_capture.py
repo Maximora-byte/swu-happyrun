@@ -1225,7 +1225,7 @@ def test_signature_only_workflow_has_one_spent_predecessor_and_no_wider_entry():
     path = ROOT / ".github/workflows/issue110-signature-only.yml"
     assert path.exists(), "signature-only workflow is missing"
     workflow = path.read_text()
-    predecessor = "ebab9de3b4522691e3fec4213f03102f20edcfda"
+    predecessor = "b691fac29493ea1df70a39ba892cb4e181fabc34"
     assert workflow.count("github.event.before == '" + predecessor + "'") == 1
     assert "github.repository == 'Maximora-byte/swu-happyrun'" in workflow
     assert "github.ref == 'refs/heads/diagnostics/issue110-native-capture'" in workflow
