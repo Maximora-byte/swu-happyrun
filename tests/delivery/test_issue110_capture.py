@@ -733,6 +733,7 @@ def test_failed_av_gate_preserves_each_private_free_predicate(
     av = receipt["results"]["av"]
     assert av[field] == value and av["passed"] is False
     assert av["debugger_exit"] == 0
+    assert av["run_state"] == "returned" and av["error_category"] is None
     assert "PRIVATE_CANARY" not in json.dumps(receipt)
 
 
@@ -855,7 +856,7 @@ def test_dedicated_preflight_script_hardcodes_only_preflight(monkeypatch):
     assert calls == [{"preflight_only": True}]
 
 
-@pytest.mark.parametrize("failed_stage", ["exit-0", "exit-7", "timeout", None])
+@pytest.mark.parametrize("failed_stage", ["exit-0", "exit-7", "av", "timeout", None])
 def test_all_smoke_stages_preserve_success_or_failure_before_raise(
     capture, monkeypatch, tmp_path, failed_stage
 ):
@@ -888,12 +889,15 @@ def test_all_smoke_stages_preserve_success_or_failure_before_raise(
         assert receipt["stage"] == failed_stage
         assert calls[-1] == failed_stage
         assert receipt["results"][failed_stage]["passed"] is False
+        assert receipt["results"][failed_stage]["cleanup_verified"] is False
     else:
         capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
         assert receipt["stage"] == "complete"
         assert len(calls) == 4
         assert all(item["passed"] for item in receipt["results"].values())
         assert receipt["results"]["av"]["debugger_exit"] == 7
+    assert all(item["run_state"] == "returned" for item in receipt["results"].values())
+    assert all(item["error_category"] is None for item in receipt["results"].values())
     assert "PRIVATE_CANARY" not in json.dumps(receipt)
 
 
@@ -1958,3 +1962,194 @@ def test_signature_missing_utility_manifest_needs_exact_valid_v6_prefix(
         assert receipt["stage"] == "signature_check" and "blocker" not in receipt
     assert not receipt["progress"]["complete"]
     assert "PRIVATE_CANARY" not in json.dumps(receipt, allow_nan=False)
+
+
+SMOKE_BUDGETS = {"exit-0": 15, "exit-7": 15, "av": 90, "timeout": 5}
+SMOKE_UNKNOWN_FIELDS = (
+    "child_exit",
+    "debugger_exit",
+    "reason",
+    "elapsed_seconds",
+    "cleanup_verified",
+    "capture_complete",
+    "capture_rejection",
+    "exact_pid_seen",
+    "stdout_seen",
+    "stderr_seen",
+    "reporter_seen",
+    "descendant_started",
+)
+
+
+def successful_smoke_result(name):
+    return {
+        "child_exit": {"exit-0": 0, "exit-7": 7, "av": 0xC0000005, "timeout": None}[name],
+        "debugger_exit": 0,
+        "target_pid": 123,
+        "reason": "timeout" if name == "timeout" else "exited",
+        "elapsed_seconds": 1.0,
+        "cleanup_verified": True,
+        "capture": {"complete": name == "av", "rejection": None},
+    }, "SMOKE_PID 123\nSMOKE_OUT\nSMOKE_ERR\nTimeout (0:01:00)!\nDESCENDANT_STARTED\nPRIVATE_CANARY"
+
+
+@pytest.mark.parametrize("stage", SMOKE_BUDGETS)
+@pytest.mark.parametrize(
+    "kind, category",
+    [
+        ("timeout", "subprocess_timeout"),
+        ("subprocess", "subprocess_failed"),
+        ("json", "invalid_json"),
+        ("os", "os_error"),
+        ("validation", "validation_error"),
+        ("unexpected", "unexpected_error"),
+    ],
+)
+def test_smoke_invocation_exception_keeps_unknowns_and_original_exception(
+    capture, monkeypatch, tmp_path, stage, kind, category
+):
+    errors = {
+        "timeout": capture.subprocess.TimeoutExpired(
+            "PRIVATE_CANARY", 15, output=b"PRIVATE_CANARY"
+        ),
+        "subprocess": capture.subprocess.CalledProcessError(
+            7, "PRIVATE_CANARY", output=b"PRIVATE_CANARY"
+        ),
+        "json": json.JSONDecodeError("PRIVATE_CANARY", "PRIVATE_CANARY", 0),
+        "os": OSError("PRIVATE_CANARY"),
+        "validation": ValueError("PRIVATE_CANARY"),
+        "unexpected": RuntimeError("PRIVATE_CANARY"),
+    }
+    error = errors[kind]
+    receipt, calls = {}, []
+
+    def run(cdb, target, cwd, env, directory, seconds):
+        name = directory.name
+        calls.append(name)
+        assert seconds == SMOKE_BUDGETS[name]
+        pending = receipt["results"][name]
+        assert pending["run_state"] == "invoking" and pending["error_category"] is None
+        assert all(pending[key] is None for key in SMOKE_UNKNOWN_FIELDS)
+        if name == stage:
+            raise error
+        return successful_smoke_result(name)
+
+    monkeypatch.setattr(capture, "run_one", run)
+    with pytest.raises(type(error)) as caught:
+        capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+    assert caught.value is error
+    assert calls == list(SMOKE_BUDGETS)[: list(SMOKE_BUDGETS).index(stage) + 1]
+    failed = receipt["results"][stage]
+    assert failed["run_state"] == "invoking" and failed["error_category"] == category
+    assert not failed["passed"] and all(failed[key] is None for key in SMOKE_UNKNOWN_FIELDS)
+    assert all(receipt["results"][name]["passed"] for name in calls[:-1])
+    assert "PRIVATE_CANARY" not in json.dumps(receipt, allow_nan=False)
+
+
+@pytest.mark.parametrize("stage", SMOKE_BUDGETS)
+def test_smoke_insufficient_budget_records_not_attempted_without_invocation(
+    capture, monkeypatch, tmp_path, stage
+):
+    receipt, calls = {}, []
+    names = list(SMOKE_BUDGETS)
+    index = names.index(stage)
+    clocks = iter([0] * index + [400 - SMOKE_BUDGETS[stage] + 0.001])
+    monkeypatch.setattr(capture.time, "monotonic", lambda: next(clocks))
+
+    def run(cdb, target, cwd, env, directory, seconds):
+        calls.append(directory.name)
+        assert seconds == SMOKE_BUDGETS[directory.name]
+        return successful_smoke_result(directory.name)
+
+    monkeypatch.setattr(capture, "run_one", run)
+    with pytest.raises(ValueError, match="^setup_budget_exhausted$"):
+        capture.smoke("cdb.exe", {}, tmp_path, 400, receipt=receipt)
+    assert calls == names[:index] and receipt["stage"] == stage
+    pending = receipt["results"][stage]
+    assert pending["run_state"] == "not_attempted"
+    assert pending["error_category"] == "setup_budget_exhausted" and not pending["passed"]
+    assert all(pending[key] is None for key in SMOKE_UNKNOWN_FIELDS)
+
+
+def test_smoke_exact_remaining_budget_is_not_renewed_or_reduced(capture, monkeypatch, tmp_path):
+    receipt, calls = {}, []
+    clocks = iter(400 - seconds for seconds in SMOKE_BUDGETS.values())
+    monkeypatch.setattr(capture.time, "monotonic", lambda: next(clocks))
+
+    def run(cdb, target, cwd, env, directory, seconds):
+        calls.append((directory.name, seconds))
+        return successful_smoke_result(directory.name)
+
+    monkeypatch.setattr(capture, "run_one", run)
+    capture.smoke("cdb.exe", {}, tmp_path, 400, receipt=receipt)
+    assert calls == list(SMOKE_BUDGETS.items())
+    assert all(
+        item["passed"] and item["run_state"] == "returned" and item["error_category"] is None
+        for item in receipt["results"].values()
+    )
+
+
+@pytest.mark.parametrize(
+    "error", [KeyboardInterrupt("PRIVATE_CANARY"), SystemExit("PRIVATE_CANARY")]
+)
+def test_smoke_does_not_catch_baseexception(capture, monkeypatch, tmp_path, error):
+    receipt, calls = {}, []
+
+    def run(*args):
+        calls.append(1)
+        raise error
+
+    monkeypatch.setattr(capture, "run_one", run)
+    with pytest.raises(type(error)) as caught:
+        capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+    assert caught.value is error and calls == [1]
+    pending = receipt["results"]["exit-0"]
+    assert pending["run_state"] == "invoking" and pending["error_category"] is None
+    assert not pending["passed"] and all(pending[key] is None for key in SMOKE_UNKNOWN_FIELDS)
+    assert "PRIVATE_CANARY" not in json.dumps(receipt)
+
+
+def test_smoke_metadata_failure_preserves_known_returned_scalars(capture, monkeypatch, tmp_path):
+    receipt, calls = {}, []
+    error = KeyError("PRIVATE_CANARY")
+
+    class BadCapture(dict):
+        def __getitem__(self, key):
+            if key == "capture":
+                raise error
+            return super().__getitem__(key)
+
+    def run(cdb, target, cwd, env, directory, seconds):
+        name = directory.name
+        calls.append(name)
+        result, raw = successful_smoke_result(name)
+        return (BadCapture(result) if name == "av" else result), raw
+
+    monkeypatch.setattr(capture, "run_one", run)
+    with pytest.raises(KeyError) as caught:
+        capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+    assert caught.value is error and calls == ["exit-0", "exit-7", "av"]
+    av = receipt["results"]["av"]
+    assert av["run_state"] == "returned" and av["error_category"] == "unexpected_error"
+    assert av["child_exit"] == 0xC0000005 and av["cleanup_verified"] is True
+    assert av["debugger_exit"] == 0 and av["reason"] == "exited" and av["elapsed_seconds"] == 1.0
+    assert not av["passed"] and all(av[key] is None for key in SMOKE_UNKNOWN_FIELDS[5:])
+    assert "PRIVATE_CANARY" not in json.dumps(receipt)
+
+
+def test_smoke_malformed_return_is_returned_but_all_outcomes_remain_unknown(
+    capture, monkeypatch, tmp_path
+):
+    receipt, calls = {}, []
+
+    def run(*args):
+        calls.append(1)
+        return ()
+
+    monkeypatch.setattr(capture, "run_one", run)
+    with pytest.raises(ValueError):
+        capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+    assert calls == [1]
+    pending = receipt["results"]["exit-0"]
+    assert pending["run_state"] == "returned" and pending["error_category"] == "validation_error"
+    assert not pending["passed"] and all(pending[key] is None for key in SMOKE_UNKNOWN_FIELDS)

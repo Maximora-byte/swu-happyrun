@@ -603,30 +603,66 @@ def smoke(cdb, env, root, setup_deadline, *, receipt=None):
 
     def run(target, name, seconds):
         receipt["stage"] = name
+        scalar_fields = (
+            "child_exit",
+            "debugger_exit",
+            "reason",
+            "elapsed_seconds",
+            "cleanup_verified",
+        )
+        record = {
+            key: None
+            for key in (
+                *scalar_fields,
+                "capture_complete",
+                "capture_rejection",
+                "exact_pid_seen",
+                "stdout_seen",
+                "stderr_seen",
+                "reporter_seen",
+                "descendant_started",
+            )
+        } | {"passed": False, "run_state": "not_attempted", "error_category": None}
+        receipt["results"][name] = record
         remaining = setup_deadline - time.monotonic()
         if remaining < seconds:
+            record["error_category"] = "setup_budget_exhausted"
             raise ValueError("setup_budget_exhausted")
-        result, raw = run_one(cdb, target, root, env, root / name, seconds)
-        # Preserve only fixed predicates and already-sanitized scalar outcomes before assertions.
-        receipt["results"][name] = {
-            key: result[key]
-            for key in (
-                "child_exit",
-                "debugger_exit",
-                "reason",
-                "elapsed_seconds",
-                "cleanup_verified",
+        # Invoking the helper does not establish that any process started.
+        record["run_state"] = "invoking"
+        try:
+            returned = run_one(cdb, target, root, env, root / name, seconds)
+            record["run_state"] = "returned"
+            result, raw = returned
+            # Keep known sanitized fields if a later metadata operation fails.
+            for key in scalar_fields:
+                record[key] = result[key]
+            record["capture_complete"] = result["capture"]["complete"]
+            record["capture_rejection"] = result["capture"].get("rejection")
+            record["exact_pid_seen"] = smoke_identity(raw, result["target_pid"])
+            for key, marker in (
+                ("stdout_seen", "SMOKE_OUT"),
+                ("stderr_seen", "SMOKE_ERR"),
+                ("reporter_seen", "Timeout (0:01:00)!"),
+                ("descendant_started", "DESCENDANT_STARTED"),
+            ):
+                record[key] = marker in raw
+        except Exception as error:
+            # Publish no exception text, command output or private path.
+            record["error_category"] = (
+                "subprocess_timeout"
+                if isinstance(error, subprocess.TimeoutExpired)
+                else "subprocess_failed"
+                if isinstance(error, subprocess.CalledProcessError)
+                else "invalid_json"
+                if isinstance(error, json.JSONDecodeError)
+                else "os_error"
+                if isinstance(error, OSError)
+                else "validation_error"
+                if isinstance(error, ValueError)
+                else "unexpected_error"
             )
-        } | {
-            "capture_complete": result["capture"]["complete"],
-            "capture_rejection": result["capture"].get("rejection"),
-            "exact_pid_seen": smoke_identity(raw, result["target_pid"]),
-            "stdout_seen": "SMOKE_OUT" in raw,
-            "stderr_seen": "SMOKE_ERR" in raw,
-            "reporter_seen": "Timeout (0:01:00)!" in raw,
-            "descendant_started": "DESCENDANT_STARTED" in raw,
-            "passed": False,
-        }
+            raise
         return result, raw
 
     for code in (0, 7):
