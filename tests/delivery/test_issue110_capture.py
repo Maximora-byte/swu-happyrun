@@ -2153,3 +2153,526 @@ def test_smoke_malformed_return_is_returned_but_all_outcomes_remain_unknown(
     pending = receipt["results"]["exit-0"]
     assert pending["run_state"] == "returned" and pending["error_category"] == "validation_error"
     assert not pending["passed"] and all(pending[key] is None for key in SMOKE_UNKNOWN_FIELDS)
+
+
+AV_PHASES = ("test_enter", "sleep_returned", "before_read_null", "unexpected_read_null_returned")
+
+
+@pytest.mark.parametrize("count", range(1, 5))
+def test_av_sidecar_accepts_only_a_complete_ordered_prefix(capture, tmp_path, count):
+    path = tmp_path / "PRIVATE_CANARY"
+    nonce = "a" * 32
+    path.write_bytes("".join(f"{nonce} {phase}\n" for phase in AV_PHASES[:count]).encode())
+    assert capture.read_av_phases(path, nonce) == {
+        "status": "valid_prefix",
+        "last_phase": AV_PHASES[count - 1],
+        "marker_count": count,
+    }
+
+
+@pytest.mark.parametrize(
+    "kind", ["empty", "tail", "duplicate", "order", "nonce", "extra", "limit", "bytes"]
+)
+def test_av_sidecar_invalid_data_discards_all_phase_claims(capture, tmp_path, kind):
+    nonce = "a" * 32
+    first = f"{nonce} test_enter\n".encode()
+    raw = {
+        "empty": b"",
+        "tail": first + f"{nonce} sleep_returned".encode(),
+        "duplicate": first * 2,
+        "order": f"{nonce} before_read_null\n".encode(),
+        "nonce": first + f"{'b' * 32} sleep_returned\n".encode(),
+        "extra": b"".join(f"{nonce} {phase}\n".encode() for phase in AV_PHASES) + first,
+        "limit": first + b"PRIVATE_CANARY" * 100,
+        "bytes": first + b"\xff\n",
+    }[kind]
+    path = tmp_path / "PRIVATE_CANARY"
+    path.write_bytes(raw)
+    result = capture.read_av_phases(path, nonce)
+    assert result == {"status": "invalid", "last_phase": None, "marker_count": None}
+    assert "PRIVATE_CANARY" not in json.dumps(result)
+
+
+def test_av_sidecar_missing_and_read_error_are_unknown_and_bounded(capture, tmp_path, monkeypatch):
+    path = tmp_path / "PRIVATE_CANARY"
+    assert capture.read_av_phases(path, "a" * 32) == {
+        "status": "missing",
+        "last_phase": None,
+        "marker_count": None,
+    }
+    reads = []
+
+    class Reader:
+        def __enter__(self):
+            return self
+
+        def close(self):
+            pass
+
+        def __exit__(self, *args):
+            self.close()
+
+        def read(self, size):
+            reads.append(size)
+            raise OSError("PRIVATE_CANARY")
+
+    monkeypatch.setattr(Path, "open", lambda *a, **kw: Reader())
+    result = capture.read_av_phases(path, "a" * 32)
+    assert reads == [513]
+    assert result == {"status": "read_error", "last_phase": None, "marker_count": None}
+    assert "PRIVATE_CANARY" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("error", [KeyboardInterrupt("PRIVATE_CANARY"), SystemExit(7)])
+def test_av_sidecar_does_not_swallow_baseexception(capture, tmp_path, monkeypatch, error):
+    def fail(*a, **kw):
+        raise error
+
+    monkeypatch.setattr(Path, "open", fail)
+    with pytest.raises(type(error)) as caught:
+        capture.read_av_phases(tmp_path / "private", "a" * 32)
+    assert caught.value is error
+
+
+@pytest.mark.parametrize(
+    "markers, status, counts",
+    [
+        ([], "missing", (0, 0, 0)),
+        (["READY 1a"], "valid_prefix", (1, 0, 0)),
+        (["READY 1a", "BEGIN"], "valid_prefix", (1, 1, 0)),
+        (["READY 1a", "BEGIN", "END"], "valid_prefix", (1, 1, 1)),
+        (["READY 1a", "BEGIN", "BEGIN"], "invalid", (1, 2, 0)),
+        (["BEGIN", "READY 1a"], "invalid", (1, 1, 0)),
+        (["READY 1a", "END"], "invalid", (1, 0, 1)),
+        (["READY 1a", "READY 2b"], "invalid", (2, 0, 0)),
+        (["READY 0"], "invalid", (1, 0, 0)),
+        (["READY PRIVATE_CANARY"], "invalid", (1, 0, 0)),
+        (["READY 1a", "BEGIN PRIVATE_CANARY"], "invalid", (1, 1, 0)),
+    ],
+)
+def test_debugger_marker_summary_is_bounded_and_never_native_fault_proof(
+    capture, markers, status, counts
+):
+    nonce = "a" * 32
+    raw = "PRIVATE_CANARY\n" + "".join(f"SWU_{nonce}_{marker}\n" for marker in markers)
+    result = capture.summarize_debugger_markers(raw, nonce)
+    assert result == {
+        "status": status,
+        "ready_count": counts[0],
+        "begin_count": counts[1],
+        "end_count": counts[2],
+    }
+    assert "PRIVATE_CANARY" not in json.dumps(result) and nonce not in json.dumps(result)
+    assert not capture.parse_capture(raw, nonce)["complete"]
+
+
+def test_debugger_marker_summary_rejects_tail_and_caps_duplicates(capture):
+    nonce = "a" * 32
+    prefix = f"SWU_{nonce}_"
+    result = capture.summarize_debugger_markers(prefix + "READY 1a\n" + prefix + "BEGIN", nonce)
+    assert result["status"] == "invalid"
+    result = capture.summarize_debugger_markers((prefix + "BEGIN\n") * 100, nonce)
+    assert result["status"] == "invalid" and result["begin_count"] == 2
+    result = capture.summarize_debugger_markers("x" * (capture.MAX_OUTPUT + 1), nonce)
+    assert result == {
+        "status": "invalid",
+        "ready_count": None,
+        "begin_count": None,
+        "end_count": None,
+    }
+    foreign = "SWU_" + "b" * 32 + "_READY 1a\n"
+    assert capture.summarize_debugger_markers(foreign, nonce)["status"] == "missing"
+
+
+def test_run_one_adds_only_safe_summary_without_changing_capture_gate(
+    capture, monkeypatch, tmp_path
+):
+    from types import SimpleNamespace
+
+    nonce = "a" * 32
+    raw = f"SWU_{nonce}_READY 1a\nSWU_{nonce}_BEGIN\nPRIVATE_CANARY\n"
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return raw, None, None, "timeout", True, 26
+
+    monkeypatch.setitem(
+        capture.sys.modules,
+        "issue110_win32",
+        SimpleNamespace(Session=lambda: SimpleNamespace(run=fake_run)),
+    )
+    monkeypatch.setattr(capture.uuid, "uuid4", lambda: SimpleNamespace(hex=nonce))
+    monkeypatch.setattr(capture, "debugger_scripts", lambda *a: ("init", "terminal"))
+    result, unchanged_raw = capture.run_one(
+        "cdb.exe", ["python.exe"], tmp_path, {}, tmp_path / "run", 90
+    )
+    assert len(calls) == 1 and calls[0][1]["capture_seconds"] == 10
+    assert unchanged_raw == raw and result["status"] == "supervisor_timeout"
+    assert not result["capture"]["complete"]
+    assert result["debugger_markers"] == {
+        "status": "valid_prefix",
+        "ready_count": 1,
+        "begin_count": 1,
+        "end_count": 0,
+    }
+    assert "PRIVATE_CANARY" not in json.dumps(result["debugger_markers"])
+
+
+@pytest.mark.parametrize("write_failure", [None, "open", "write", "close"])
+@pytest.mark.parametrize("directory_name", ["ascii", "私有阶段"])
+def test_av_fixture_phases_keep_original_calls_capture_and_budget(
+    capture, tmp_path, monkeypatch, write_failure, directory_name
+):
+    import builtins
+    from types import SimpleNamespace
+
+    tmp_path = tmp_path / directory_name
+    tmp_path.mkdir()
+    receipt, calls, events, writes = {}, [], [], []
+
+    def open_phase(path, mode):
+        writes.append(mode)
+        assert mode == "ab"
+        if write_failure == "open":
+            raise OSError("PRIVATE_CANARY")
+        stream = builtins.open(path, mode)
+
+        class Writer:
+            def __enter__(self):
+                return self
+
+            def write(self, data):
+                if write_failure == "write":
+                    stream.write(data[:4])
+                    raise OSError("PRIVATE_CANARY")
+                return stream.write(data)
+
+            def close(self):
+                stream.close()
+                if write_failure == "close":
+                    raise OSError("PRIVATE_CANARY")
+
+            def __exit__(self, *args):
+                self.close()
+
+        return Writer()
+
+    def run(cdb, target, cwd, env, directory, seconds):
+        name = directory.name
+        calls.append((name, seconds))
+        result, raw = successful_smoke_result(name)
+        if name == "av":
+            assert target == [
+                capture.sys.executable,
+                "-m",
+                "pytest",
+                str(tmp_path / "test_smoke_av.py"),
+                "-vv",
+                "-o",
+                "faulthandler_timeout=60",
+            ]
+            with monkeypatch.context() as isolated:
+                isolated.setitem(
+                    capture.sys.modules,
+                    "time",
+                    SimpleNamespace(sleep=lambda value: events.append(("sleep", value))),
+                )
+                isolated.setitem(
+                    capture.sys.modules,
+                    "faulthandler",
+                    SimpleNamespace(_read_null=lambda: events.append(("read_null",))),
+                )
+                namespace = {"open": open_phase}
+                exec((tmp_path / "test_smoke_av.py").read_text(), namespace)
+                namespace["test_reporter_then_av"]()
+            result["debugger_markers"] = {
+                "status": "valid_prefix",
+                "ready_count": 1,
+                "begin_count": 0,
+                "end_count": 0,
+            }
+        return result, raw
+
+    monkeypatch.setattr(capture, "run_one", run)
+    capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+    assert calls == list(SMOKE_BUDGETS.items())
+    assert events == [("sleep", 61), ("read_null",)]
+    assert writes == ["ab"] * (4 if write_failure is None else 1)
+    av = receipt["results"]["av"]
+    assert av["passed"] and av["debugger_markers"]["begin_count"] == 0
+    phases = av["av_phases"]
+    assert (
+        phases["status"]
+        == {None: "valid_prefix", "open": "missing", "write": "invalid", "close": "valid_prefix"}[
+            write_failure
+        ]
+    )
+    assert phases["last_phase"] == (
+        AV_PHASES[-1]
+        if write_failure is None
+        else "test_enter"
+        if write_failure == "close"
+        else None
+    )
+    assert "PRIVATE_CANARY" not in json.dumps(receipt) and str(tmp_path) not in json.dumps(receipt)
+
+
+@pytest.mark.parametrize(
+    "error", [RuntimeError("PRIVATE_CANARY"), KeyboardInterrupt("PRIVATE_CANARY")]
+)
+def test_av_sidecar_is_collected_even_when_run_one_raises(capture, tmp_path, monkeypatch, error):
+    from types import SimpleNamespace
+
+    receipt, calls = {}, []
+
+    def run(cdb, target, cwd, env, directory, seconds):
+        calls.append(directory.name)
+        if directory.name == "av":
+            namespace = {}
+
+            def fault():
+                raise error
+
+            with monkeypatch.context() as isolated:
+                isolated.setitem(capture.sys.modules, "time", SimpleNamespace(sleep=lambda _: None))
+                isolated.setitem(
+                    capture.sys.modules, "faulthandler", SimpleNamespace(_read_null=fault)
+                )
+                exec((tmp_path / "test_smoke_av.py").read_text(), namespace)
+                namespace["test_reporter_then_av"]()
+        return successful_smoke_result(directory.name)
+
+    monkeypatch.setattr(capture, "run_one", run)
+    with pytest.raises(type(error)) as caught:
+        capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+    assert caught.value is error and calls == ["exit-0", "exit-7", "av"]
+    av = receipt["results"]["av"]
+    assert av["av_phases"] == {
+        "status": "valid_prefix",
+        "last_phase": "before_read_null",
+        "marker_count": 3,
+    }
+    assert av["run_state"] == "invoking" and av["cleanup_verified"] is None and not av["passed"]
+
+
+def test_av_sidecar_read_failure_cannot_mask_primary_failure(capture, tmp_path, monkeypatch):
+    receipt = {}
+    error = RuntimeError("PRIVATE_CANARY")
+
+    def run(cdb, target, cwd, env, directory, seconds):
+        if directory.name == "av":
+            raise error
+        return successful_smoke_result(directory.name)
+
+    def bad_read(*a):
+        raise OSError("PRIVATE_CANARY")
+
+    monkeypatch.setattr(capture, "run_one", run)
+    monkeypatch.setattr(capture, "read_av_phases", bad_read)
+    with pytest.raises(RuntimeError) as caught:
+        capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+    assert caught.value is error
+    assert receipt["results"]["av"]["av_phases"] == {
+        "status": "read_error",
+        "last_phase": None,
+        "marker_count": None,
+    }
+
+
+@pytest.mark.parametrize("cancel", [KeyboardInterrupt("PRIVATE_CANARY"), SystemExit(7)])
+@pytest.mark.parametrize("boundary", ["open", "write", "close"])
+def test_av_fixture_writer_never_swallows_cancellation(
+    capture, tmp_path, monkeypatch, cancel, boundary
+):
+    import builtins
+    from types import SimpleNamespace
+
+    receipt, events = {}, []
+
+    def run(cdb, target, cwd, env, directory, seconds):
+        if directory.name == "av":
+
+            def fail(path, mode):
+                events.append("open")
+                if boundary == "open":
+                    raise cancel
+                stream = builtins.open(path, mode)
+
+                class Writer:
+                    def __enter__(self):
+                        return self
+
+                    def write(self, data):
+                        events.append("write")
+                        if boundary == "write":
+                            raise cancel
+                        return stream.write(data)
+
+                    def close(self):
+                        events.append("close")
+                        stream.close()
+                        if boundary == "close":
+                            raise cancel
+
+                    def __exit__(self, *args):
+                        self.close()
+
+                return Writer()
+
+            namespace = {"open": fail}
+            with monkeypatch.context() as isolated:
+                isolated.setitem(
+                    capture.sys.modules,
+                    "time",
+                    SimpleNamespace(sleep=lambda _: events.append("sleep")),
+                )
+                isolated.setitem(
+                    capture.sys.modules,
+                    "faulthandler",
+                    SimpleNamespace(_read_null=lambda: events.append("fault")),
+                )
+                exec((tmp_path / "test_smoke_av.py").read_text(), namespace)
+                namespace["test_reporter_then_av"]()
+        return successful_smoke_result(directory.name)
+
+    monkeypatch.setattr(capture, "run_one", run)
+    with pytest.raises(type(cancel)) as caught:
+        capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+    assert caught.value is cancel
+    assert events == (["open"] if boundary == "open" else ["open", "write", "close"])
+    av = receipt["results"]["av"]
+    assert (
+        av["av_phases"]["status"]
+        == {"open": "missing", "write": "invalid", "close": "valid_prefix"}[boundary]
+    )
+    assert av["run_state"] == "invoking" and av["error_category"] is None
+
+
+@pytest.mark.parametrize("stop", ["sleep", "fault", None])
+def test_av_fixture_phases_are_written_before_the_exact_call_boundaries(
+    capture, tmp_path, monkeypatch, stop
+):
+    from types import SimpleNamespace
+
+    receipt, events = {}, []
+    error = RuntimeError("PRIVATE_CANARY")
+
+    def observe(name, expected):
+        lines = (tmp_path / "av-phases.log").read_text().splitlines()
+        assert [line.split(" ")[1] for line in lines] == list(expected)
+        events.append(name)
+        if name == stop:
+            raise error
+
+    def run(cdb, target, cwd, env, directory, seconds):
+        result, raw = successful_smoke_result(directory.name)
+        if directory.name == "av":
+            namespace = {}
+            with monkeypatch.context() as isolated:
+                isolated.setitem(
+                    capture.sys.modules,
+                    "time",
+                    SimpleNamespace(sleep=lambda _: observe("sleep", AV_PHASES[:1])),
+                )
+                isolated.setitem(
+                    capture.sys.modules,
+                    "faulthandler",
+                    SimpleNamespace(_read_null=lambda: observe("fault", AV_PHASES[:3])),
+                )
+                exec((tmp_path / "test_smoke_av.py").read_text(), namespace)
+                namespace["test_reporter_then_av"]()
+            # Even all four phases do not prove a native AV or override the gate.
+            result.update(child_exit=None, reason="timeout")
+        return result, raw
+
+    monkeypatch.setattr(capture, "run_one", run)
+    with pytest.raises(RuntimeError if stop else ValueError) as caught:
+        capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+    assert caught.value is error if stop else str(caught.value) == "av_reporter_smoke_failed"
+    expected_count = {"sleep": 1, "fault": 3, None: 4}[stop]
+    av = receipt["results"]["av"]
+    assert not av["passed"] and av["av_phases"]["marker_count"] == expected_count
+    assert av["av_phases"]["last_phase"] == AV_PHASES[expected_count - 1]
+    assert events == (["sleep"] if stop == "sleep" else ["sleep", "fault"])
+
+
+@pytest.mark.parametrize("cancel", [KeyboardInterrupt("PRIVATE_CANARY"), SystemExit(7)])
+def test_av_writer_close_error_preserves_write_cancellation(capture, tmp_path, monkeypatch, cancel):
+    from types import SimpleNamespace
+
+    events, receipt = [], {}
+
+    class Writer:
+        def __enter__(self):
+            return self
+
+        def write(self, data):
+            events.append("write")
+            raise cancel
+
+        def close(self):
+            events.append("close")
+            raise OSError("PRIVATE_CANARY")
+
+        def __exit__(self, *args):
+            self.close()
+
+    def run(cdb, target, cwd, env, directory, seconds):
+        if directory.name == "av":
+            namespace = {"open": lambda *a: Writer()}
+            with monkeypatch.context() as isolated:
+                isolated.setitem(
+                    capture.sys.modules,
+                    "time",
+                    SimpleNamespace(sleep=lambda _: events.append("sleep")),
+                )
+                isolated.setitem(
+                    capture.sys.modules,
+                    "faulthandler",
+                    SimpleNamespace(_read_null=lambda: events.append("fault")),
+                )
+                exec((tmp_path / "test_smoke_av.py").read_text(), namespace)
+                namespace["test_reporter_then_av"]()
+        return successful_smoke_result(directory.name)
+
+    monkeypatch.setattr(capture, "run_one", run)
+    with pytest.raises(type(cancel)) as caught:
+        capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+    assert caught.value is cancel and events == ["write", "close"]
+    assert not receipt["results"]["av"]["passed"]
+
+
+@pytest.mark.parametrize("cancel", [KeyboardInterrupt("PRIVATE_CANARY"), SystemExit(7), None])
+def test_av_reader_close_error_cannot_swallow_cancellation(capture, tmp_path, monkeypatch, cancel):
+    calls = []
+
+    class Reader:
+        def __enter__(self):
+            return self
+
+        def read(self, size):
+            calls.append(("read", size))
+            if cancel is not None:
+                raise cancel
+            return f"{'a' * 32} test_enter\n".encode()
+
+        def close(self):
+            calls.append(("close",))
+            raise OSError("PRIVATE_CANARY")
+
+        def __exit__(self, *args):
+            self.close()
+
+    monkeypatch.setattr(Path, "open", lambda *a, **kw: Reader())
+    if cancel is not None:
+        with pytest.raises(type(cancel)) as caught:
+            capture.read_av_phases(tmp_path / "PRIVATE_CANARY", "a" * 32)
+        assert caught.value is cancel
+    else:
+        assert capture.read_av_phases(tmp_path / "PRIVATE_CANARY", "a" * 32) == {
+            "status": "read_error",
+            "last_phase": None,
+            "marker_count": None,
+        }
+    assert calls == [("read", 513), ("close",)]

@@ -133,6 +133,74 @@ def classify(child_exit, debugger_exit, timed_out, evidence):
     return "no_crash_observed" if child_exit == 0 else "test_failed"
 
 
+def read_av_phases(path, nonce):
+    result = {"status": "invalid", "last_phase": None, "marker_count": None}
+    if not re.fullmatch(r"[a-f0-9]{32}", nonce):
+        return result
+    try:
+        stream = path.open("rb")
+        read_completed = False
+        try:
+            raw = stream.read(513)
+            read_completed = True
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                if read_completed:
+                    raise
+    except FileNotFoundError:
+        return result | {"status": "missing"}
+    except Exception:
+        return result | {"status": "read_error"}
+    phases = (
+        "test_enter",
+        "sleep_returned",
+        "before_read_null",
+        "unexpected_read_null_returned",
+    )
+    if not raw or len(raw) > 512:
+        return result
+    lines = raw.splitlines(keepends=True)
+    expected = [f"{nonce} {phase}\n".encode("ascii") for phase in phases]
+    if len(lines) > 4 or lines != expected[: len(lines)]:
+        return result
+    return {
+        "status": "valid_prefix",
+        "last_phase": phases[len(lines) - 1],
+        "marker_count": len(lines),
+    }
+
+
+def summarize_debugger_markers(raw, nonce):
+    # Format/order evidence only, not target identity or proof of a native exception.
+    names = ("READY", "BEGIN", "END")
+    result = {"status": "invalid", **{name.lower() + "_count": None for name in names}}
+    if len(raw) > MAX_OUTPUT or not re.fullmatch(r"[a-f0-9]{32}", nonce):
+        return result
+    counts = dict.fromkeys(names, 0)
+    seen = []
+    valid = True
+    prefix = f"SWU_{nonce}_"
+    for marker in re.finditer(rf"^{prefix}(?:READY|BEGIN|END)[^\n]*(?:\n|$)", raw, re.M):
+        line = marker[0]
+        for name in names:
+            if not line.startswith(prefix + name):
+                continue
+            counts[name] = min(2, counts[name] + 1)
+            pattern = prefix + name + (r" ([0-9a-fA-F]{1,8})\n" if name == "READY" else "\n")
+            match = re.fullmatch(pattern, line)
+            if not match or (name == "READY" and not int(match[1], 16)):
+                valid = False
+            if len(seen) < 4:
+                seen.append(name)
+    valid = valid and seen == list(names[: len(seen)])
+    return {
+        "status": "invalid" if not valid else "valid_prefix" if seen else "missing",
+        **{name.lower() + "_count": count for name, count in counts.items()},
+    }
+
+
 def pytest_argv(python, nodes, junit):
     return [
         str(python),
@@ -556,6 +624,7 @@ def run_one(cdb, target, cwd, env, directory, seconds):
         "elapsed_seconds": round(time.monotonic() - start, 3),
         "cleanup_verified": cleaned,
         "capture": evidence,
+        "debugger_markers": summarize_debugger_markers(raw, nonce),
         "status": classify(child_exit, cdb_exit, reason == "timeout", evidence),
     }
     if not cleaned or reason not in ("exited", "timeout"):
@@ -621,6 +690,7 @@ def smoke(cdb, env, root, setup_deadline, *, receipt=None):
                 "stderr_seen",
                 "reporter_seen",
                 "descendant_started",
+                "debugger_markers",
             )
         } | {"passed": False, "run_state": "not_attempted", "error_category": None}
         receipt["results"][name] = record
@@ -637,6 +707,7 @@ def smoke(cdb, env, root, setup_deadline, *, receipt=None):
             # Keep known sanitized fields if a later metadata operation fails.
             for key in scalar_fields:
                 record[key] = result[key]
+            record["debugger_markers"] = result.get("debugger_markers")
             record["capture_complete"] = result["capture"]["complete"]
             record["capture_rejection"] = result["capture"].get("rejection")
             record["exact_pid_seen"] = smoke_identity(raw, result["target_pid"])
@@ -682,14 +753,45 @@ def smoke(cdb, env, root, setup_deadline, *, receipt=None):
             raise ValueError("exit_smoke_failed")
         receipt["results"][f"exit-{code}"]["passed"] = True
     test = root / "test_smoke_av.py"
+    phase_path = root / "av-phases.log"
+    phase_nonce = uuid.uuid4().hex
     test.write_text(
-        "import time,faulthandler\ndef test_reporter_then_av():\n"
-        "    time.sleep(61)\n    faulthandler._read_null()\n",
+        "import time,faulthandler\n_phase_failed = False\n"
+        "def _phase(name):\n"
+        "    global _phase_failed\n"
+        "    if _phase_failed:\n        return\n"
+        "    try:\n"
+        f"        stream = open({ascii(str(phase_path))}, 'ab')\n"
+        "        write_completed = False\n"
+        "        try:\n"
+        f"            stream.write(({phase_nonce!r} + ' ' + name + '\\n').encode('ascii'))\n"
+        "            write_completed = True\n"
+        "        finally:\n"
+        "            try:\n                stream.close()\n"
+        "            except Exception:\n"
+        "                if write_completed:\n                    raise\n"
+        "    except Exception:\n        _phase_failed = True\n"
+        "def test_reporter_then_av():\n"
+        "    _phase('test_enter')\n"
+        "    time.sleep(61)\n"
+        "    _phase('sleep_returned')\n"
+        "    _phase('before_read_null')\n"
+        "    faulthandler._read_null()\n"
+        "    _phase('unexpected_read_null_returned')\n",
         encoding="ascii",
     )
-    result, raw = run(
-        [python, "-m", "pytest", str(test), "-vv", "-o", "faulthandler_timeout=60"], "av", 90
-    )
+    try:
+        result, raw = run(
+            [python, "-m", "pytest", str(test), "-vv", "-o", "faulthandler_timeout=60"], "av", 90
+        )
+    finally:
+        # This sidecar is private and never changes the original smoke predicates.
+        phases = {"status": "read_error", "last_phase": None, "marker_count": None}
+        try:
+            phases = read_av_phases(phase_path, phase_nonce)
+        except Exception:
+            pass  # Diagnostic read failure must not replace the original failure.
+        receipt["results"]["av"]["av_phases"] = phases
     if (
         result["child_exit"] != 0xC0000005
         or result["reason"] != "exited"
