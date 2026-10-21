@@ -1,0 +1,98 @@
+name: issue110-native-capture
+
+on:
+  push:
+    branches: ["diagnostics/issue110-native-capture"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue110-native-two-groups-1
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    # Only the first creation of this reviewed diagnostic branch, never a rerun.
+    if: >-
+      github.repository == 'Maximora-byte/swu-happyrun' &&
+      github.ref == 'refs/heads/diagnostics/issue110-native-capture' &&
+      github.event.created &&
+      github.event.before == '0000000000000000000000000000000000000000' &&
+      github.run_attempt == 1
+    runs-on: windows-2025
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        group: ["1", "2"]
+    steps:
+      - name: Start five minute setup budget
+        shell: pwsh
+        run: |
+          "ISSUE110_SETUP_STARTED=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" >> $env:GITHUB_ENV
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        timeout-minutes: 1
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        timeout-minutes: 1
+        with:
+          ref: 6a0dac84bf66125c7e2bd506bb0d8c988b1dcc34
+          path: subject
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        timeout-minutes: 1
+        with:
+          version: "0.12.19"
+          python-version: "3.11.16"
+          enable-cache: false
+      - name: Frozen dependencies and original editable project in disposable direct interpreter
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $python = (& uv python find 3.11.16).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Interpreter prerequisite failed' }
+          "ISSUE110_PYTHON=$python" >> $env:GITHUB_ENV
+          $requirements = Join-Path $env:RUNNER_TEMP 'issue110-frozen.txt'
+          $log = Join-Path $env:RUNNER_TEMP 'issue110-setup.log'
+          uv export --project subject --frozen --extra server --extra agent --extra dev --no-emit-project --format requirements-txt --output-file $requirements *> $log
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen export failed' }
+          uv pip sync --python $python --require-hashes $requirements *>> $log
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen installation failed' }
+          uv pip install --python $python --no-deps --editable subject *>> $log
+          if ($LASTEXITCODE -ne 0) { throw 'Editable metadata installation failed' }
+          if (([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$env:ISSUE110_SETUP_STARTED) -ge 300) { throw 'Setup budget exhausted' }
+      - name: Verify local harness then consume this original group once
+        shell: pwsh
+        run: |
+          & $env:ISSUE110_PYTHON harness/scripts/diagnostics/issue110_capture.py --subject "$env:GITHUB_WORKSPACE/subject" --private "$env:RUNNER_TEMP/issue110-${{ matrix.group }}" --output "$env:GITHUB_WORKSPACE/evidence/group-${{ matrix.group }}.json" --group '${{ matrix.group }}' --setup-started $env:ISSUE110_SETUP_STARTED
+          exit $LASTEXITCODE
+      - name: Publish only allowlisted evidence, never raw output or memory
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: issue110-group-${{ matrix.group }}-${{ github.run_id }}
+          path: evidence/group-${{ matrix.group }}.json
+          if-no-files-found: error
+          retention-days: 1
+
+  aggregate:
+    if: >-
+      always() && github.repository == 'Maximora-byte/swu-happyrun' &&
+      github.ref == 'refs/heads/diagnostics/issue110-native-capture' &&
+      github.event.created && github.run_attempt == 1
+    needs: capture
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Preserve group failures and the original unresolved issue
+        env:
+          GROUP_JOBS_RESULT: ${{ needs.capture.result }}
+        run: |
+          echo 'Each group has an independent synthetic harness gate and at most one original invocation.'
+          echo 'Only sanitized group JSON is retained. Original-machine failure and root cause remain unresolved.'
+          test "$GROUP_JOBS_RESULT" = success

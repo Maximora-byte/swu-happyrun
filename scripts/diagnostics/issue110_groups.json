@@ -1,0 +1,35 @@
+{
+  "source": "6a0dac84bf66125c7e2bd506bb0d8c988b1dcc34",
+  "tree": "09b5064a5e30495f7ced68b84fe453bd5d0413ce",
+  "source_url": "https://github.com/Maximora-byte/swu-happyrun/issues/110",
+  "groups": {
+    "1": [
+      "tests/agent/test_enrollment_runtime.py::test_runtime_cannot_be_constructed_copied_or_reused",
+      "tests/agent/test_enrollment_runtime.py::test_invalid_runtime_before_start_is_permanently_sealed_without_writes[revocation]",
+      "tests/agent/test_enrollment_runtime.py::test_expiry_during_original_lock_acquisition_opens_no_database",
+      "tests/agent/test_enrollment_runtime.py::test_started_scope_retains_uncertainty_after_gate_loss[pin]",
+      "tests/agent/test_enrollment_runtime.py::test_uncertain_cleanup_never_releases_or_overwrites_changed_identity[lock]",
+      "tests/agent/test_enrollment_runtime.py::test_changed_observed_identity_is_rejected_with_original_handles_held[lock]",
+      "tests/agent/test_enrollment_runtime.py::test_context_exception_retains_original_pending_probe",
+      "tests/agent/test_enrollment_runtime.py::test_retention_binds_exact_original_reservation_and_intent[generation]",
+      "tests/agent/test_enrollment_runtime.py::test_failed_attempt_never_renews_budget_or_retries",
+      "tests/agent/test_enrollment_runtime.py::test_retention_fault_boundaries_never_report_success_or_clear_occupancy[open]",
+      "tests/agent/test_enrollment_runtime.py::test_retention_fault_boundaries_never_report_success_or_clear_occupancy[fsync]",
+      "tests/agent/test_enrollment_runtime.py::test_original_deadline_cannot_be_renewed_at_bind_or_cleanup"
+    ],
+    "2": [
+      "tests/agent/test_enrollment_runtime.py::test_runtime_revalidates_mutable_rows_without_changing_pin",
+      "tests/agent/test_enrollment_runtime.py::test_invalid_runtime_before_start_is_permanently_sealed_without_writes[pin]",
+      "tests/agent/test_enrollment_runtime.py::test_started_scope_retains_uncertainty_after_gate_loss[expiry]",
+      "tests/agent/test_enrollment_runtime.py::test_uncertain_cleanup_never_releases_or_overwrites_changed_identity[reservation]",
+      "tests/agent/test_enrollment_runtime.py::test_uncertain_cleanup_never_releases_or_overwrites_changed_identity[budget]",
+      "tests/agent/test_enrollment_runtime.py::test_incoming_unresolved_reservation_is_preserved_before_sql[active]",
+      "tests/agent/test_enrollment_runtime.py::test_invalidated_inspection_automatically_seals_and_retains",
+      "tests/agent/test_enrollment_runtime.py::test_retention_binds_exact_original_reservation_and_intent[start_intent]",
+      "tests/agent/test_enrollment_runtime.py::test_original_marker_descriptor_never_publishes_foreign_file",
+      "tests/agent/test_enrollment_runtime.py::test_retention_fault_boundaries_never_report_success_or_clear_occupancy[write]",
+      "tests/agent/test_enrollment_runtime.py::test_retention_fault_boundaries_never_report_success_or_clear_occupancy[readback]",
+      "tests/agent/test_enrollment_runtime.py::test_close_overrun_is_not_reported_as_bounded_success"
+    ]
+  }
+}
