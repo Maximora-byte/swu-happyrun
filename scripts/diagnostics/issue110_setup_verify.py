@@ -84,6 +84,8 @@ def run_stage(command, stage, private, output, receipt, deadline, cap):
                 raise ValueError("setup_output_limit")
             if child.returncode != 0:
                 raise ValueError("stage_failed")
+            if time.monotonic() >= end:
+                raise ValueError("setup_deadline")
             stage_completed = True
         finally:
             try:

@@ -388,3 +388,75 @@ def test_setup_final_save_failure_keeps_existing_propagation(verifier, tmp_path,
     assert receipt["tool_exit"] is None and receipt["setup_parent_exit_verified"] is True
     assert receipt["setup_descendant_cleanup"] == "unverified"
     assert "PRIVATE_CANARY" not in output.read_text()
+
+
+@pytest.mark.parametrize("deadline,cap,end", [(5.0, 30.0, 3.0), (30.0, 5.0, 5.0), (7.0, 5.0, 5.0)])
+@pytest.mark.parametrize("offset", [-0.001, 0.0, 0.001])
+def test_setup_observed_zero_exit_respects_original_stage_end(
+    verifier, tmp_path, monkeypatch, deadline, cap, end, offset
+):
+    clock = [0.0]
+    calls = {"start": 0, "poll": 0}
+    receipt = {}
+    output = tmp_path / "receipt.json"
+
+    class Child:
+        returncode = 0
+
+        def poll(self):
+            calls["poll"] += 1
+            # Exit observation consumes time; cleanup later must not renew the end.
+            clock[0] = end + offset if calls["poll"] == 1 else 100.0
+            return 0
+
+        def kill(self):
+            pytest.fail("already exited parent must not be killed")
+
+        def wait(self, **kwargs):
+            pytest.fail("already observed exit needs no new wait")
+
+    def launch(*args, **kwargs):
+        calls["start"] += 1
+        return Child()
+
+    monkeypatch.setattr(verifier.subprocess, "Popen", launch)
+    monkeypatch.setattr(verifier.time, "monotonic", lambda: clock[0])
+    if offset < 0:
+        assert (
+            verifier.run_stage(["fake-only"], "test", tmp_path, output, receipt, deadline, cap)
+            == tmp_path / "test.log"
+        )
+    else:
+        with pytest.raises(ValueError, match="^setup_deadline$"):
+            verifier.run_stage(["fake-only"], "test", tmp_path, output, receipt, deadline, cap)
+    assert calls == {"start": 1, "poll": 2}
+    assert receipt["tool_exit"] == 0 and receipt["setup_parent_exit_verified"] is True
+    assert receipt["setup_descendant_cleanup"] == "unverified"
+    assert json.loads(output.read_text()) == receipt
+
+
+def test_setup_late_exit_deadline_error_survives_cleanup_failure(verifier, tmp_path, monkeypatch):
+    clock = [0.0]
+    observed = []
+    receipt = {}
+
+    class Child:
+        returncode = 0
+
+        def poll(self):
+            if not observed:
+                clock[0] = 6.0
+                observed.append(None)
+                return 0
+            observed.append(sys.exception())
+            raise OSError("PRIVATE_CANARY")
+
+    monkeypatch.setattr(verifier.subprocess, "Popen", lambda *a, **kw: Child())
+    monkeypatch.setattr(verifier.time, "monotonic", lambda: clock[0])
+    with pytest.raises(ValueError, match="^setup_deadline$") as caught:
+        verifier.run_stage(
+            ["fake-only"], "test", tmp_path, tmp_path / "receipt.json", receipt, 5, 30
+        )
+    assert observed[1] is caught.value
+    assert receipt["tool_exit"] == 0 and receipt["setup_parent_exit_verified"] is True
+    assert "PRIVATE_CANARY" not in (tmp_path / "receipt.json").read_text()
