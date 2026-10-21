@@ -924,6 +924,10 @@ def signature_markers(count=14, nonce="b" * 32):
     return "".join(f"SWU_SIG_{nonce} {index} {index * 10}\n" for index in range(count)).encode()
 
 
+def signature_markers_v2(count=16, nonce="b" * 32):
+    return "".join(f"SWU_SIG_V2_{nonce} {index} {index * 10}\n" for index in range(count)).encode()
+
+
 @pytest.mark.parametrize("count", [0, 1, 2, 3, 4, 5, 9, 13, 14])
 def test_signature_progress_accepts_only_the_fixed_ordered_prefix(capture, count):
     result = capture.parse_signature_progress(signature_markers(count), "b" * 32)
@@ -989,7 +993,7 @@ def test_signature_timeout_keeps_safe_partial_markers_and_the_original_timeout(
         "PRIVATE_CANARY",
         30,
         output=b"PRIVATE_CANARY",
-        stderr=signature_markers(6) + b"PRIVATE_CANARY\n",
+        stderr=signature_markers_v2(8) + b"PRIVATE_CANARY\n",
     )
 
     def run(argv, **kwargs):
@@ -1002,11 +1006,18 @@ def test_signature_timeout_keeps_safe_partial_markers_and_the_original_timeout(
         assert "Microsoft Corporation" in script
         assert "[Console]::Error.Flush()" in script
         assert script.index("Mark 0") < script.index("foreach($p in $args)")
-        assert script.index("Mark (1+4*$i)") < script.index("Get-AuthenticodeSignature")
-        assert script.index("Get-AuthenticodeSignature") < script.index("Mark (2+4*$i)")
-        assert script.index("Mark (3+4*$i)") < script.index("Get-Item")
-        assert script.index("Get-Item") < script.index("Mark (4+4*$i)")
-        assert script.index("ConvertTo-Json") < script.index("Mark 13")
+        probe = (
+            "$null=Get-Command -Name Get-AuthenticodeSignature "
+            "-CommandType Cmdlet -ErrorAction Stop"
+        )
+        assert script.index("Mark 1") < script.index(probe) < script.index("Mark 2")
+        assert script.index("Mark 2") < script.index("foreach($p in $args)")
+        call = "$s=Get-AuthenticodeSignature -LiteralPath $p"
+        assert script.index("Mark (3+4*$i)") < script.index(call)
+        assert script.index(call) < script.index("Mark (4+4*$i)")
+        assert script.index("Mark (5+4*$i)") < script.index("Get-Item")
+        assert script.index("Get-Item") < script.index("Mark (6+4*$i)")
+        assert script.index("ConvertTo-Json") < script.index("Mark 15")
         raise error
 
     monkeypatch.setattr(capture.subprocess, "run", run)
@@ -1016,9 +1027,11 @@ def test_signature_timeout_keeps_safe_partial_markers_and_the_original_timeout(
         )
     assert raised.value is error
     assert receipt["tool_exit"] is None and receipt["stage"] == "signature_check"
-    assert receipt["progress"]["marker_count"] == 6
+    assert receipt["progress"]["marker_count"] == 8
     assert receipt["progress"]["last_stage"] == "trust_start"
     assert receipt["progress"]["file_index"] == 1
+    assert receipt["run_timeout_seconds"] == expected_timeout
+    assert receipt["run_elapsed_ms"] == 0
     assert "PRIVATE_CANARY" not in json.dumps(receipt)
 
 
@@ -1041,7 +1054,7 @@ def test_signature_markers_never_replace_process_trust_verdict(
         capture.subprocess,
         "run",
         lambda *a, **kw: SimpleNamespace(
-            returncode=code, stdout=json.dumps(data).encode(), stderr=signature_markers()
+            returncode=code, stdout=json.dumps(data).encode(), stderr=signature_markers_v2()
         ),
     )
     if code:
@@ -1242,3 +1255,200 @@ def test_signature_only_workflow_has_one_spent_predecessor_and_no_wider_entry():
     for other in path.parent.glob("*.yml"):
         if other != path:
             assert predecessor not in other.read_text()
+
+
+@pytest.mark.parametrize(
+    "count, stage, file_index",
+    [
+        (0, None, None),
+        (1, "script_start", None),
+        (2, "resolve_start", None),
+        (3, "resolve_done", None),
+        (4, "trust_start", 0),
+        (5, "trust_returned", 0),
+        (6, "version_start", 0),
+        (7, "version_done", 0),
+        (8, "trust_start", 1),
+        (12, "trust_start", 2),
+        (15, "version_done", 2),
+        (16, "script_done", None),
+    ],
+)
+def test_signature_v2_maps_discovery_without_reinterpreting_legacy(
+    capture, count, stage, file_index
+):
+    result = capture.parse_signature_progress(signature_markers_v2(count), "b" * 32, version=2)
+    assert result["protocol_version"] == 2
+    assert result["marker_count"] == count
+    assert result["last_stage"] == stage and result["file_index"] == file_index
+    assert result["complete"] is (count == 16)
+    assert (
+        capture.parse_signature_progress(signature_markers(2), "b" * 32)["last_stage"]
+        == "trust_start"
+    )
+
+
+@pytest.mark.parametrize("version", [-1, 0, 3, True, "2"])
+def test_signature_progress_rejects_unsupported_protocol(capture, version):
+    result = capture.parse_signature_progress(signature_markers_v2(), "b" * 32, version=version)
+    assert result["rejection"] == "unsupported_version"
+    assert result["complete"] is False and result["marker_count"] == 0
+
+
+def test_archived_two_marker_signature_receipt_keeps_legacy_meaning(capture):
+    raw = (
+        b"SWU_SIG_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0 13\n"
+        b"SWU_SIG_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 1 27\n"
+    )
+    result = capture.parse_signature_progress(raw, "b" * 32)
+    assert result["last_stage"] == "trust_start" and result["file_index"] == 0
+    assert result["checkpoints_ms"] == [13, 27] and result["complete"] is False
+    assert capture.parse_signature_progress(raw, "b" * 32, version=2)["marker_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "raw, rejection",
+    [
+        (signature_markers(), "no_markers"),
+        (signature_markers_v2(2) + signature_markers_v2(2), "invalid_markers"),
+        (signature_markers_v2(2) + b"SWU_SIG_V2_" + b"b" * 32 + b" 3 30\n", "invalid_markers"),
+        (signature_markers_v2(2) + b"SWU_SIG_V2_" + b"b" * 32 + b" 2 1\n", "invalid_markers"),
+        (signature_markers_v2() + b"SWU_SIG_V2_" + b"b" * 32 + b"\t16 160\n", "invalid_markers"),
+        (signature_markers_v2(2) + b"SWU_SIG_V2_" + b"b" * 32 + b" 2 ", "truncated"),
+        (signature_markers_v2() + b"SWU_SIG_V2_bbbb", "truncated"),
+    ],
+)
+def test_signature_v2_rejects_foreign_malformed_and_truncated_streams(capture, raw, rejection):
+    result = capture.parse_signature_progress(raw, "b" * 32, version=2)
+    assert not result["complete"] and result["rejection"] == rejection
+    if rejection == "truncated" and result["marker_count"] == 2:
+        assert result["last_stage"] == "resolve_start" and result["file_index"] is None
+    assert not capture.parse_signature_progress(signature_markers_v2(), "b" * 32)["complete"]
+
+
+@pytest.mark.parametrize(
+    "outcome, duration", [("success", 0.125), ("trust", 0.25), ("timeout", 30.75), ("launch", 0.01)]
+)
+def test_signature_parent_elapsed_is_total_call_not_script_or_timeout(
+    capture, monkeypatch, tmp_path, outcome, duration
+):
+    from types import SimpleNamespace
+
+    clock = [100.0]
+    calls = []
+    receipt = {}
+    monkeypatch.setattr(capture.Path, "is_file", lambda self: True)
+    monkeypatch.setattr(capture, "x64_pe", lambda path: True)
+    monkeypatch.setattr(capture, "sha256", lambda path: "0" * 64)
+    monkeypatch.setattr(capture.uuid, "uuid4", lambda: SimpleNamespace(hex="b" * 32))
+    monkeypatch.setattr(capture.time, "monotonic", lambda: clock[0])
+    original_parser = capture.parse_signature_progress
+
+    def parse(*args, **kwargs):
+        clock[0] += 1  # Parsing time must not be included in the parent subprocess-call metric.
+        return original_parser(*args, **kwargs)
+
+    monkeypatch.setattr(capture, "parse_signature_progress", parse)
+    error = (
+        capture.subprocess.TimeoutExpired("PRIVATE_CANARY", 30, stderr=signature_markers_v2(2))
+        if outcome == "timeout"
+        else OSError("PRIVATE_CANARY")
+    )
+    data = [
+        {"name": name, "version": "10.0.26100.8249"}
+        for name in ("cdb.exe", "dbgeng.dll", "dbghelp.dll")
+    ]
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        assert kwargs["timeout"] == 30
+        clock[0] += duration
+        if outcome in ("timeout", "launch"):
+            raise error
+        return SimpleNamespace(
+            returncode=3 if outcome == "trust" else 0,
+            stdout=json.dumps(data).encode(),
+            stderr=signature_markers_v2(),
+        )
+
+    monkeypatch.setattr(capture.subprocess, "run", run)
+    if outcome == "success":
+        capture.installed_debugger(
+            {"TEMP": str(tmp_path / "temp"), "SystemRoot": "windows"}, 150, receipt=receipt
+        )
+    elif outcome == "trust":
+        with pytest.raises(ValueError, match="debugger_signature_unverified"):
+            capture.installed_debugger(
+                {"TEMP": str(tmp_path / "temp"), "SystemRoot": "windows"}, 150, receipt=receipt
+            )
+    else:
+        with pytest.raises(type(error)) as raised:
+            capture.installed_debugger(
+                {"TEMP": str(tmp_path / "temp"), "SystemRoot": "windows"}, 150, receipt=receipt
+            )
+        assert raised.value is error
+    assert len(calls) == 1
+    assert receipt["run_elapsed_ms"] == round(duration * 1000, 3)
+    assert receipt["run_timeout_seconds"] == 30
+    assert "PRIVATE_CANARY" not in json.dumps(receipt)
+    if outcome == "timeout":
+        assert receipt["run_elapsed_ms"] > receipt["run_timeout_seconds"] * 1000
+        assert receipt["progress"]["elapsed_ms"] == 10
+        assert receipt["progress"]["last_stage"] == "resolve_start"
+
+
+def test_signature_expired_budget_records_no_call_elapsed(capture, monkeypatch, tmp_path):
+    receipt = {}
+    monkeypatch.setattr(capture.Path, "is_file", lambda self: True)
+    monkeypatch.setattr(capture, "x64_pe", lambda path: True)
+    monkeypatch.setattr(capture.time, "monotonic", lambda: 100)
+    monkeypatch.setattr(
+        capture.subprocess, "run", lambda *a, **kw: pytest.fail("expired budget launched a process")
+    )
+    with pytest.raises(ValueError, match="setup_budget_exhausted"):
+        capture.installed_debugger(
+            {"TEMP": str(tmp_path / "temp"), "SystemRoot": "windows"}, 100, receipt=receipt
+        )
+    assert receipt["run_elapsed_ms"] is None and receipt["run_timeout_seconds"] is None
+
+
+@pytest.mark.parametrize(
+    "end_clock",
+    [
+        RuntimeError("PRIVATE_CANARY"),
+        OSError("PRIVATE_CANARY"),
+        float("nan"),
+        float("inf"),
+        99.9,
+        1e308,
+    ],
+)
+def test_signature_invalid_end_clock_never_replaces_original_timeout(
+    capture, monkeypatch, tmp_path, end_clock
+):
+    receipt = {}
+    clocks = iter([100.0, 100.0, end_clock])
+    monkeypatch.setattr(capture.Path, "is_file", lambda self: True)
+    monkeypatch.setattr(capture, "x64_pe", lambda path: True)
+
+    def clock():
+        value = next(clocks)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    error = capture.subprocess.TimeoutExpired("PRIVATE_CANARY", 30)
+
+    def run(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(capture.time, "monotonic", clock)
+    monkeypatch.setattr(capture.subprocess, "run", run)
+    with pytest.raises(capture.subprocess.TimeoutExpired) as raised:
+        capture.installed_debugger(
+            {"TEMP": str(tmp_path / "temp"), "SystemRoot": "windows"}, 150, receipt=receipt
+        )
+    assert raised.value is error
+    assert receipt["run_elapsed_ms"] is None
+    assert receipt["tool_exit"] is None
+    assert "PRIVATE_CANARY" not in json.dumps(receipt, allow_nan=False)
