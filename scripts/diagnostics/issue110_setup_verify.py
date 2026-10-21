@@ -70,6 +70,7 @@ def run_stage(command, stage, private, output, receipt, deadline, cap):
     log = private / f"{stage}.log"
     with log.open("wb") as stream:
         child = subprocess.Popen(command, stdout=stream, stderr=subprocess.STDOUT)
+        stage_completed = False
         try:
             while child.poll() is None:
                 if time.monotonic() >= end:
@@ -83,15 +84,24 @@ def run_stage(command, stage, private, output, receipt, deadline, cap):
                 raise ValueError("setup_output_limit")
             if child.returncode != 0:
                 raise ValueError("stage_failed")
+            stage_completed = True
         finally:
-            if child.poll() is None:
-                child.kill()
-                try:
-                    child.wait(timeout=1)
+            try:
+                if child.poll() is not None:
                     receipt["setup_parent_exit_verified"] = True
-                except subprocess.TimeoutExpired:
-                    receipt["setup_parent_exit_verified"] = False
-            save(output, receipt)
+                else:
+                    child.kill()
+                    try:
+                        child.wait(timeout=1)
+                        receipt["setup_parent_exit_verified"] = True
+                    except subprocess.TimeoutExpired:
+                        receipt["setup_parent_exit_verified"] = False
+            except Exception:
+                # Preserve an already-failed stage; cleanup failure is not evidence of exit.
+                if stage_completed:
+                    raise
+            finally:
+                save(output, receipt)
     return log
 
 

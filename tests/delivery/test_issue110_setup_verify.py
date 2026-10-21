@@ -191,3 +191,200 @@ def test_fixed_setup_order_requires_independent_gate_before_real_helper(
     )
     receipt = json.loads((tmp_path / "evidence/setup-only.json").read_text())
     assert receipt["native_started"] is False and receipt["original_group_started"] is False
+
+
+@pytest.mark.parametrize(
+    "cleanup, verified, kills, waits",
+    [
+        ("exited", True, 0, 0),
+        ("waited", True, 1, 1),
+        ("wait_timeout", False, 1, 1),
+        ("poll_error", None, 0, 0),
+        ("kill_error", None, 1, 0),
+        ("wait_error", None, 1, 1),
+    ],
+)
+def test_setup_output_limit_race_records_only_observed_parent_exit(
+    verifier, tmp_path, monkeypatch, cleanup, verified, kills, waits
+):
+    from types import SimpleNamespace
+
+    receipt = {}
+    output = tmp_path / "receipt.json"
+    state = {"polls": 0, "kills": 0, "waits": 0, "started": 0, "original": None}
+    original_stat = verifier.Path.stat
+
+    def stat(path, *args, **kwargs):
+        if path == tmp_path / "test.log":
+            return SimpleNamespace(st_size=4194305)
+        return original_stat(path, *args, **kwargs)
+
+    class Child:
+        returncode = None
+
+        def poll(self):
+            state["polls"] += 1
+            if state["polls"] == 1:
+                return None
+            state["original"] = sys.exception()
+            if cleanup == "poll_error":
+                raise OSError("PRIVATE_CANARY")
+            if cleanup == "exited":
+                self.returncode = 0
+                return 0
+            return None
+
+        def kill(self):
+            state["kills"] += 1
+            if cleanup == "kill_error":
+                raise OSError("PRIVATE_CANARY")
+
+        def wait(self, timeout):
+            assert timeout == 1
+            state["waits"] += 1
+            if cleanup == "wait_timeout":
+                raise verifier.subprocess.TimeoutExpired("PRIVATE_CANARY", timeout)
+            if cleanup == "wait_error":
+                raise OSError("PRIVATE_CANARY")
+            self.returncode = -9
+            return self.returncode
+
+    def launch(command, **kwargs):
+        state["started"] += 1
+        assert command == ["fake-owned-child"]
+        kwargs["stdout"].write(b"PRIVATE_CANARY")
+        return Child()
+
+    monkeypatch.setattr(verifier.Path, "stat", stat)
+    monkeypatch.setattr(verifier.subprocess, "Popen", launch)
+    monkeypatch.setattr(verifier.time, "monotonic", lambda: 0)
+    with pytest.raises(ValueError, match="^setup_output_limit$") as caught:
+        verifier.run_stage(["fake-owned-child"], "test", tmp_path, output, receipt, 100, 3)
+    assert caught.value is state["original"]
+    assert state["started"] == 1 and state["polls"] == 2
+    assert state["kills"] == kills and state["waits"] == waits
+    assert receipt["tool_exit"] is None
+    assert receipt["setup_parent_exit_verified"] is verified
+    assert receipt["setup_descendant_cleanup"] == "unverified"
+    assert json.loads(output.read_text()) == receipt
+    assert "PRIVATE_CANARY" not in output.read_text()
+
+
+def test_setup_cleanup_failure_cannot_turn_success_into_pass(verifier, tmp_path, monkeypatch):
+    receipt = {}
+    output = tmp_path / "receipt.json"
+    error = OSError("PRIVATE_CANARY")
+    polls = []
+
+    class Child:
+        returncode = 0
+
+        def poll(self):
+            polls.append(1)
+            if len(polls) == 1:
+                return 0
+            raise error
+
+        def kill(self):
+            pytest.fail("already-exited child was killed")
+
+    monkeypatch.setattr(verifier.subprocess, "Popen", lambda *a, **kw: Child())
+    # An unrelated caller exception must not be mistaken for this stage failing.
+    try:
+        raise RuntimeError("unrelated caller failure")
+    except RuntimeError:
+        with pytest.raises(OSError) as caught:
+            verifier.run_stage(
+                ["fake-owned-child"], "test", tmp_path, output, receipt, time.monotonic() + 5, 3
+            )
+    assert caught.value is error and len(polls) == 2
+    # Exit was observed in the body; failure of the later poll cannot erase that fact.
+    assert receipt["tool_exit"] == 0 and receipt["setup_parent_exit_verified"] is True
+    assert receipt["setup_descendant_cleanup"] == "unverified"
+    assert json.loads(output.read_text()) == receipt
+    assert "PRIVATE_CANARY" not in output.read_text()
+
+
+@pytest.mark.parametrize(
+    "primary, cleanup_error",
+    [
+        (KeyboardInterrupt("PRIVATE_CANARY"), OSError("PRIVATE_CANARY")),
+        (SystemExit("PRIVATE_CANARY"), OSError("PRIVATE_CANARY")),
+        (ValueError("setup_output_limit"), KeyboardInterrupt("PRIVATE_CANARY")),
+        (ValueError("setup_output_limit"), SystemExit("PRIVATE_CANARY")),
+    ],
+)
+def test_setup_cleanup_preserves_primary_cancellation_without_catching_its_own(
+    verifier, tmp_path, monkeypatch, primary, cleanup_error
+):
+    receipt = {}
+    output = tmp_path / "receipt.json"
+    polls = []
+    original_stat = verifier.Path.stat
+
+    def stat(path, *args, **kwargs):
+        if path == tmp_path / "test.log":
+            raise primary
+        return original_stat(path, *args, **kwargs)
+
+    class Child:
+        returncode = None
+
+        def poll(self):
+            polls.append(1)
+            if len(polls) == 1:
+                return None
+            raise cleanup_error
+
+    monkeypatch.setattr(verifier.Path, "stat", stat)
+    monkeypatch.setattr(verifier.subprocess, "Popen", lambda *a, **kw: Child())
+    expected = primary if isinstance(cleanup_error, Exception) else cleanup_error
+    with pytest.raises(type(expected)) as caught:
+        verifier.run_stage(
+            ["fake-owned-child"], "test", tmp_path, output, receipt, time.monotonic() + 5, 3
+        )
+    assert caught.value is expected and len(polls) == 2
+    assert receipt["tool_exit"] is None and receipt["setup_parent_exit_verified"] is None
+    assert receipt["setup_descendant_cleanup"] == "unverified"
+    assert json.loads(output.read_text()) == receipt
+    assert "PRIVATE_CANARY" not in output.read_text()
+
+
+def test_setup_final_save_failure_keeps_existing_propagation(verifier, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    receipt = {}
+    output = tmp_path / "receipt.json"
+    error = OSError("PRIVATE_CANARY")
+    saves, polls = [], []
+    original_save, original_stat = verifier.save, verifier.Path.stat
+
+    def save(path, data):
+        saves.append(1)
+        if len(saves) == 2:
+            raise error
+        original_save(path, data)
+
+    def stat(path, *args, **kwargs):
+        if path == tmp_path / "test.log":
+            return SimpleNamespace(st_size=4194305)
+        return original_stat(path, *args, **kwargs)
+
+    class Child:
+        returncode = None
+
+        def poll(self):
+            polls.append(1)
+            return None if len(polls) == 1 else 0
+
+    monkeypatch.setattr(verifier, "save", save)
+    monkeypatch.setattr(verifier.Path, "stat", stat)
+    monkeypatch.setattr(verifier.subprocess, "Popen", lambda *a, **kw: Child())
+    with pytest.raises(OSError) as caught:
+        verifier.run_stage(
+            ["fake-owned-child"], "test", tmp_path, output, receipt, time.monotonic() + 5, 3
+        )
+    assert caught.value is error and len(saves) == len(polls) == 2
+    assert receipt["tool_exit"] is None and receipt["setup_parent_exit_verified"] is True
+    assert receipt["setup_descendant_cleanup"] == "unverified"
+    assert "PRIVATE_CANARY" not in output.read_text()
