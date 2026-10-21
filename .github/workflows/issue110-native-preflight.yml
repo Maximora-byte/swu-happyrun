@@ -17,7 +17,7 @@ jobs:
     if: >-
       github.repository == 'Maximora-byte/swu-happyrun' &&
       github.ref == 'refs/heads/diagnostics/issue110-native-capture' &&
-      github.event.before == 'f2f35c7dbaad759bfabf775d1447c1d33ab82a7d' &&
+      github.event.before == 'eb01bfd8d06e67d9e48887a2dcf422c0f678c0a7' &&
       github.run_attempt == 1
     runs-on: windows-2025
     timeout-minutes: 8
