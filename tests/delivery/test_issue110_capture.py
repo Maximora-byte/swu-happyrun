@@ -400,6 +400,7 @@ def test_every_existing_push_workflow_excludes_diagnostic_branch():
         "issue110-setup-only.yml",
         "issue110-native-preflight.yml",
         "issue110-signature-only.yml",
+        "issue110-debugger-config.yml",
     }
     for name, patterns in expected.items():
         trigger = files[name].read_text().split("\npermissions:")[0]
