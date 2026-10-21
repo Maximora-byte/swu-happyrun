@@ -418,7 +418,7 @@ def test_out_of_order_capture_sections_are_incomplete_not_errors(capture):
 
 def test_setup_correction_is_single_predecessor_guarded_and_observable():
     workflow = (ROOT / ".github/workflows/issue110-native-capture.yml").read_text()
-    predecessor = "github.event.before == '909b96ddd59067512ddb337b5f46567b06c2483f'"
+    predecessor = "github.event.before == '10b699e5db338a785074064f54beed6b2116d0cb'"
     assert workflow.count(predecessor) == 2
     assert "github.event.created" not in workflow
     assert workflow.count("github.run_attempt == 1") == 2

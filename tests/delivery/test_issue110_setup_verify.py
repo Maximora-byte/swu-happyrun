@@ -121,7 +121,9 @@ def test_setup_only_workflow_is_one_shot_and_never_calls_native_controller():
     assert "issue110_setup_verify.py" in workflow
     assert "issue110_capture.py" not in workflow and "cdb" not in workflow.lower()
     native = (ROOT / ".github/workflows/issue110-native-capture.yml").read_text()
-    assert native.count("github.event.before == '909b96ddd59067512ddb337b5f46567b06c2483f'") == 2
+    predecessor = "github.event.before == '10b699e5db338a785074064f54beed6b2116d0cb'"
+    assert native.count(predecessor) == 2
+    assert predecessor not in workflow
 
 
 @pytest.mark.parametrize("gate_fails", [False, True])

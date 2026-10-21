@@ -13,11 +13,11 @@ concurrency:
 
 jobs:
   capture:
-    # One reviewed setup correction from the exact failed predecessor; never a rerun.
+    # One reviewed native continuation from the verified setup predecessor; never a rerun.
     if: >-
       github.repository == 'Maximora-byte/swu-happyrun' &&
       github.ref == 'refs/heads/diagnostics/issue110-native-capture' &&
-      github.event.before == '909b96ddd59067512ddb337b5f46567b06c2483f' &&
+      github.event.before == '10b699e5db338a785074064f54beed6b2116d0cb' &&
       github.run_attempt == 1
     runs-on: windows-2025
     timeout-minutes: 40
@@ -72,7 +72,7 @@ jobs:
     if: >-
       always() && github.repository == 'Maximora-byte/swu-happyrun' &&
       github.ref == 'refs/heads/diagnostics/issue110-native-capture' &&
-      github.event.before == '909b96ddd59067512ddb337b5f46567b06c2483f' && github.run_attempt == 1
+      github.event.before == '10b699e5db338a785074064f54beed6b2116d0cb' && github.run_attempt == 1
     needs: capture
     runs-on: ubuntu-latest
     timeout-minutes: 5
