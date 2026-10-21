@@ -8,6 +8,7 @@ import platform
 import shutil
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,55 @@ def test_partition_preserves_order_and_exact_union():
     shards = [module.partition(nodes, index, 6) for index in range(6)]
     assert shards == [nodes[index::6] for index in range(6)]
     assert sorted(node for shard in shards for node in shard) == sorted(nodes)
+
+
+def test_full_suite_collection_is_stable_across_processes(tmp_path):
+    collector = tmp_path / "collect_suite.py"
+    collector.write_text(
+        """import json
+import sys
+from pathlib import Path
+
+import pytest
+
+class Collection:
+    def pytest_collection_finish(self, session):
+        Path(sys.argv[1]).write_text(
+            json.dumps([item.nodeid for item in session.items]), encoding="utf-8"
+        )
+
+raise SystemExit(pytest.main(["tests", "--collect-only", "-q"], plugins=[Collection()]))
+""",
+        encoding="utf-8",
+    )
+    collections = []
+    # Sequential full collections separate import-time clocks as well as random values.
+    for seed in ("1", "987654321"):
+        output = tmp_path / f"collection-{seed}.json"
+        env = dict(os.environ, PYTHONHASHSEED=seed)
+        for name in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS"):
+            env.pop(name, None)
+        result = subprocess.run(
+            [sys.executable, str(collector), str(output)],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        nodes = json.loads(output.read_text(encoding="utf-8"))
+        assert nodes and all(isinstance(node, str) and node for node in nodes)
+        assert len(nodes) == len(set(nodes))
+        collections.append(nodes)
+
+    assert collections[0] == collections[1]
+    module = helper()
+    for nodes in collections:
+        for count in (1, 6):
+            shards = [module.partition(nodes, index, count) for index in range(count)]
+            assert shards == [nodes[index::count] for index in range(count)]
+            assert Counter(node for shard in shards for node in shard) == Counter(nodes)
 
 
 @pytest.mark.parametrize(
