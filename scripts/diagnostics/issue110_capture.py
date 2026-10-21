@@ -38,31 +38,42 @@ def number(text):
 
 
 def parse_capture(raw, nonce, *, target_pid=None):
-    result = {"complete": False, "chance": "second", "original_fault_context_captured": False}
+    result = {
+        "complete": False,
+        "chance": "second",
+        "original_fault_context_captured": False,
+        "rejection": "markers_missing_or_duplicated",
+    }
     prefix = f"SWU_{nonce}_"
     # Do not publish raw parse errors, paths, register values, arguments or symbol names.
     if raw.count(prefix + "BEGIN\n") != 1 or raw.count(prefix + "END\n") != 1:
         return result
     if raw.index(prefix + "END\n") < raw.index(prefix + "BEGIN\n"):
+        result["rejection"] = "markers_out_of_order"
         return result
     body = raw.split(prefix + "BEGIN\n")[1].split(prefix + "END\n")[0]
     contexts = re.findall(rf"^{prefix}CONTEXT (.*)$", body, re.M)
     codes = re.findall(r"^\s*ExceptionCode:\s+(\S+)", body, re.M | re.I)
     if len(contexts) != 1 or [code.lower() for code in codes] != ["c0000005"]:
+        result["rejection"] = "exception_or_context_invalid"
         return result
     context = re.fullmatch(rf"({HEX}) ({HEX}) ({HEX})", contexts[0])
     if not context:
+        result["rejection"] = "context_invalid"
         return result
     pid, tid, ip = (number(x) for x in context.groups())
     if not pid or not tid or (target_pid is not None and pid != target_pid):
+        result["rejection"] = "identity_mismatch"
         return result
     if body.count(prefix + "STACK\n") != 1 or body.count(prefix + "MODULES\n") != 1:
+        result["rejection"] = "section_markers_invalid"
         return result
     if not (
         body.index(prefix + "CONTEXT ")
         < body.index(prefix + "STACK\n")
         < body.index(prefix + "MODULES\n")
     ):
+        result["rejection"] = "section_order_invalid"
         return result
     stack, modules = body.split(prefix + "STACK\n")[1].split(prefix + "MODULES\n")
     ranges = []
@@ -95,6 +106,15 @@ def parse_capture(raw, nonce, *, target_pid=None):
         frames=[relative(address) for address in addresses],
         complete=bool(ranges and len(addresses) > 1 and relative(ip)["module"]),
         symbols="module_relative_only_no_matched_private_symbols",
+    )
+    result["rejection"] = (
+        "modules_missing"
+        if not ranges
+        else "stack_returns_missing"
+        if len(addresses) <= 1
+        else "fault_module_unresolved"
+        if not relative(ip)["module"]
+        else None
     )
     return result
 
@@ -231,7 +251,9 @@ def remaining(deadline, maximum):
     return seconds
 
 
-def installed_debugger(env, deadline):
+def installed_debugger(env, deadline, *, receipt=None):
+    receipt = {} if receipt is None else receipt
+    receipt.update(stage="binary_presence", tool_exit=None)
     root = (
         Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
         / "Windows Kits/10/Debuggers/x64"
@@ -252,6 +274,7 @@ def installed_debugger(env, deadline):
     checker = Path(env["TEMP"]).parent / "verify-signatures.ps1"
     checker.write_text(script, encoding="utf-8")
     powershell = Path(env["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    receipt["stage"] = "signature_check"
     verified = subprocess.run(
         [str(powershell), "-NoProfile", "-NonInteractive", "-File", str(checker), *map(str, paths)],
         env=env,
@@ -259,15 +282,19 @@ def installed_debugger(env, deadline):
         timeout=remaining(deadline, 30),
         check=False,
     )
+    receipt["tool_exit"] = verified.returncode
     if verified.returncode != 0:
         raise ValueError("debugger_signature_unverified")
+    receipt["stage"] = "signature_json"
     data = json.loads(verified.stdout)
     if len(data) != 3 or any(not re.fullmatch(r"[0-9. ]{3,80}", item["version"]) for item in data):
         raise ValueError("debugger_version_unverified")
+    receipt["stage"] = "binary_hashes"
     verified_data = [
         {"name": path.name, "version": item["version"], "sha256": sha256(path)}
         for item, path in zip(data, paths, strict=True)
     ]
+    receipt["stage"] = "complete"
     return paths[0], verified_data
 
 
@@ -391,14 +418,38 @@ def controller_tests(env, root, setup_deadline):
     return True
 
 
-def smoke(cdb, env, root, setup_deadline):
+def smoke(cdb, env, root, setup_deadline, *, receipt=None):
     python = sys.executable
+    receipt = {} if receipt is None else receipt
+    receipt["results"] = {}
 
     def run(target, name, seconds):
+        receipt["stage"] = name
         remaining = setup_deadline - time.monotonic()
         if remaining < seconds:
             raise ValueError("setup_budget_exhausted")
-        return run_one(cdb, target, root, env, root / name, seconds)
+        result, raw = run_one(cdb, target, root, env, root / name, seconds)
+        # Preserve only fixed predicates and already-sanitized scalar outcomes before assertions.
+        receipt["results"][name] = {
+            key: result[key]
+            for key in (
+                "child_exit",
+                "debugger_exit",
+                "reason",
+                "elapsed_seconds",
+                "cleanup_verified",
+            )
+        } | {
+            "capture_complete": result["capture"]["complete"],
+            "capture_rejection": result["capture"].get("rejection"),
+            "exact_pid_seen": smoke_identity(raw, result["target_pid"]),
+            "stdout_seen": "SMOKE_OUT" in raw,
+            "stderr_seen": "SMOKE_ERR" in raw,
+            "reporter_seen": "Timeout (0:01:00)!" in raw,
+            "descendant_started": "DESCENDANT_STARTED" in raw,
+            "passed": False,
+        }
+        return result, raw
 
     for code in (0, 7):
         script = (
@@ -415,6 +466,7 @@ def smoke(cdb, env, root, setup_deadline):
             or not all(marker in raw for marker in ("SMOKE_OUT", "SMOKE_ERR"))
         ):
             raise ValueError("exit_smoke_failed")
+        receipt["results"][f"exit-{code}"]["passed"] = True
     test = root / "test_smoke_av.py"
     test.write_text(
         "import time,faulthandler\ndef test_reporter_then_av():\n"
@@ -432,6 +484,7 @@ def smoke(cdb, env, root, setup_deadline):
         or not result["cleanup_verified"]
     ):
         raise ValueError("av_reporter_smoke_failed")
+    receipt["results"]["av"]["passed"] = True
     script = (
         "import subprocess,sys,time; "
         "subprocess.Popen([sys.executable,'-c','import time;time.sleep(100)']); "
@@ -444,16 +497,12 @@ def smoke(cdb, env, root, setup_deadline):
         or "DESCENDANT_STARTED" not in raw
     ):
         raise ValueError("timeout_cleanup_smoke_failed")
-    return {
-        "exit_0": True,
-        "exit_7": True,
-        "av_exit_and_reporter": True,
-        "timeout_descendant_cleanup": True,
-        "environment_canary": True,
-    }
+    receipt["results"]["timeout"]["passed"] = True
+    receipt["stage"] = "complete"
+    return receipt
 
 
-def main():
+def main(*, preflight_only=False):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--subject", type=Path, required=True)
     parser.add_argument("--private", type=Path, required=True)
@@ -466,12 +515,18 @@ def main():
         "source": SOURCE,
         "tree": TREE,
         "group": args.group,
-        "batch": "issue110-native-two-groups-1",
+        "batch": "issue110-native-preflight-1"
+        if preflight_only
+        else "issue110-native-two-groups-1",
+        "mode": "preflight_only" if preflight_only else "original_group",
         "status": "prerequisites_missing",
         "group_budget_seconds": GROUP_SECONDS,
         "reporter_seconds": 60,
         "debugger_perturbs_scheduling": True,
         "root_cause_established": False,
+        "stage": "entry",
+        "original_invocation_attempted": False,
+        "original_group_started": False,
     }
     try:
         if (
@@ -488,21 +543,37 @@ def main():
             (args.private / directory).mkdir(parents=True, exist_ok=True)
         original = dict(os.environ, SWU_SECRET_CANARY="must-not-enter-debuggee")
         env = child_environment(original, sys.executable, args.private)
+        report["stage"] = "verify_subject"
         report["interpreter"] = verify_subject(args.subject, setup_deadline)
-        cdb, report["debugger_binaries"] = installed_debugger(env, setup_deadline)
+        report["stage"] = "installed_debugger"
+        report["debugger_check"] = {}
+        cdb, report["debugger_binaries"] = installed_debugger(
+            env, setup_deadline, receipt=report["debugger_check"]
+        )
+        report["stage"] = "controller_tests"
         report["controller_tests_passed"] = controller_tests(env, args.private, setup_deadline)
-        report["smoke"] = smoke(cdb, env, args.private, setup_deadline)
+        report["stage"] = "smoke"
+        report["smoke"] = {}
+        smoke(cdb, env, args.private, setup_deadline, receipt=report["smoke"])
         if time.monotonic() >= setup_deadline:
             raise ValueError("setup_budget_exhausted")
-        nodes = load_manifest()["groups"][args.group]
-        consume(args.private, args.group, os.environ["GITHUB_RUN_ATTEMPT"])
-        report["manifest_sha256"] = MANIFEST_HASH
-        target = pytest_argv(sys.executable, nodes, args.private / "private.xml")
-        result, raw = run_one(
-            cdb, target, args.subject, env, args.private / "original", GROUP_SECONDS
-        )
-        report.update(result)
-        report["nodes"] = node_results(raw, nodes)
+        if preflight_only:
+            report["status"] = "preflight_passed"
+        else:
+            report["stage"] = "original"
+            nodes = load_manifest()["groups"][args.group]
+            consume(args.private, args.group, os.environ["GITHUB_RUN_ATTEMPT"])
+            report["manifest_sha256"] = MANIFEST_HASH
+            target = pytest_argv(sys.executable, nodes, args.private / "private.xml")
+            report["original_invocation_attempted"] = True
+            report["original_group_started"] = None
+            result, raw = run_one(
+                cdb, target, args.subject, env, args.private / "original", GROUP_SECONDS
+            )
+            report.update(result)
+            report["original_group_started"] = True if result["target_pid"] else None
+            report["nodes"] = node_results(raw, nodes)
+        report["stage"] = "complete"
     except Exception as error:
         # Error messages may contain raw command output or paths. Publish only a fixed code.
         allowed = {
@@ -527,10 +598,23 @@ def main():
             if type(error) is ValueError and str(error) in allowed
             else "harness_or_prerequisite_error"
         )
+        report["error_category"] = (
+            "subprocess_timeout"
+            if isinstance(error, subprocess.TimeoutExpired)
+            else "subprocess_failed"
+            if isinstance(error, subprocess.CalledProcessError)
+            else "invalid_json"
+            if isinstance(error, json.JSONDecodeError)
+            else "os_error"
+            if isinstance(error, OSError)
+            else "validation_error"
+            if isinstance(error, ValueError)
+            else "unexpected_error"
+        )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     # A no-crash observation is not a repair; original exit remains in the report.
-    return 0 if report["status"] == "no_crash_observed" else 1
+    return 0 if report["status"] in ("no_crash_observed", "preflight_passed") else 1
 
 
 if __name__ == "__main__":

@@ -394,7 +394,12 @@ def test_every_existing_push_workflow_excludes_diagnostic_branch():
         "mumu-adapter-build-only.yml": ["dot/mumu-own-https-runner"],
     }
     files = {p.name: p for p in (ROOT / ".github/workflows").glob("*.yml")}
-    assert set(files) == {*expected, "issue110-native-capture.yml", "issue110-setup-only.yml"}
+    assert set(files) == {
+        *expected,
+        "issue110-native-capture.yml",
+        "issue110-setup-only.yml",
+        "issue110-native-preflight.yml",
+    }
     for name, patterns in expected.items():
         trigger = files[name].read_text().split("\npermissions:")[0]
         match = re.search(r"  push:\s*\n    branches: \[([^\]]+)\]", trigger)
@@ -673,3 +678,242 @@ exit $LASTEXITCODE
             assert receipt["blocker"] == (
                 "python_path_missing" if scenario == "empty_find" else "setup_stage_failed"
             )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("child_exit", 7),
+        ("reason", "capture_timeout"),
+        ("capture_complete", False),
+        ("reporter_seen", False),
+        ("cleanup_verified", False),
+    ],
+)
+def test_failed_av_gate_preserves_each_private_free_predicate(
+    capture, tmp_path, monkeypatch, field, value
+):
+    receipt = {}
+    calls = []
+
+    def run(cdb, target, cwd, env, directory, seconds):
+        calls.append(directory.name)
+        code = 0 if directory.name == "exit-0" else 7
+        result = dict(
+            child_exit=code,
+            debugger_exit=0,
+            target_pid=123,
+            reason="exited",
+            elapsed_seconds=1.0,
+            cleanup_verified=True,
+            capture={"complete": False},
+        )
+        raw = "SMOKE_PID 123\nSMOKE_OUT\nSMOKE_ERR\nPRIVATE_CANARY\n"
+        if directory.name == "av":
+            result["child_exit"] = 0xC0000005
+            result["capture"] = {"complete": True, "rejection": None}
+            raw += "Timeout (0:01:00)!\n"
+            if field == "capture_complete":
+                result["capture"]["complete"] = value
+                result["capture"]["rejection"] = "markers_missing_or_duplicated"
+            elif field == "reporter_seen":
+                raw = raw.replace("Timeout (0:01:00)!", "")
+            else:
+                result[field] = value
+        return result, raw
+
+    monkeypatch.setattr(capture, "run_one", run)
+    with pytest.raises(ValueError, match="av_reporter_smoke_failed"):
+        capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+    assert calls == ["exit-0", "exit-7", "av"]
+    assert receipt["stage"] == "av"
+    assert receipt["results"]["exit-0"]["passed"] is True
+    assert receipt["results"]["exit-7"]["passed"] is True
+    av = receipt["results"]["av"]
+    assert av[field] == value and av["passed"] is False
+    assert av["debugger_exit"] == 0
+    assert "PRIVATE_CANARY" not in json.dumps(receipt)
+
+
+@pytest.mark.parametrize("failure", ["timeout", "json"])
+def test_debugger_check_failure_keeps_fixed_substage_without_private_error(
+    capture, monkeypatch, tmp_path, failure
+):
+    from types import SimpleNamespace
+
+    receipt = {}
+    monkeypatch.setattr(capture.Path, "is_file", lambda self: True)
+    monkeypatch.setattr(capture, "x64_pe", lambda path: True)
+
+    def run(*args, **kwargs):
+        if failure == "timeout":
+            raise capture.subprocess.TimeoutExpired(
+                "PRIVATE_CANARY", kwargs["timeout"], output=b"PRIVATE_CANARY"
+            )
+        return SimpleNamespace(returncode=0, stdout=b"PRIVATE_CANARY")
+
+    monkeypatch.setattr(capture.subprocess, "run", run)
+    error = capture.subprocess.TimeoutExpired if failure == "timeout" else json.JSONDecodeError
+    with pytest.raises(error):
+        capture.installed_debugger(
+            {"TEMP": str(tmp_path / "temp"), "SystemRoot": "windows"},
+            capture.time.monotonic() + 300,
+            receipt=receipt,
+        )
+    assert receipt["stage"] == ("signature_check" if failure == "timeout" else "signature_json")
+    assert receipt["tool_exit"] == (None if failure == "timeout" else 0)
+    assert "PRIVATE_CANARY" not in json.dumps(receipt)
+
+
+@pytest.mark.parametrize("fail_stage", [None, "installed_debugger", "smoke"])
+def test_preflight_entry_cannot_consume_or_launch_original(
+    capture, monkeypatch, tmp_path, fail_stage
+):
+    import sys
+
+    output = tmp_path / "receipt.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "preflight",
+            "--subject",
+            str(tmp_path),
+            "--private",
+            str(tmp_path / "private"),
+            "--output",
+            str(output),
+            "--group",
+            "1",
+            "--setup-started",
+            str(capture.time.time()),
+        ],
+    )
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/diagnostics/issue110-native-capture")
+    monkeypatch.setenv("SystemRoot", "windows")
+    monkeypatch.setattr(capture, "verify_subject", lambda *a: {})
+
+    def debugger(*a, receipt=None):
+        if fail_stage == "installed_debugger":
+            receipt.update(stage="signature_check", tool_exit=None)
+            raise capture.subprocess.TimeoutExpired("PRIVATE_CANARY", 30, output=b"PRIVATE_CANARY")
+        return "cdb.exe", []
+
+    def smoke(*a, receipt=None):
+        receipt.update(stage="av", results={"av": {"child_exit": 7, "passed": False}})
+        if fail_stage == "smoke":
+            raise ValueError("av_reporter_smoke_failed")
+        return receipt
+
+    monkeypatch.setattr(capture, "installed_debugger", debugger)
+    monkeypatch.setattr(capture, "controller_tests", lambda *a: True)
+    monkeypatch.setattr(capture, "smoke", smoke)
+
+    def prohibited(*a, **kw):
+        pytest.fail("preflight must never load/consume/invoke an original group")
+
+    for name in ("load_manifest", "consume", "pytest_argv", "run_one"):
+        monkeypatch.setattr(capture, name, prohibited)
+    code = capture.main(preflight_only=True)
+    receipt = json.loads(output.read_text())
+    assert code == (1 if fail_stage else 0)
+    assert receipt["original_invocation_attempted"] is False
+    assert receipt["original_group_started"] is False
+    assert "PRIVATE_CANARY" not in output.read_text()
+    if fail_stage:
+        assert receipt["stage"] == fail_stage
+        if fail_stage == "installed_debugger":
+            assert receipt["error_category"] == "subprocess_timeout"
+        else:
+            assert receipt["smoke"]["results"]["av"]["child_exit"] == 7
+    else:
+        assert receipt["status"] == "preflight_passed"
+
+
+def test_capture_rejection_enum_identifies_missing_protocol_without_raw_data(capture):
+    result = capture.parse_capture("PRIVATE_CANARY", "a" * 32)
+    assert result["rejection"] == "markers_missing_or_duplicated"
+    assert capture.parse_capture(transcript(), "a" * 32)["rejection"] is None
+    assert "PRIVATE_CANARY" not in json.dumps(result)
+
+
+def test_dedicated_preflight_script_hardcodes_only_preflight(monkeypatch):
+    import runpy
+    import sys
+    from types import SimpleNamespace
+
+    calls = []
+    monkeypatch.setitem(
+        sys.modules, "issue110_capture", SimpleNamespace(main=lambda **kw: calls.append(kw) or 0)
+    )
+    path = ROOT / "scripts/diagnostics/issue110_preflight.py"
+    with pytest.raises(SystemExit) as error:
+        runpy.run_path(str(path), run_name="__main__")
+    assert error.value.code == 0
+    assert calls == [{"preflight_only": True}]
+
+
+@pytest.mark.parametrize("failed_stage", ["exit-0", "exit-7", "timeout", None])
+def test_all_smoke_stages_preserve_success_or_failure_before_raise(
+    capture, monkeypatch, tmp_path, failed_stage
+):
+    receipt = {}
+    calls = []
+
+    def run(cdb, target, cwd, env, directory, seconds):
+        name = directory.name
+        calls.append(name)
+        child_exit = {"exit-0": 0, "exit-7": 7, "av": 0xC0000005, "timeout": None}[name]
+        result = dict(
+            child_exit=child_exit,
+            debugger_exit=7 if name == "av" else 0,
+            target_pid=123,
+            reason="timeout" if name == "timeout" else "exited",
+            elapsed_seconds=1.0,
+            cleanup_verified=name != failed_stage,
+            capture={"complete": name == "av", "rejection": None},
+        )
+        raw = (
+            "SMOKE_PID 123\nSMOKE_OUT\nSMOKE_ERR\nTimeout (0:01:00)!\n"
+            "DESCENDANT_STARTED\nPRIVATE_CANARY"
+        )
+        return result, raw
+
+    monkeypatch.setattr(capture, "run_one", run)
+    if failed_stage:
+        with pytest.raises(ValueError):
+            capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+        assert receipt["stage"] == failed_stage
+        assert calls[-1] == failed_stage
+        assert receipt["results"][failed_stage]["passed"] is False
+    else:
+        capture.smoke("cdb.exe", {}, tmp_path, capture.time.monotonic() + 300, receipt=receipt)
+        assert receipt["stage"] == "complete"
+        assert len(calls) == 4
+        assert all(item["passed"] for item in receipt["results"].values())
+        assert receipt["results"]["av"]["debugger_exit"] == 7
+    assert "PRIVATE_CANARY" not in json.dumps(receipt)
+
+
+def test_native_preflight_workflow_is_one_job_without_original_entry():
+    path = ROOT / ".github/workflows/issue110-native-preflight.yml"
+    assert path.exists()
+    workflow = path.read_text()
+    assert "github.event.before == '5d8bdd26471994a682f79ec93217897713fdbe47'" in workflow
+    assert "github.repository == 'Maximora-byte/swu-happyrun'" in workflow
+    assert "github.ref == 'refs/heads/diagnostics/issue110-native-capture'" in workflow
+    assert workflow.count("github.run_attempt == 1") == 1
+    assert "workflow_dispatch" not in workflow and "pull_request" not in workflow
+    assert "timeout-minutes: 8" in workflow and "strategy:" not in workflow
+    assert "matrix." not in workflow and "aggregate:" not in workflow
+    assert workflow.count("issue110_preflight.py") == 1
+    assert "issue110_capture.py" not in workflow
+    assert "-Group '1'" in workflow and "--group '1'" in workflow
+    assert "ISSUE110_SETUP_STARTED" in workflow
+    assert "3.11.16" in workflow and '"0.12.19"' in workflow
+    assert "ref: 6a0dac84bf66125c7e2bd506bb0d8c988b1dcc34" in workflow
+    assert "retention-days: 1" in workflow
+    assert "*.log" not in workflow and "*.xml" not in workflow and "*.dmp" not in workflow
+    for name in ("issue110-native-capture.yml", "issue110-setup-only.yml"):
+        assert "5d8bdd26471994a682f79ec93217897713fdbe47" not in (path.parent / name).read_text()
