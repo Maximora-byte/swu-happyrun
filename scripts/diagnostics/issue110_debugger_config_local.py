@@ -34,7 +34,7 @@ EXPECTED_DEPENDENCIES = {
     "issue110_capture": "f516ac8b6079ee8afd40d2a54f8c9ad08d722c8bc0e8d49a89151b7e29915a13",
     "issue110_debugger_config": "1a9e619f209218731030bc1b41dde1deee30b22ec2f6b52f3fa5a4af53f3b79a",
     "issue110_win32": "96f56feaeaace3061c7c66f1fa66b486d2f191b23bcabd7231b5b3765bf47096",
-    "issue110_local_acl": "9b7b78ed0e9cfcaafc2f3df72399a4670035553d0b0b04de2ba2e8f6f5e3da6f",
+    "issue110_local_acl": "cd5c1984707611b221ee8f8d6163157367558aba5cdd273869bdf183fde0b05f",
 }
 
 
@@ -201,6 +201,7 @@ def run_local(root, deadline):
         raise ValueError("setup_budget_exhausted")
     modules = load_dependencies()
     capture, config, win32, acl = (modules[name] for name in EXPECTED_DEPENDENCIES)
+    acl.components(root, mode="prepared_top_level")
     api = acl.Native()
     repository_handle = api.open_directory(Path(__file__).resolve().parents[2])
     completed = False
@@ -249,7 +250,9 @@ def run_local(root, deadline):
         "blocker": None,
         "error_category": None,
     }
-    with acl.PrivateDirectory(root, api, forbidden_identity=repository_identity) as directory:
+    with acl.PrivateDirectory(
+        root, api, forbidden_identity=repository_identity, mode="prepared_top_level"
+    ) as directory:
         private = directory.path
         completed = False
         try:

@@ -3,6 +3,8 @@
 No ACL provisioning. Held no-delete-sharing handles impede rename/deletion, not
 WRITE_DAC or trusted-principal concurrency. This is not a universal TOCTOU guard.
 Only bounded ordinary allow ACEs are supported; unsupported evidence is rejected.
+The opt-in prepared_top_level layout checks the held NTFS volume root, the exact
+protected prepared ACL, and the inherited private sample child independently.
 """
 
 import ctypes as ct
@@ -15,9 +17,12 @@ from pathlib import Path
 CHILD = "issue110-local-config-1"
 MAX_SECURITY = 65536
 TRUSTED = {"S-1-5-18", "S-1-5-32-544"}
+TRUSTED_INSTALLER = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
 
 
-def components(value):
+def components(value, *, mode="generic"):
+    if mode not in ("generic", "prepared_top_level"):
+        raise ValueError("private_path_unverified")
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z]:\\[-A-Za-z0-9_.\\]+", value):
         raise ValueError("private_path_unverified")
     pieces = value[3:].split("\\")
@@ -31,6 +36,8 @@ def components(value):
     result = [value[:3]]
     for piece in pieces:
         result.append(ntpath.join(result[-1], piece))
+    if mode == "prepared_top_level" and len(result) != 2:
+        raise ValueError("private_path_unverified")
     return result
 
 
@@ -86,9 +93,21 @@ def _descriptor(data):
     return owner_sid, entries, sid_bytes
 
 
-def check_descriptor(data, user_sid, *, private):
+def check_descriptor(data, user_sid, *, private, prepared=False):
     owner, entries, _ = _descriptor(data)
     trusted = TRUSTED | {user_sid}
+    if prepared and private:
+        expected = {(who, 0x1F01FF, 3) for who in trusted}
+        if (
+            owner != user_sid
+            or not struct.unpack_from("<H", data, 2)[0] & 0x1000
+            or len(expected) != 3
+            or len(entries) != 3
+            or set(entries) != expected
+        ):
+            raise ValueError("acl_unverified")
+    elif prepared:
+        trusted = trusted | {TRUSTED_INSTALLER}
     if owner not in trusted:
         raise ValueError("acl_unverified")
     user_inheritance = False
@@ -106,7 +125,8 @@ def check_descriptor(data, user_sid, *, private):
             raise ValueError("acl_unverified")
         if trustee == user_sid and mapped == 0x1F01FF and flags & 3 == 3 and not flags & 12:
             user_inheritance = True
-        if trustee not in trusted and (private or (not flags & 8 and mapped & ~0x1200A9)):
+        ancestor_rights = 0x1200AD if prepared else 0x1200A9
+        if trustee not in trusted and (private or (not flags & 8 and mapped & ~ancestor_rights)):
             raise ValueError("acl_unverified")
     if private and not user_inheritance:
         raise ValueError("acl_unverified")
@@ -127,6 +147,12 @@ class Native:
             (self.kernel, "CloseHandle", [P], B),
             (self.kernel, "GetFileInformationByHandle", [P, P], B),
             (self.kernel, "GetFileInformationByHandleEx", [P, ct.c_int32, P, U], B),
+            (
+                self.kernel,
+                "GetVolumeInformationByHandleW",
+                [P, ct.c_wchar_p, U, P, P, P, ct.c_wchar_p, U],
+                B,
+            ),
             (self.kernel, "GetDriveTypeW", [ct.c_wchar_p], U),
             (self.kernel, "QueryDosDeviceW", [ct.c_wchar_p, ct.c_wchar_p, U], U),
             (self.kernel, "GetCurrentProcess", [], P),
@@ -222,6 +248,17 @@ class Native:
             raise ValueError("drive_mapping_unverified")
         return text.rstrip("\0")
 
+    def volume(self, handle):
+        name, flags = ct.create_unicode_buffer(32), ct.c_uint32()
+        if (
+            not self.kernel.GetVolumeInformationByHandleW(
+                handle, None, 0, None, None, ct.byref(flags), name, len(name)
+            )
+            or name.value != "NTFS"
+            or not flags.value & 8  # FILE_PERSISTENT_ACLS
+        ):
+            raise ValueError("private_directory_unverified")
+
     def inspect(self, handle):
         attributes, identity = self.information(handle)
         needed = ct.c_uint32()
@@ -252,36 +289,59 @@ class Native:
 
 
 class PrivateDirectory:
-    def __init__(self, root, api, *, forbidden_identity=None):
-        self.components = components(root)
+    def __init__(self, root, api, *, forbidden_identity=None, mode="generic"):
+        self.components = components(root, mode=mode)
+        self.roles = (
+            ("volume_root", "prepared_private_root")
+            if mode == "prepared_top_level"
+            else tuple(
+                "private" if index == len(self.components) - 1 else "ancestor"
+                for index in range(len(self.components))
+            )
+        )
         self.path = Path(ntpath.join(root, CHILD))
         self.api = api
         self.forbidden_identity = forbidden_identity
         self.handles = []
 
-    def _check(self, handle, private):
+    def _check(self, handle, role):
+        if role not in (
+            "ancestor",
+            "private",
+            "volume_root",
+            "prepared_private_root",
+            "sample_child",
+        ):
+            raise ValueError("private_directory_unverified")
         attributes, identity, data = self.api.inspect(handle)
         if not attributes & 0x10 or attributes & 0x400 or identity == self.forbidden_identity:
             raise ValueError("private_directory_unverified")
-        check_descriptor(data, self.api.user_sid, private=private)
+        if role == "volume_root":
+            self.api.volume(handle)
+        check_descriptor(
+            data,
+            self.api.user_sid,
+            private=role in {"private", "prepared_private_root", "sample_child"},
+            prepared=role in {"volume_root", "prepared_private_root"},
+        )
         return identity
 
     def __enter__(self):
         completed = False
         try:
             self.mapping = self.api.drive_mapping(self.components[0])
-            for index, component in enumerate(self.components):
+            for component, role in zip(self.components, self.roles, strict=True):
                 handle = self.api.open_directory(component)
-                self.handles.append((handle, None, index == len(self.components) - 1))
-                identity = self._check(handle, self.handles[-1][2])
-                self.handles[-1] = (handle, identity, self.handles[-1][2])
+                self.handles.append((handle, None, role))
+                identity = self._check(handle, role)
+                self.handles[-1] = (handle, identity, role)
             os.mkdir(
                 str(self.path)
             )  # Exclusive fixed child, inherited ACL, no fallback or removal.
             handle = self.api.open_directory(str(self.path))
-            self.handles.append((handle, None, True))
-            identity = self._check(handle, True)
-            self.handles[-1] = (handle, identity, True)
+            self.handles.append((handle, None, "sample_child"))
+            identity = self._check(handle, "sample_child")
+            self.handles[-1] = (handle, identity, "sample_child")
             self.revalidate()
             completed = True
             return self
@@ -292,8 +352,8 @@ class PrivateDirectory:
     def revalidate(self):
         if self.api.drive_mapping(self.components[0]) != self.mapping:
             raise ValueError("drive_mapping_unverified")
-        for handle, identity, private in self.handles:
-            if self._check(handle, private) != identity:
+        for handle, identity, role in self.handles:
+            if self._check(handle, role) != identity:
                 raise ValueError("private_directory_unverified")
 
     def __exit__(self, kind, error, traceback):

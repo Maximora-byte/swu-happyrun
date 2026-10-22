@@ -467,13 +467,13 @@ def test_interpreter_identity_fail_closed(adapter, runtime, monkeypatch, case):
 
 
 @pytest.fixture
-def local_fake(adapter, monkeypatch, tmp_path):
+def local_fake(adapter, acl, monkeypatch, tmp_path):
     calls = []
     private = tmp_path / "private"
 
     class Directory:
-        def __init__(self, root, api, *, forbidden_identity):
-            calls.append(("root", root, forbidden_identity))
+        def __init__(self, root, api, *, forbidden_identity, mode="generic"):
+            calls.append(("root", root, forbidden_identity, mode))
             self.path = private
 
         def __enter__(self):
@@ -548,7 +548,9 @@ def local_fake(adapter, monkeypatch, tmp_path):
         "issue110_capture": capture,
         "issue110_debugger_config": config,
         "issue110_win32": SimpleNamespace(Session=Session),
-        "issue110_local_acl": SimpleNamespace(Native=API, PrivateDirectory=Directory),
+        "issue110_local_acl": SimpleNamespace(
+            Native=API, PrivateDirectory=Directory, components=acl.components
+        ),
     }
     monkeypatch.setattr(adapter, "load_dependencies", lambda: modules)
     monkeypatch.setattr(adapter, "verify_runtime", lambda *args: {"implementation": "cpython"})
@@ -836,6 +838,7 @@ def native_fake(acl, monkeypatch):
                 "CloseHandle",
                 "GetFileInformationByHandle",
                 "GetFileInformationByHandleEx",
+                "GetVolumeInformationByHandleW",
                 "GetDriveTypeW",
                 "QueryDosDeviceW",
                 "GetCurrentProcess",
@@ -938,3 +941,286 @@ def test_real_isolated_python_entry_fails_closed_on_linux():
     assert result.returncode == 1 and result.stderr == ""
     assert json.loads(result.stdout)["blocker"] == "windows_required"
     assert "PRIVATE_CANARY" not in result.stdout
+
+
+# These public synthetic fixtures are not evidence about any real private root.
+TRUSTED_INSTALLER = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
+PREPARED_ROOT = r"C:\PublicFixture"
+PREPARED_MODE = "prepared_top_level"
+EXACT_ENTRIES = [(who, 0x1F01FF, 3, 0) for who in (USER, SYSTEM, ADMIN)]
+
+
+def prepared_descriptor():
+    return descriptor(entries=EXACT_ENTRIES, control=0x9004)
+
+
+class PreparedNative(FakeNative):
+    def __init__(self):
+        super().__init__()
+        self.security_by_path = {
+            "C:\\": descriptor(TRUSTED_INSTALLER, [(OTHER, 0x1200AD, 0, 0)]),
+            PREPARED_ROOT: prepared_descriptor(),
+            PREPARED_ROOT + r"\issue110-local-config-1": descriptor(
+                entries=[(who, 0x1F01FF, 19, 0) for who in (USER, SYSTEM, ADMIN)]
+            ),
+        }
+        self.volume_calls = []
+
+    def inspect(self, handle):
+        return self.attributes, self.identities[handle], self.security_by_path[handle]
+
+    def volume(self, handle):
+        self.volume_calls.append(handle)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [descriptor(TRUSTED_INSTALLER), descriptor(entries=[(OTHER, 4, 0, 0)])],
+)
+def test_prepared_exceptions_never_broaden_default_policy(acl, data):
+    for private in (False, True):
+        with pytest.raises(ValueError, match="acl_unverified"):
+            acl.check_descriptor(data, USER, private=private)
+
+
+@pytest.mark.parametrize(
+    "root,mode",
+    [
+        (r"C:\PublicFixture\deeper", PREPARED_MODE),
+        (PREPARED_ROOT, "unknown"),
+        (PREPARED_ROOT, None),
+    ],
+)
+def test_prepared_path_and_mode_gate_precede_all_native_calls(acl, monkeypatch, root, mode):
+    class NoNative:
+        def __getattr__(self, name):
+            pytest.fail("native must not be inspected")
+
+    monkeypatch.setattr(acl.os, "mkdir", lambda _: pytest.fail("must not create"))
+    with pytest.raises(ValueError, match="private_path_unverified"):
+        with acl.PrivateDirectory(root, NoNative(), mode=mode):
+            pytest.fail("must not enter")
+
+
+def test_prepared_chain_retains_roles_and_accepts_inherited_child(acl, monkeypatch):
+    api = PreparedNative()
+    made = []
+    monkeypatch.setattr(acl.os, "mkdir", made.append)
+    with acl.PrivateDirectory(PREPARED_ROOT, api, mode=PREPARED_MODE) as directory:
+        assert [role for _, _, role in directory.handles] == [
+            "volume_root",
+            "prepared_private_root",
+            "sample_child",
+        ]
+        assert made == [str(directory.path)]
+        assert api.volume_calls == ["C:\\", "C:\\"]
+        directory.revalidate()
+        assert api.volume_calls == ["C:\\"] * 3
+        assert api.closed == []
+    assert api.closed == list(reversed(api.opened))
+
+
+@pytest.mark.parametrize("owner", [USER, SYSTEM, ADMIN, TRUSTED_INSTALLER])
+@pytest.mark.parametrize("mask,flags", [(0x1200AD, 0), (4, 0), (0x1F01FF, 11)])
+def test_prepared_volume_policy_exact_trusted_owners_and_bounded_rights(
+    acl, monkeypatch, owner, mask, flags
+):
+    api = PreparedNative()
+    api.security_by_path["C:\\"] = descriptor(owner, [(OTHER, mask, flags, 0)])
+    monkeypatch.setattr(acl.os, "mkdir", lambda _: None)
+    with acl.PrivateDirectory(PREPARED_ROOT, api, mode=PREPARED_MODE):
+        pass
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        descriptor(TRUSTED_INSTALLER + "-1"),
+        descriptor("S-1-5-80-1"),
+        descriptor(OTHER),
+        *[
+            descriptor(entries=[(OTHER, mask, 0, 0)])
+            for mask in (2, 0x40, 0x10000, 0x40000, 0x80000, 0x40000000, 0x10000000, 0x200)
+        ],
+        descriptor(entries=[(OTHER, 0x200, 11, 0)]),
+    ],
+)
+def test_prepared_volume_rejects_owner_prefixes_writes_and_unknown_bits(acl, monkeypatch, data):
+    api = PreparedNative()
+    api.security_by_path["C:\\"] = data
+    monkeypatch.setattr(acl.os, "mkdir", lambda _: pytest.fail("must not create"))
+    with pytest.raises(ValueError, match="acl_unverified"):
+        with acl.PrivateDirectory(PREPARED_ROOT, api, mode=PREPARED_MODE):
+            pytest.fail("must not enter")
+    assert api.closed == list(reversed(api.opened))
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        *[descriptor(owner, EXACT_ENTRIES, 0x9004) for owner in (SYSTEM, ADMIN, TRUSTED_INSTALLER)],
+        descriptor(entries=EXACT_ENTRIES),
+        descriptor(entries=EXACT_ENTRIES[:2], control=0x9004),
+        descriptor(entries=EXACT_ENTRIES + [EXACT_ENTRIES[0]], control=0x9004),
+        descriptor(entries=EXACT_ENTRIES + [(OTHER, 0, 0, 0)], control=0x9004),
+        *[
+            descriptor(entries=[(USER, mask, flags, kind), *EXACT_ENTRIES[1:]], control=0x9004)
+            for mask, flags, kind in (
+                (0x10000000, 3, 0),
+                (0x1200A9, 3, 0),
+                (0x1F01FF, 19, 0),
+                (0x1F01FF, 11, 0),
+                (0x1F01FF, 7, 0),
+                (0x1F01FF, 0, 0),
+                (0x1F01FF, 3, 1),
+            )
+        ],
+    ],
+)
+def test_prepared_private_root_requires_exact_protected_explicit_acl(acl, monkeypatch, data):
+    api = PreparedNative()
+    api.security_by_path[PREPARED_ROOT] = data
+    monkeypatch.setattr(acl.os, "mkdir", lambda _: pytest.fail("must not create"))
+    with pytest.raises(ValueError, match="acl_unverified"):
+        with acl.PrivateDirectory(PREPARED_ROOT, api, mode=PREPARED_MODE):
+            pytest.fail("must not enter")
+    assert api.closed == list(reversed(api.opened))
+
+
+def test_generic_mode_does_not_query_filesystem(acl, monkeypatch):
+    api = FakeNative()
+    api.volume = lambda _: pytest.fail("legacy must not query volume")
+    monkeypatch.setattr(acl.os, "mkdir", lambda _: None)
+    with acl.PrivateDirectory(r"C:\private\nested", api):
+        pass
+
+
+@pytest.mark.parametrize(
+    "name,flags,result", [("NTFS", 0, 1), ("ReFS", 8, 1), ("ntfs", 8, 1), ("NTFS", 8, 0)]
+)
+def test_native_volume_fails_closed(acl, name, flags, result):
+    api = acl.Native.__new__(acl.Native)
+
+    def volume(handle, label, size, serial, maximum, output_flags, output_name, length):
+        assert (handle, label, size, serial, maximum, length) == (9, None, 0, None, None, 32)
+        acl.ct.cast(output_flags, acl.ct.POINTER(acl.ct.c_uint32)).contents.value = flags
+        output_name.value = name
+        return result
+
+    api.kernel = SimpleNamespace(GetVolumeInformationByHandleW=volume)
+    with pytest.raises(ValueError, match="private_directory_unverified"):
+        api.volume(9)
+
+
+def test_native_volume_signature_and_held_handle(acl, native_fake):
+    _, calls, kernel, _ = native_fake
+    api = acl.Native()
+    function = kernel.GetVolumeInformationByHandleW
+    assert function.argtypes == [
+        acl.ct.c_void_p,
+        acl.ct.c_wchar_p,
+        acl.ct.c_uint32,
+        acl.ct.c_void_p,
+        acl.ct.c_void_p,
+        acl.ct.c_void_p,
+        acl.ct.c_wchar_p,
+        acl.ct.c_uint32,
+    ]
+    assert function.restype is acl.ct.c_int32
+
+    def volume(handle, label, size, serial, maximum, flags, name, length):
+        assert (handle, label, size, serial, maximum, length) == (9, None, 0, None, None, 32)
+        acl.ct.cast(flags, acl.ct.POINTER(acl.ct.c_uint32)).contents.value = 8
+        name.value = "NTFS"
+        return 1
+
+    function.function = volume
+    api.volume(9)
+    assert [args[0] for name, args in calls if name == "GetVolumeInformationByHandleW"] == [9]
+
+
+@pytest.mark.parametrize(
+    "role", ["volume_root", "prepared_private_root", "sample_child", "filesystem"]
+)
+def test_prepared_role_revalidation_stops_before_session(
+    acl, adapter, local_fake, monkeypatch, role
+):
+    calls, _, modules, _ = local_fake
+    api = PreparedNative()
+    original_mkdir = acl.os.mkdir
+    monkeypatch.setattr(acl.os, "mkdir", lambda _: None)
+    directory = acl.PrivateDirectory(PREPARED_ROOT, api, mode=PREPARED_MODE)
+    directory.__enter__()
+    monkeypatch.setattr(acl.os, "mkdir", original_mkdir)
+    modules["issue110_local_acl"].PrivateDirectory.revalidate = lambda self: directory.revalidate()
+    installed = modules["issue110_capture"].installed_debugger
+
+    def mutate(*args, **kwargs):
+        if role == "filesystem":
+
+            def fail(_):
+                raise ValueError("private_directory_unverified")
+
+            api.volume = fail
+        else:
+            handle = next(
+                handle for handle, _, stored_role in directory.handles if stored_role == role
+            )
+            api.security_by_path[handle] = {
+                "volume_root": descriptor(entries=[(OTHER, 2, 0, 0)]),
+                "prepared_private_root": descriptor(entries=EXACT_ENTRIES),
+                "sample_child": descriptor(entries=[(OTHER, 0x1F01FF, 19, 0)]),
+            }[role]
+        return installed(*args, **kwargs)
+
+    modules["issue110_capture"].installed_debugger = mutate
+    try:
+        with pytest.raises(ValueError):
+            adapter.run_local(PREPARED_ROOT, 310)
+        assert not any(call[0] == "session" for call in calls)
+    finally:
+        directory.__exit__(None, None, None)
+    assert api.closed == list(reversed(api.opened))
+
+
+def test_local_adapter_explicitly_selects_prepared_mode(adapter, local_fake):
+    calls, _, _, _ = local_fake
+    adapter.run_local(PREPARED_ROOT, 310)
+    assert [call[-1] for call in calls if call[0] == "root"] == [PREPARED_MODE]
+
+
+def test_local_adapter_deep_path_rejected_before_native_construction(adapter, local_fake):
+    _, _, modules, _ = local_fake
+    modules["issue110_local_acl"].Native = lambda: pytest.fail("must not construct Native")
+    with pytest.raises(ValueError, match="private_path_unverified"):
+        adapter.run_local(PREPARED_ROOT + r"\deeper", 310)
+
+
+def test_observer_never_imports_or_provisions_prepared_root(adapter, acl):
+    import ast
+
+    sources = [Path(module.__file__).read_text() for module in (adapter, acl)]
+    for source in sources:
+        assert "issue110_prepare_private_root" not in source
+        assert "CreateDirectoryW" not in source
+        assert "SetSecurity" not in source
+    mkdir_calls = [
+        node
+        for node in ast.walk(ast.parse(sources[1]))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "mkdir"
+    ]
+    assert len(mkdir_calls) == 1
+    assert ast.unparse(mkdir_calls[0].args[0]) == "str(self.path)"
+
+
+@pytest.mark.parametrize("unknown_role", ["unknown", "prepared_private_rooot", None, True])
+def test_unknown_held_role_revalidation_fails_closed(acl, monkeypatch, unknown_role):
+    api = PreparedNative()
+    monkeypatch.setattr(acl.os, "mkdir", lambda _: None)
+    with acl.PrivateDirectory(PREPARED_ROOT, api, mode=PREPARED_MODE) as directory:
+        handle, identity, _ = directory.handles[1]
+        directory.handles[1] = (handle, identity, unknown_role)
+        with pytest.raises(ValueError, match="private_directory_unverified"):
+            directory.revalidate()
