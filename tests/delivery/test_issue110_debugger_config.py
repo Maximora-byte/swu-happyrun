@@ -107,24 +107,122 @@ def test_fixed_scripts_keep_original_filter_and_only_emit_probe_marker(probe):
     terminal = r"C:\private\terminal.cdb"
     loader = r"C:\private\load.cdb"
     init, terminal_text, load = probe.debugger_scripts(NONCE, terminal, loader)
-    old_init, _ = probe.capture.debugger_scripts(NONCE, terminal)
-    assert init.splitlines()[0] == old_init.splitlines()[0]
     assert terminal_text == f".echo SWU_{NONCE}_UNEXPECTED_CALLBACK\n"
     assert all(word not in terminal_text for word in (".ecxr", "knL", "lm", "gn"))
     assert load == f".echo SWU_{NONCE}_LOAD\n"
     assert init.splitlines() == [
-        old_init.splitlines()[0],
+        'sxd -c2 "$$>a<C:\\private\\terminal.cdb" av',
         f".echo SWU_{NONCE}_CFG_OPEN",
         "sx",
         f".echo SWU_{NONCE}_CFG_CLOSE",
         f"$$>a<{loader}",
-        old_init.splitlines()[1],
+        '.printf "SWU_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_READY %x\\n", @$tpid',
     ]
     assert not any(line in ("g", "gn", "gh") for line in init.splitlines())
     assert not any(word in load for word in (".ecxr", "knL", "lm", "BEGIN", "END", "gn"))
     for bad in (r"C:\private\bad path.cdb", "bad\ncommand"):
         with pytest.raises(ValueError):
             probe.debugger_scripts(NONCE, terminal, bad)
+
+
+@pytest.mark.parametrize(
+    "terminal,loader,registration,intended_payload,direct_load",
+    [
+        pytest.param(
+            r"C:\capture\callback.cdb",
+            r"C:\capture\load.cdb",
+            rb'sxd -c2 "$$>a<C:\capture\callback.cdb" av',
+            rb"$$>a<C:\capture\callback.cdb",
+            rb"$$>a<C:\capture\load.cdb",
+            id="ordinary-windows-paths",
+        ),
+        pytest.param(
+            r"C:\notes\tmp\native.cdb",
+            r"C:\notes\tmp\target.cdb",
+            rb'sxd -c2 "$$>a<C:\notes\tmp\native.cdb" av',
+            rb"$$>a<C:\notes\tmp\native.cdb",
+            rb"$$>a<C:\notes\tmp\target.cdb",
+            id="n-and-t-segments",
+        ),
+        pytest.param(
+            r"C:\\notes\\tmp\\native.cdb",
+            r"C:\\notes\\tmp\\target.cdb",
+            rb'sxd -c2 "$$>a<C:\\notes\\tmp\\native.cdb" av',
+            rb"$$>a<C:\\notes\\tmp\\native.cdb",
+            rb"$$>a<C:\\notes\\tmp\\target.cdb",
+            id="consecutive-backslashes",
+        ),
+    ],
+)
+def test_generated_command_bytes_match_independent_literals(
+    probe, terminal, loader, registration, intended_payload, direct_load
+):
+    # Baseline generator bytes only, not CDB parsing or observed sx formatting.
+    # Consecutive backslashes here do not establish adapter path admission.
+    init, terminal_text, load = probe.debugger_scripts(NONCE, terminal, loader)
+    capture_init, _ = probe.capture.debugger_scripts(NONCE, terminal)
+    config_bytes = init.encode("ascii")
+    capture_bytes = capture_init.encode("ascii")
+    assert config_bytes.split(b"\n")[0] == registration
+    assert capture_bytes.split(b"\n")[0] == registration
+
+    # The intended unquoted payload is a separate literal, not a claim about
+    # what CDB stores after parsing -c2. No shlex or escape-decoding oracle.
+    assert registration == b'sxd -c2 "' + intended_payload + b'" av'
+    assert config_bytes == (
+        registration
+        + b"\n.echo SWU_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_CFG_OPEN\nsx\n"
+        + b".echo SWU_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_CFG_CLOSE\n"
+        + direct_load
+        + b'\n.printf "SWU_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_READY %x\\n", @$tpid\n'
+    )
+    assert capture_bytes == (
+        registration + b'\n.printf "SWU_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_READY %x\\n", @$tpid\n'
+    )
+    assert terminal_text.encode("ascii") == (
+        b".echo SWU_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_UNEXPECTED_CALLBACK\n"
+    )
+    assert load.encode("ascii") == b".echo SWU_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_LOAD\n"
+
+    # Even these exact generated command bytes are not a native readback sample.
+    for synthetic_body in (registration, intended_payload, direct_load):
+        result = probe.observe(private_bytes(synthetic_body + b"\r\n"), NONCE, VERSION, 42)
+        assert result["configuration_readback"] == "format_unknown"
+
+
+@pytest.mark.parametrize("bad_path", [r'C:\capture\bad"name.cdb', r"C:\capture\bad'name.cdb"])
+def test_quote_containing_script_paths_are_rejected(probe, bad_path):
+    with pytest.raises(ValueError, match="^unsafe_debugger_script_path$"):
+        probe.debugger_scripts(NONCE, bad_path, r"C:\capture\load.cdb")
+    with pytest.raises(ValueError, match="^unsafe_debugger_script_path$"):
+        probe.debugger_scripts(NONCE, r"C:\capture\callback.cdb", bad_path)
+    with pytest.raises(ValueError, match="^unsafe_debugger_script_path$"):
+        probe.capture.debugger_scripts(NONCE, bad_path)
+
+
+def test_cdb_argv_passes_cf_filename_not_generated_script_text(probe):
+    argv = probe.capture.cdb_argv(
+        r"C:\debugger\cdb.exe",
+        r"C:\capture\init.cdb",
+        r"C:\capture\symbols",
+        [r"C:\python\python.exe", "-c", "pass"],
+    )
+    assert argv == [
+        r"C:\debugger\cdb.exe",
+        "-hd",
+        "-G",
+        "-noshell",
+        "-nosqm",
+        "-sins",
+        "-netsyms:no",
+        "-y",
+        r"C:\capture\symbols",
+        "-cf",
+        r"C:\capture\init.cdb",
+        r"C:\python\python.exe",
+        "-c",
+        "pass",
+    ]
 
 
 @pytest.fixture
