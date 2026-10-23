@@ -75,13 +75,19 @@ def _read(path, pin, cap=MAX_APPROVAL_BYTES):
     )
     try:
         opened = os.fstat(fd)
-        if FileIdentity.from_stat(opened) != pin.identity or not stat.S_ISREG(opened.st_mode):
+        if (
+            FileIdentity.from_stat(opened) != pin.identity
+            or not stat.S_ISREG(opened.st_mode)
+            or not 0 <= opened.st_size <= cap
+        ):
             raise ApprovalNotReady()
         with os.fdopen(fd, "rb", closefd=False) as source:
-            raw = source.read(cap + 1)
+            # The policy cap can be 128 MiB even for a tiny evidence file.
+            # Allocate for the observed file, plus one byte to detect growth.
+            raw = source.read(opened.st_size + 1)
         after = os.fstat(fd)
         if (
-            len(raw) > cap
+            len(raw) != opened.st_size
             or _chain(path) != before
             or (opened.st_size, opened.st_mtime_ns) != (after.st_size, after.st_mtime_ns)
             or hashlib.sha256(raw).hexdigest() != _digest(pin.sha256)

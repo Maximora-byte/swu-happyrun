@@ -39,6 +39,11 @@ def child(source, evidence, **kwargs):
     )
 
 
+# Evidence-content cases need time for Windows interpreter startup before the
+# child can emit anything. This fixture budget is separate from product limits.
+CONTENT_CAPTURE_SECONDS = 1.0
+
+
 def test_success_preserves_binary_receipt_without_repr_disclosure():
     evidence = collector()
     result = child(
@@ -82,7 +87,7 @@ def test_failures_keep_bounded_partial_bytes(monkeypatch, source, code):
     monkeypatch.setattr(command, "MAX_OUTPUT_BYTES", 1024)
     evidence = collector()
     with pytest.raises(command.ProbeError, match=code):
-        child(source, evidence, timeout=0.15)
+        child(source, evidence, timeout=CONTENT_CAPTURE_SECONDS)
     snapshot = evidence.snapshot
     assert snapshot.stdout
     assert len(snapshot.stdout) <= 1024 and len(snapshot.stderr) <= 1024
@@ -296,7 +301,11 @@ def test_unresolved_readers_snapshot_is_immutable_and_pending_gate_stays_closed(
     monkeypatch.setattr(command, "_read_pipe", hold)
     try:
         with pytest.raises(command.ProbeError, match="command_cleanup_unconfirmed"):
-            child("import sys; sys.stdout.buffer.write(b'retained\\n')", evidence, timeout=0.1)
+            child(
+                "import sys; sys.stdout.buffer.write(b'retained\\n')",
+                evidence,
+                timeout=CONTENT_CAPTURE_SECONDS,
+            )
         snapshot = evidence.snapshot
         assert snapshot.stdout == b"retained\n"
         assert not snapshot.output_complete
@@ -331,7 +340,11 @@ def test_cleanup_interruption_retains_primary_and_pending_ownership(monkeypatch)
     monkeypatch.setattr(subprocess.Popen, "wait", interrupt_once)
     try:
         with pytest.raises(KeyboardInterrupt):
-            child("import os,time; os.write(1,b'kept'); time.sleep(5)", evidence, timeout=0.15)
+            child(
+                "import os,time; os.write(1,b'kept'); time.sleep(5)",
+                evidence,
+                timeout=CONTENT_CAPTURE_SECONDS,
+            )
         assert evidence.snapshot.stdout == b"kept"
         assert evidence.snapshot.primary_code == "command_timeout"
         assert evidence.snapshot.final_code == "command_interrupted"

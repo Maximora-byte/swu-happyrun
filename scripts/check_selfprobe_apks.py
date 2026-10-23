@@ -22,10 +22,25 @@ def verify_manifest(xml, optional, scope_id=None):
         location = {
             "android.permission.ACCESS_COARSE_LOCATION",
             "android.permission.ACCESS_FINE_LOCATION",
+            "android.permission.FOREGROUND_SERVICE",
+            "android.permission.FOREGROUND_SERVICE_LOCATION",
         }
-        allowed += [location, location | {"android.permission.INTERNET"}]
+        allowed = [location, location | {"android.permission.INTERNET"}]
     assert set(permissions) in allowed
     assert not root.findall("uses-permission-sdk-23")
+    services = root.findall("application/service")
+    if optional:
+        assert len(services) == 1, "Exactly one own location service required"
+        service_type = services[0].get(ANDROID + "foregroundServiceType")
+        assert service_type in {"location", "0x8"}, "Only the location service flag is allowed"
+        assert services[0].attrib == {
+            ANDROID + "name": "org.happyrun.app.selfprobe.ProbeLocationService",
+            ANDROID + "exported": "false",
+            ANDROID + "foregroundServiceType": service_type,
+        }
+        assert not list(services[0]), "No service intent filters or metadata allowed"
+    else:
+        assert not services, "Ordinary APK cannot contain the probe service"
     metadata = {
         node.attrib[ANDROID + "name"]: node.attrib for node in root.findall("application/meta-data")
     }
