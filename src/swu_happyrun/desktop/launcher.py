@@ -40,7 +40,9 @@ def run(*, root=None, port=8765, open_browser=True):
                 Thread(target=show, name="happyrun-desktop-browser", daemon=True).start()
 
     print(f"HappyRun local workstation: http://127.0.0.1:{port}/desktop/", flush=True)
-    print("Simulation only. Close this process with Ctrl+C to stop the local service.", flush=True)
+    print(
+        "Local simulation and calibrated MuMu tool. Ctrl+C requests a controlled stop.", flush=True
+    )
     DesktopServer(
         uvicorn.Config(app, host="127.0.0.1", port=port, access_log=False, log_level="warning")
     ).run()

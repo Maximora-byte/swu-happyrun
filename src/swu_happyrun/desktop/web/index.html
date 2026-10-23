@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>HappyRun · 本地工作台</title>
-  <link rel="stylesheet" href="styles.css"><script src="app.js" defer></script>
+  <link rel="stylesheet" href="styles.css"><script src="app.js" defer></script><script src="mumu.js" defer></script>
 </head>
 <body>
   <header><a class="brand" href="./"><span class="mark">H</span><span>HappyRun<small>本地工作台</small></span></a>
@@ -12,14 +12,34 @@
   <main>
     <section class="hero">
       <div><p class="eyebrow">YOUR LOCAL WORKSPACE</p><h1>每一步，都有状态。</h1>
-        <p class="lead">从一条本地模拟任务开始。查看执行、确认停止，保留每次运行。</p></div>
+        <p class="lead">连接 MuMu，校准后沿自己的路线前进。<br>也可以从一条本地模拟任务开始。</p></div>
       <div class="orb" aria-hidden="true"><span>LOCAL</span><strong>H</strong><span>01 / 01</span></div>
     </section>
     <div id="notice" role="status" aria-live="polite" hidden></div>
     <section class="metrics" aria-label="运行环境">
       <article><span>控制服务</span><strong id="service">连接中</strong><small>仅本机可访问</small></article>
       <article><span>本地执行代理</span><strong id="worker">准备中</strong><small>独立合成设备 · fake</small></article>
-      <article><span>当前任务</span><strong id="active-count">—</strong><small>历史任务保存在本机</small></article>
+      <article><span>合成模拟任务</span><strong id="active-count">—</strong><small>历史任务保存在本机</small></article>
+    </section>
+    <section class="card mumu-panel" aria-labelledby="mumu-heading">
+      <div class="section-title"><div><p class="eyebrow">MUMU TRAJECTORY</p><h2 id="mumu-heading">MuMu 轨迹工具</h2></div><span class="pill" id="mumu-state">等待连接</span></div>
+      <p class="muted mumu-intro">向选定的 MuMu 实例发送真实定位。先导入有来源的路线，再校准读回；与下方的合成模拟独立运行。</p>
+      <div class="mumu-layout">
+        <div class="mumu-controls">
+          <div class="mumu-field"><label for="mumu-instance">01 / 连接实例或检查恢复</label><div class="mumu-connect"><select id="mumu-instance" disabled><option value="">正在查找 MuMu…</option></select><button id="mumu-connect" class="secondary" disabled>连接实例</button></div><p class="mumu-subtle" id="mumu-device">本机发现与 Android 观察状态将在连接后显示。</p></div>
+          <div class="mumu-field"><label for="mumu-route-file">02 / 导入私有路线</label><input id="mumu-route-file" type="file" accept=".json,application/json" disabled><p class="mumu-subtle">RouteProfile JSON · 明确 WGS84 / GCJ02 / BD09 与 source_ref。文件仅交给本地服务。</p><p class="mumu-route-info" id="mumu-route-info">尚未导入路线</p></div>
+          <div class="mumu-field"><span class="mumu-label">03 / 校准并执行</span><button id="mumu-calibrate" class="secondary" disabled>校准位置读回</button><p class="mumu-subtle">校准会写入路线中的真实点位并等待新鲜读回，通常需要 10–30 秒。</p><div class="mumu-settings"><div><label for="mumu-speed">速度 <span>m/s</span></label><input id="mumu-speed" type="number" value="2" min="0.3" max="8" step="0.1" inputmode="decimal"></div><div><label for="mumu-duration">最长时长 <span>秒</span></label><input id="mumu-duration" type="number" value="120" min="5" max="1800" step="1" inputmode="numeric"></div></div><p class="mumu-subtle">这是轨迹工具参数；学校配速与规则尚未接入。</p></div>
+          <div class="mumu-actions"><button id="mumu-start" class="primary" disabled>启动轨迹 <span aria-hidden="true">↗</span></button><button id="mumu-pause" class="secondary" hidden disabled>暂停</button><button id="mumu-resume" class="secondary" hidden disabled>继续</button><button id="mumu-stop" class="mumu-stop" disabled>停止发送</button></div>
+        </div>
+        <div class="mumu-live">
+          <div class="mumu-map"><svg id="mumu-route-map" viewBox="0 0 600 300" role="img" aria-labelledby="mumu-map-title"><title id="mumu-map-title">导入后的路线预览与实际位置读回</title><g id="mumu-map-content"></g></svg><div class="mumu-map-empty" id="mumu-map-empty"><span aria-hidden="true">↗</span><strong>路线从你的文件开始</strong><small>本地绘制 · 无在线地图</small></div></div>
+          <div class="mumu-legend"><span><i class="mumu-line-key"></i>导入路线</span><span><i class="mumu-point-key"></i>实际读回</span><small id="mumu-map-note">未导入路线</small></div>
+          <div class="mumu-progress"><div><span id="mumu-distance">0 / — m</span><span id="mumu-elapsed">0 秒</span></div><progress id="mumu-progress" value="0" max="1" aria-label="轨迹进度"></progress></div>
+          <dl class="mumu-readings"><div><dt>实际读回 · WGS84</dt><dd id="mumu-sample">等待新鲜定位</dd></div><div><dt>校准最大误差</dt><dd id="mumu-error">—</dd></div><div><dt>定位发送次数</dt><dd id="mumu-writes">0</dd></div><div><dt>观察窗口</dt><dd id="mumu-observation">尚未连接</dd></div></dl>
+          <p id="mumu-detail" class="mumu-detail" role="status" aria-live="polite">连接实例后导入路线，完成校准才可启动。</p><p id="mumu-notice" class="mumu-notice" role="status" aria-live="polite" hidden></p>
+        </div>
+      </div>
+      <p class="mumu-boundary">停止后保留最后位置；不自动启动或上传乐跑记录。</p>
     </section>
     <div class="grid">
       <section class="card run-panel">
@@ -39,10 +59,10 @@
       </section>
     </div>
     <section class="card history-panel">
-      <div class="section-title"><div><p class="eyebrow">RUN HISTORY</p><h2>本机运行记录</h2></div><span id="history-count" class="muted">0 条</span></div>
+      <div class="section-title"><div><p class="eyebrow">RUN HISTORY</p><h2>本地模拟记录</h2></div><span id="history-count" class="muted">0 条</span></div>
       <div id="history" class="history"><p class="empty">还没有运行记录。第一次模拟结束后，会出现在这里。</p></div>
     </section>
-    <section class="scope"><span class="scope-icon" aria-hidden="true">i</span><div><strong>你现在使用的是本地模拟产品</strong><p>服务、任务持久化、取消与显式停止恢复可在此操作。MuMu 真实位置写入仍待登记和停止语义验收；步道乐跑登录、学校规则与有效记录尚未接入。模拟完成会显示“模拟完成”。</p></div></section>
+    <section class="scope"><span class="scope-icon" aria-hidden="true">i</span><div><strong>本地工作台 · MuMu 轨迹与合成模拟</strong><p>MuMu 轨迹工具须绑定实例并完成实际读回校准后使用；停止确认表示本工具发送线程及在途命令已经结束，最后定位保留。下方模拟仅使用合成设备，完成时显示“模拟完成”。步道乐跑登录、学校规则与有效记录尚未接入。</p></div></section>
   </main>
   <footer><span>HappyRun / Local Workstation</span><span>数据留在本机 · 协议 v1</span></footer>
 </body></html>

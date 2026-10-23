@@ -8,9 +8,10 @@ from threading import Lock
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from swu_happyrun.core.models import DeviceRegistration, JobSpec, ResumeRequest
+from swu_happyrun.core.models import DeviceRegistration, JobSpec, ResumeRequest, RouteProfile
+from swu_happyrun.desktop.mumu import TrajectoryController
 from swu_happyrun.desktop.worker import DesktopWorker
 from swu_happyrun.server.app import create_app
 from swu_happyrun.server.errors import ApiError
@@ -23,6 +24,22 @@ COOKIE = "happyrun_desktop"
 class Bootstrap(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     nonce: str
+
+
+class MuMuConnect(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    instance_index: str = Field(pattern=r"^[0-9]{1,8}$")
+
+
+class MuMuRoute(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    route: RouteProfile
+
+
+class MuMuStart(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    speed_mps: float = Field(ge=0.3, le=8, allow_inf_nan=False)
+    maximum_duration_seconds: float = Field(ge=5, le=1800, allow_inf_nan=False)
 
 
 def create_desktop_app(workspace, *, port):
@@ -48,7 +65,9 @@ def create_desktop_app(workspace, *, port):
     bootstrap_consumed = False
     origin = f"http://127.0.0.1:{port}"
     worker = DesktopWorker(workspace, port, agent_token)
+    mumu = TrajectoryController()
     app.state.desktop_worker = worker
+    app.state.mumu_controller = mumu
     original_lifespan = app.router.lifespan_context
 
     @asynccontextmanager
@@ -58,6 +77,7 @@ def create_desktop_app(workspace, *, port):
             try:
                 yield
             finally:
+                await asyncio.to_thread(mumu.close)
                 await asyncio.to_thread(worker.close)
 
     app.router.lifespan_context = lifespan
@@ -93,6 +113,10 @@ def create_desktop_app(workspace, *, port):
     @app.get("/desktop/styles.css")
     def style():
         return asset("styles.css", "text/css")
+
+    @app.get("/desktop/mumu.js")
+    def mumu_script():
+        return asset("mumu.js", "text/javascript")
 
     @app.post(PREFIX + "/session")
     def bootstrap(body: Bootstrap, request: Request):
@@ -160,5 +184,56 @@ def create_desktop_app(workspace, *, port):
                 422, "stop_only_required", "Only an explicit controlled stop is available"
             )
         return app.state.store.resume(job_id, body.expected_revision, body.action)
+
+    @app.get(PREFIX + "/mumu")
+    def mumu_status(request: Request):
+        authorize(request)
+        return mumu.snapshot()
+
+    def mumu_submit(action, request, **values):
+        authorize(request)
+        try:
+            mumu.submit(action, **values)
+        except ValueError as error:
+            code = str(error)
+            allowed = {
+                "invalid_mumu_state",
+                "mumu_busy",
+                "controller_closed",
+                "route_required",
+                "route_revision_mismatch",
+                "route_too_large",
+                "calibration_points_too_close",
+                "invalid_route_duration",
+                "invalid_route_speed",
+            }
+            raise ApiError(
+                409,
+                code if code in allowed else "route_invalid",
+                "Refresh the local MuMu state before another action",
+            ) from None
+        return JSONResponse({"state": mumu.snapshot()["state"]}, status_code=202)
+
+    @app.post(PREFIX + "/mumu/connect")
+    def mumu_connect(body: MuMuConnect, request: Request):
+        return mumu_submit("connect", request, instance_index=body.instance_index)
+
+    @app.post(PREFIX + "/mumu/route")
+    def mumu_route(body: MuMuRoute, request: Request):
+        return mumu_submit("route", request, route=body.route)
+
+    @app.post(PREFIX + "/mumu/calibrate")
+    def mumu_calibrate(request: Request):
+        return mumu_submit("calibrate", request)
+
+    @app.post(PREFIX + "/mumu/start")
+    def mumu_start(body: MuMuStart, request: Request):
+        return mumu_submit("start", request, **body.model_dump())
+
+    @app.post(PREFIX + "/mumu/{action}")
+    def mumu_action(action: str, request: Request):
+        if action not in {"pause", "resume", "stop"}:
+            raise ApiError(404, "not_found", "Resource not found")
+        return mumu_submit(action, request)
 
     return app

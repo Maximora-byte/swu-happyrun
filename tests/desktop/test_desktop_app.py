@@ -44,6 +44,31 @@ def test_bootstrap_is_one_use_and_cookie_is_http_only(workstation):
     assert client.get("/api/v1/devices").status_code == 401
 
 
+def test_mumu_read_and_write_require_local_session_and_origin(workstation):
+    _, app, client = workstation
+    control = app.state.mumu_controller
+    assert client.get("/api/v1/desktop/mumu").status_code == 401
+    assert (
+        client.post(
+            "/api/v1/desktop/mumu/connect",
+            json={"instance_index": "5"},
+            headers={"Origin": "http://127.0.0.1:8765"},
+        ).status_code
+        == 401
+    )
+    assert login(app, client).status_code == 200
+    assert (
+        client.post(
+            "/api/v1/desktop/mumu/connect",
+            json={"instance_index": "5"},
+            headers={"Origin": "http://evil.test"},
+        ).status_code
+        == 403
+    )
+    assert not control.thread.is_alive()
+    assert client.get("/desktop/mumu.js").status_code == 200
+
+
 @pytest.mark.parametrize("origin", [None, "null", "http://evil.test", "http://localhost:8765"])
 def test_bootstrap_rejects_foreign_or_absent_origin_without_consuming_nonce(workstation, origin):
     _, app, client = workstation

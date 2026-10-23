@@ -32,7 +32,7 @@ def _read(path, model):
 def _parser():
     parser = Parser(prog="swu-happyrun")
     commands = parser.add_subparsers(dest="command", required=True)
-    desktop = commands.add_parser("desktop", help="Start the local simulation workstation")
+    desktop = commands.add_parser("desktop", help="Start the local HappyRun workstation")
     desktop.add_argument("--data-dir", type=Path)
     desktop.add_argument("--port", type=int, default=8765)
     desktop.add_argument("--no-browser", action="store_true")
