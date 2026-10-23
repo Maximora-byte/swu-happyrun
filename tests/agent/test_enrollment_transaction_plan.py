@@ -186,6 +186,62 @@ def test_payload_preflight_is_pure_and_hashes_exact_reviewed_bytes(tmp_path, mon
     assert plan.execution_allowed is False
 
 
+def test_identical_pinned_bytes_reuse_only_pure_topology(tmp_path, monkeypatch):
+    api = module()
+    root, anchors, _ = bundle(tmp_path)
+    original = api._topology
+    calls = []
+
+    def topology(*args):
+        calls.append(args)
+        return original(*args)
+
+    monkeypatch.setattr(api, "_topology", topology)
+    first = api.load_transaction_plan(root, anchors, now=10)
+    assert api.load_transaction_plan(root, anchors, now=11) == first
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("change", ["expiry", "revoked", "epoch", "plan_bytes", "root"])
+def test_warm_plan_still_rechecks_live_authority_and_pins(tmp_path, change):
+    api = module()
+    root, anchors, raw = bundle(tmp_path)
+    api.load_transaction_plan(root, anchors, now=10)
+    now = 10
+    if change == "expiry":
+        now = 1000
+    elif change in {"revoked", "epoch"}:
+        updates = (
+            {"revoked_plan_sha256": [anchors.plan_sha256]} if change == "revoked" else {"epoch": 4}
+        )
+        anchors = publish(root, raw, authority_changes=updates)
+    elif change == "plan_bytes":
+        path = root / "reviews" / anchors.plan_sha256 / "approved-plan-v2.json"
+        path.write_bytes(path.read_bytes() + b" ")
+    else:
+        anchors = replace(anchors, root_identity=FileIdentity("python_stat", 1, 1))
+    with pytest.raises(ApprovalNotReady):
+        api.load_transaction_plan(root, anchors, now=now)
+
+
+def test_different_pinned_bytes_are_parsed_again(tmp_path, monkeypatch):
+    api = module()
+    root, anchors, raw = bundle(tmp_path)
+    api.load_transaction_plan(root, anchors, now=10)
+    raw["manager_version"] = "6.8.4.1"
+    calls = []
+    original = api._topology
+
+    def topology(*args):
+        calls.append(args)
+        return original(*args)
+
+    monkeypatch.setattr(api, "_topology", topology)
+    current = api.load_transaction_plan(root, publish(root, raw), now=11)
+    assert current.manager_version == "6.8.4.1"
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize(
     "change",
     [

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "swu-happyrun"
-version = "0.1.0"
-description = "Shared protocol and read-only environment diagnostics for SWU HappyRun"
+version = "0.2.0rc2"
+description = "Local HappyRun workstation with calibrated MuMu trajectories and recoverable tasks"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["pydantic>=2.10,<3"]
