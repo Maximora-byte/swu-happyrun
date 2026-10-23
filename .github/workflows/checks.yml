@@ -34,10 +34,10 @@ jobs:
       - name: Full Python suite on Linux
         if: runner.os != 'Windows'
         run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20
+      # Timed traceback dumping can itself AV on Windows (pytest #7022).
+      # Keep fatal crash traces, verbose progress and the fixed job deadline.
       - name: Windows Python suite except separately tested pin pipeline
         if: runner.os == 'Windows'
-        # Timed traceback dumping can itself AV on Windows (pytest #7022).
-        # Keep fatal crash traces, verbose progress and the fixed job deadline.
         run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=0 --durations=20 --ignore=tests/agent/test_enrollment_review_pin.py
       - run: uv run --no-sync python scripts/export_schema.py --check
       - run: uv build
