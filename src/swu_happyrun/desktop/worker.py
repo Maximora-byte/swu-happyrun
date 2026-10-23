@@ -22,14 +22,14 @@ class DesktopWorker:
 
     def _run(self):
         workspace = self.workspace
-        driver = FakeDriver(
-            workspace.device_id,
-            LocalProfileStore(workspace.root / "profiles"),
-            app_version="test-1",
-            state_path=workspace.root / "fake-state.json",
-            route_speed_mps=2.0,
-        )
         try:
+            driver = FakeDriver(
+                workspace.device_id,
+                LocalProfileStore(workspace.root / "profiles"),
+                app_version="test-1",
+                state_path=workspace.root / "fake-state.json",
+                route_speed_mps=2.0,
+            )
             with (
                 ControlClient(f"http://127.0.0.1:{self.port}", self._token) as client,
                 RunJournal(workspace.root / "agent.sqlite") as journal,

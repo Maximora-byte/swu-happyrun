@@ -24,7 +24,7 @@
     if (!state) return;
     const active = state.jobs.filter(job => !terminal.has(job.state));
     $("service").textContent = state.service_ready ? "运行正常" : "尚未就绪";
-    $("worker").textContent = state.worker_alive && state.worker_status === "ready" ? "已连接" : state.worker_status === "starting" ? "连接中" : "需要检查";
+    $("worker").textContent = !state.worker_alive ? "需要检查" : state.worker_status === "ready" ? "已连接" : state.worker_status === "starting" ? "连接中" : "需要检查";
     $("active-count").textContent = active.length ? `${active.length} 项进行中` : "空闲";
     $("start").disabled = busy || !state.service_ready || !state.worker_alive || state.worker_status !== "ready" || active.length > 0;
     $("start").firstChild.textContent = pendingCreate ? "核对上一次创建 " : "开始本地模拟 ";
