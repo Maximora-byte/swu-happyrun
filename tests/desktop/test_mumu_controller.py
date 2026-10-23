@@ -179,11 +179,43 @@ def prepare(controller):
     wait_for(controller, "ready")
 
 
+def test_calibration_returns_to_start_before_user_opens_running_app(controller):
+    from swu_happyrun.core.geo import distance_between_points_m
+
+    control, transport = controller
+    prepare(control)
+    # The second asymmetric calibration point can be hundreds of metres away.
+    # Restore and independently read back the start before a third-party run begins.
+    assert distance_between_points_m(transport.point, control._route.points[0]) <= 5
+    assert control.snapshot()["state"] == "ready"
+    assert control.snapshot()["record_verified"] is False
+
+
+def test_failed_return_to_start_does_not_open_trajectory_start(controller):
+    control, transport = controller
+    original = transport.write_location
+
+    def fail_return(point):
+        original(point)
+        if transport.calls.count("write") == 3:
+            raise ProbeError("command_timeout")
+
+    transport.write_location = fail_return
+    control.submit("route", route=route())
+    wait_for(control, "connected")
+    control.submit("calibrate")
+    value = wait_for(control, "needs_attention")
+    assert value["error_code"] == "command_timeout"
+    assert value["device_verified"] is False
+    with pytest.raises(ValueError, match="invalid_mumu_state"):
+        control.submit("start", speed_mps=2.0, maximum_duration_seconds=30.0)
+
+
 def test_real_controller_serializes_calibration_pause_resume_and_stop(controller):
     control, transport = controller
     prepare(control)
     assert control.snapshot()["device_verified"] is True
-    assert transport.calls.count("write") == 2
+    assert transport.calls.count("write") == 3
     control.submit("start", speed_mps=2.0, maximum_duration_seconds=30.0)
     wait_for(control, "running")
     assert json.loads(json.dumps(control.snapshot()))["progress"]["position"]["latitude"] > 0
@@ -225,7 +257,7 @@ def test_device_change_stops_before_another_location_write(controller):
     control.submit("start", speed_mps=2.0, maximum_duration_seconds=30.0)
     value = wait_for(control, "needs_attention")
     assert value["error_code"] == "binding_changed"
-    assert transport.calls.count("write") == 2
+    assert transport.calls.count("write") == 3
 
 
 def test_second_process_scope_cannot_take_the_device(controller, tmp_path):
@@ -294,7 +326,7 @@ def test_process_restart_preserves_reservation_and_only_explicit_stop_recovers(c
         second.submit("stop")
         assert wait_for(second, "stopped")["stop_confirmed"] is True
         assert second_transport.calls == ["shutdown"]
-        assert first.calls.count("write") == 2
+        assert first.calls.count("write") == 3
     finally:
         second.close()
 

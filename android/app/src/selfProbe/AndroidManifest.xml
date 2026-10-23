@@ -2,7 +2,11 @@
     <!-- Optional own-probe observation only; grant manually on the QA instance. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <application>
+        <service android:name="org.happyrun.app.selfprobe.ProbeLocationService"
+            android:exported="false" android:foregroundServiceType="location" />
         <meta-data android:name="xposedmodule" android:value="true" />
         <meta-data android:name="xposeddescription" android:value="HappyRun 自身作用域激活诊断；不操作其他应用" />
         <meta-data android:name="xposedminversion" android:value="82" />

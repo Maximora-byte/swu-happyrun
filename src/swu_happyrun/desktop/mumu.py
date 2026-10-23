@@ -481,7 +481,10 @@ class TrajectoryController:
     def _do_calibrate(self):
         self._ensure_session()
         self._set(writes=0, max_error_m=None, device_verified=False)
-        for point in choose_calibration_points(self._route):
+        first, second = choose_calibration_points(self._route)
+        # Restore the start while the running app is still idle. Otherwise its
+        # first recorded fix can jump from the distant second calibration point.
+        for point in (first, second, first):
             self._write(point)
         self._calibration = dict(self._transport.binding)
         self._set(state="ready", device_verified=True, error_code=None)
