@@ -16,6 +16,7 @@
 #include <DbgEng.h>
 
 #include "issue110_filter_probe_core.hpp"
+#include "issue110_filter_loader.hpp"
 #include <atomic>
 #include <limits>
 #include <memory>
@@ -136,7 +137,7 @@ private:
 
 class NativeEngine;
 struct FactoryAttempt;
-FactoryAttempt make_unverified_source_adapter(DebugCreatePointer unverified_debug_create) noexcept;
+FactoryAttempt make_verified_source_adapter(loader::VerifiedEngineModule& module) noexcept;
 
 class NativeEngine final : public Engine {
 public:
@@ -302,7 +303,7 @@ public:
     const NativeObservations& observations() const noexcept { return observations_; }
 
 private:
-    friend FactoryAttempt make_unverified_source_adapter(DebugCreatePointer) noexcept;
+    friend FactoryAttempt make_verified_source_adapter(loader::VerifiedEngineModule&) noexcept;
     enum class Step { enumerate, registration, getter_a, display, getter_b, complete };
     NativeEngine() noexcept : owner_thread_(GetCurrentThreadId()) {}
     bool can_query_target() noexcept {
@@ -350,17 +351,17 @@ struct FactoryAttempt {
     NativeObservations observations{};
     CloseResult cleanup{};
     bool execution_ready = false;
+    bool engine_creation_attempted = false;
 };
 
-// UNVERIFIED integration precondition: the caller must someday establish the
-// exact installed SDK/compiler/architecture, trusted DLL identity and dependency
-// closure, sanitized environment, one-shot approval and external 15-second
-// supervision BEFORE obtaining/invoking this function pointer. A pointer's name
-// or type proves none of those facts. This slice implements no loader and offers
-// no native execution entry. main below cannot reach this factory.
-FactoryAttempt make_unverified_source_adapter(DebugCreatePointer unverified_debug_create) noexcept {
+// UNVERIFIED Windows ABI/runtime remains blocked. Only the move-only loader
+// owner can issue its single factory claim; a raw caller-supplied function pointer
+// is no longer accepted. Module mapping is intentionally retained until exit,
+// including factory failure and interface cleanup with unconfirmed disposal.
+FactoryAttempt make_verified_source_adapter(loader::VerifiedEngineModule& module) noexcept {
     FactoryAttempt result;
-    if (unverified_debug_create == nullptr) return result;
+    const DebugCreatePointer verified_debug_create = module.claim_debug_create();
+    if (verified_debug_create == nullptr) return result;
     std::unique_ptr<NativeEngine> engine(new (std::nothrow) NativeEngine());
     if (!engine) return result;
     engine->callback_ = new (std::nothrow) OutputCollector(engine->owner_thread_);
@@ -373,7 +374,8 @@ FactoryAttempt make_unverified_source_adapter(DebugCreatePointer unverified_debu
         result.cleanup = engine->close();
     };
     PVOID created = nullptr;
-    const HRESULT create_hr = unverified_debug_create(IID_IDebugClient, &created);
+    result.engine_creation_attempted = true;
+    const HRESULT create_hr = verified_debug_create(IID_IDebugClient, &created);
     engine->client_ = static_cast<IDebugClient*>(created);
     engine->observations_.create_hresult = observed(create_hr);
     if (create_hr != S_OK || engine->client_ == nullptr) { fail(); return result; }
@@ -398,6 +400,16 @@ FactoryAttempt make_unverified_source_adapter(DebugCreatePointer unverified_debu
     result.observations = engine->observations_;
     result.engine = std::move(engine);
     return result;
+}
+// Internal-only bridge. The module capability cannot come from an arbitrary
+// function pointer or fake API, and its API/pins are retained by run_closed_host.
+std::optional<Result> run_verified_probe(loader::VerifiedEngineModule& module,
+                                        bool& attempted, CloseResult& cleanup) noexcept {
+    auto factory = make_verified_source_adapter(module);
+    attempted = factory.engine_creation_attempted;
+    cleanup = factory.cleanup;
+    if (!factory.engine) return std::nullopt;
+    return run_probe(*factory.engine);
 }
 }  // namespace issue110_filter_probe::windows_source_only
 #endif

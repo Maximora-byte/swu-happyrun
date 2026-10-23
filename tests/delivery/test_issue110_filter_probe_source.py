@@ -5,9 +5,9 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
+import unittest
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "scripts/diagnostics/issue110_filter_command_probe.cpp"
@@ -25,7 +25,7 @@ def test_entry_is_unconditionally_blocked(tmp_path):
     assert not re.search(r"#|getenv|argc|argv|DebugCreate|make_|run_probe", main)
     compiler = shutil.which("g++") or shutil.which("clang++")
     if not compiler:
-        pytest.skip("no portable C++ compiler; Windows branch is not tested")
+        raise unittest.SkipTest("no portable C++ compiler; Windows branch is not tested")
     binary = tmp_path / "blocked_filter_probe"
     compiled = subprocess.run(
         [
@@ -102,7 +102,10 @@ def test_adapter_uses_official_interfaces_without_loading_or_target_paths():
     assert "__uuidof" not in source
     assert "#pragma comment(lib" not in source
     # There must be exactly one fresh-client creation path, not an injected existing client.
-    assert source.count("unverified_debug_create(") == 1
+    assert "make_unverified_source_adapter" not in source
+    assert "make_verified_source_adapter(loader::VerifiedEngineModule& module)" in source
+    assert "module.claim_debug_create()" in source
+    assert source.count("verified_debug_create(") == 1
     assert "GetExceptionFilterParameters" in source
     assert "GetExceptionFilterSecondCommand" in source
     assert "GetNumberEventFilters" in source
@@ -173,3 +176,72 @@ def test_close_rejects_wrong_thread_before_non_atomic_state_access():
     assert "cleanup_" not in rejection
     assert "closed_" not in rejection
     assert "closed_ = true;" in owner_only
+
+
+def test_loader_is_separate_and_keeps_mapping_until_exit():
+    loader = (ROOT / "scripts/diagnostics/issue110_filter_loader.cpp").read_text(encoding="utf-8")
+    header = (ROOT / "scripts/diagnostics/issue110_filter_loader.hpp").read_text(encoding="utf-8")
+    assert not re.search(r"\bFreeLibrary\w*\s*\(", loader)
+    assert "#include <bcrypt.h>" in loader
+    assert "#include <psapi.h>" in loader
+    assert "LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32" in loader
+    assert "GetModuleHandleExW" in loader
+    assert "friend windows_source_only::FactoryAttempt" in header
+    assert "if (!on_owner_thread() || claimed_) return nullptr;" in loader
+    assert "claimed_ = true;" in loader
+    assert "main(" not in loader
+    native = (ROOT / "scripts/diagnostics/issue110_filter_host_win32.py").read_text(
+        encoding="utf-8"
+    )
+    assert "DebugCreate" not in native
+    assert "WINFUNCTYPE" not in native
+    assert "AssignProcessToJobObject" not in native
+
+
+def test_native_capability_has_no_public_or_fake_mint_and_low_level_is_admission_bound():
+    header = (ROOT / "scripts/diagnostics/issue110_filter_loader.hpp").read_text()
+    loader = (ROOT / "scripts/diagnostics/issue110_filter_loader.cpp").read_text()
+    capability = header.split("class VerifiedEngineModule final", 1)[1].split(
+        "struct LoadAttempt {", 1
+    )[0]
+    assert "friend class WindowsLoaderAPI;" in capability
+    assert "friend LoadAttempt" not in capability
+    generic = loader.split("LoadAttempt load_verified_engine", 1)[1].split(
+        "#if defined(_WIN32)", 1
+    )[0]
+    assert "new VerifiedEngineModule" not in generic
+    for method in ("pin_stage", "restrict_search", "load_absolute", "debug_create_export"):
+        body = loader.split("WindowsLoaderAPI::" + method + "(", 1)[1].split("\n}", 1)[0]
+        assert "state_->admitted" in body, method
+    loading = loader.split("WindowsLoaderAPI::load_absolute(", 1)[1].split("\n}", 1)[0]
+    assert "state_->pinned" in loading
+    assert "path != state_->admitted->files[1].path" in loading
+    admission = loader.split("WindowsLoaderAPI::independently_reviewed(", 1)[1].split("\n}", 1)[0]
+    assert "return false;" in admission
+    assert "state_->admitted =" not in loader
+
+
+def test_native_path_and_disk_hash_never_claim_mapped_backing_identity():
+    header = (ROOT / "scripts/diagnostics/issue110_filter_loader.hpp").read_text()
+    loader = (ROOT / "scripts/diagnostics/issue110_filter_loader.cpp").read_text()
+    assert "struct ModuleObservation" in header
+    assert "std::optional<FileBinding> disk_file" in header
+    assert "std::optional<FileBinding> mapped_backing" in header
+    body = loader.split("WindowsLoaderAPI::loaded_identity(", 1)[1].split("\n}", 1)[0]
+    assert "result.loader_path = module_path" in body
+    assert "result.disk_file = observe(pin)" in body
+    assert "result.mapped_backing =" not in body
+    assert "mapped_backing remains unknown" in body
+
+
+def load_tests(loader, tests, pattern):
+    def blocked_entry():
+        with tempfile.TemporaryDirectory() as directory:
+            test_entry_is_unconditionally_blocked(Path(directory))
+
+    checks = [blocked_entry] + [
+        value
+        for name, value in globals().items()
+        if name.startswith("test_") and name != "test_entry_is_unconditionally_blocked"
+    ]
+    return unittest.TestSuite(unittest.FunctionTestCase(check) for check in checks)

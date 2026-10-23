@@ -15,6 +15,7 @@ import struct
 from pathlib import Path
 
 CHILD = "issue110-local-config-1"
+FILTER_PROBE_CHILD = "issue110-filter-probe-1"
 MAX_SECURITY = 65536
 TRUSTED = {"S-1-5-18", "S-1-5-32-544"}
 TRUSTED_INSTALLER = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
@@ -289,7 +290,13 @@ class Native:
 
 
 class PrivateDirectory:
-    def __init__(self, root, api, *, forbidden_identity=None, mode="generic"):
+    def __init__(
+        self, root, api, *, forbidden_identity=None, mode="generic", child_role="sample_child"
+    ):
+        if child_role not in {"sample_child", "filter_probe"} or (
+            child_role == "filter_probe" and mode != "prepared_top_level"
+        ):
+            raise ValueError("private_directory_unverified")
         self.components = components(root, mode=mode)
         self.roles = (
             ("volume_root", "prepared_private_root")
@@ -299,7 +306,9 @@ class PrivateDirectory:
                 for index in range(len(self.components))
             )
         )
-        self.path = Path(ntpath.join(root, CHILD))
+        child = FILTER_PROBE_CHILD if child_role == "filter_probe" else CHILD
+        self.path = Path(ntpath.join(root, child))
+        self.child_role = child_role
         self.api = api
         self.forbidden_identity = forbidden_identity
         self.handles = []
@@ -311,6 +320,7 @@ class PrivateDirectory:
             "volume_root",
             "prepared_private_root",
             "sample_child",
+            "filter_probe",
         ):
             raise ValueError("private_directory_unverified")
         attributes, identity, data = self.api.inspect(handle)
@@ -321,7 +331,7 @@ class PrivateDirectory:
         check_descriptor(
             data,
             self.api.user_sid,
-            private=role in {"private", "prepared_private_root", "sample_child"},
+            private=role in {"private", "prepared_private_root", "sample_child", "filter_probe"},
             prepared=role in {"volume_root", "prepared_private_root"},
         )
         return identity
@@ -339,9 +349,9 @@ class PrivateDirectory:
                 str(self.path)
             )  # Exclusive fixed child, inherited ACL, no fallback or removal.
             handle = self.api.open_directory(str(self.path))
-            self.handles.append((handle, None, "sample_child"))
-            identity = self._check(handle, "sample_child")
-            self.handles[-1] = (handle, identity, "sample_child")
+            self.handles.append((handle, None, self.child_role))
+            identity = self._check(handle, self.child_role)
+            self.handles[-1] = (handle, identity, self.child_role)
             self.revalidate()
             completed = True
             return self

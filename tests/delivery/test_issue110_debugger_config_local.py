@@ -200,6 +200,25 @@ def test_root_and_child_handles_retained_until_exit(acl, monkeypatch):
     assert api.closed == list(reversed(api.opened))
 
 
+def test_explicit_filter_probe_role_preserves_old_default(acl, monkeypatch):
+    api = FakeNative()
+    made = []
+    monkeypatch.setattr(acl.os, "mkdir", made.append)
+    # The same strict prepared ACL is required for this explicit new role.
+    api.security = descriptor(
+        entries=[(USER, 0x1F01FF, 3, 0), (SYSTEM, 0x1F01FF, 3, 0), (ADMIN, 0x1F01FF, 3, 0)],
+        control=0x9004,
+    )
+    api.volume = lambda _: None
+    with acl.PrivateDirectory(
+        r"C:\private", api, mode="prepared_top_level", child_role="filter_probe"
+    ) as directory:
+        assert str(directory.path) == r"C:\private\issue110-filter-probe-1"
+        assert directory.handles[-1][2] == "filter_probe"
+        assert acl.CHILD == "issue110-local-config-1"
+    assert made == [r"C:\private\issue110-filter-probe-1"]
+
+
 @pytest.mark.parametrize("attributes", [0, 0x410])
 def test_non_directory_and_reparse_reject_before_create(acl, monkeypatch, attributes):
     api = FakeNative()
@@ -895,7 +914,11 @@ def test_successful_null_buffer_probe_is_not_valid_size_evidence(acl, native_fak
         operation()
 
 
-@pytest.mark.parametrize("data", [b"x" * 19, b"x" * 65537, descriptor()[:-1], bytes(24)])
+@pytest.mark.parametrize(
+    "data",
+    [b"x" * 19, b"x" * 65537, descriptor()[:-1], bytes(24)],
+    ids=["undersized", "oversized", "truncated", "zeroed"],
+)
 def test_unbounded_or_malformed_descriptor_never_reaches_isvalidsid(acl, native_fake, data):
     state, calls, _, _ = native_fake
     api = acl.Native()

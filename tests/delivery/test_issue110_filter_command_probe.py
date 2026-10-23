@@ -2,9 +2,9 @@
 
 import shutil
 import subprocess
+import tempfile
+import unittest
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 HEADER = ROOT / "scripts/diagnostics/issue110_filter_probe_core.hpp"
@@ -15,7 +15,9 @@ def test_portable_filter_probe_core(tmp_path):
     assert HEADER.is_file(), "missing bounded no-target filter probe core"
     compiler = shutil.which("g++") or shutil.which("clang++")
     if not compiler:
-        pytest.skip("portable C++17 compiler is not installed; native DbgEng is not tested")
+        raise unittest.SkipTest(
+            "portable C++17 compiler is not installed; native DbgEng is not tested"
+        )
     binary = tmp_path / "filter_probe_core_test"
     compiled = subprocess.run(
         [
@@ -40,3 +42,11 @@ def test_portable_filter_probe_core(tmp_path):
     ran = subprocess.run([str(binary)], capture_output=True, text=True, timeout=15, check=False)
     assert ran.returncode == 0, ran.stdout + ran.stderr
     assert "portable fake-engine checks passed" in ran.stdout
+
+
+def load_tests(loader, tests, pattern):
+    def portable_core():
+        with tempfile.TemporaryDirectory() as directory:
+            test_portable_filter_probe_core(Path(directory))
+
+    return unittest.TestSuite([unittest.FunctionTestCase(portable_core)])
