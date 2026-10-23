@@ -1,6 +1,6 @@
 # SWU HappyRun
 
-2026-10-23 本地产品 RC2：`swu-happyrun desktop` 打开中文工作台，支持 MuMu 实际定位与轨迹、两点读回校准、暂停继续、停止和中断恢复，以及独立持久化合成模拟。Windows 离线包双击 `Start-HappyRun.cmd`，配套探针用 `Install-MuMu-Probe.cmd` 安装。已从安装包实际完成 421.48 米路线，116 次写入，最大 GPS 误差 1.09 米；学校账号和有效记录未接入。见[使用说明](docs/desktop.md)、[MuMu 操作](docs/mumu-desktop.md)和[准确版本验收](docs/qa/2026-10-23-local-product.md)。
+2026-10-23 本地交付 RC3：`swu-happyrun desktop` 打开中文工作台，支持 MuMu 实际定位与轨迹、两点校准后返回起点的新鲜读回、跨应用前台持续观察、暂停继续、停止和中断恢复，以及独立持久化合成模拟。Windows 离线包双击 `Start-HappyRun.cmd`，配套自身探针用 `Install-MuMu-Probe.cmd` 安装。RC3 已离线安装验收，实际 MuMu 持续写入 14 次，最大读回误差 0.882 米；小程序实际轨迹和学校有效记录未完成。见[使用说明](docs/desktop.md)、[MuMu 操作](docs/mumu-desktop.md)和[固定源码、CI 与交付验收](docs/qa/2026-10-23-rc3-delivery.md)。此前 RC2 的 421.48 米完整路线、116 次写入和故障恢复证据保留在[历史验收](docs/qa/2026-10-23-local-product.md)，不标为 RC3 重跑结果。
 
 已交付原生 APK 的首阶段构建来自 [PR #35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 的 `28871b2d599a8ec8335570effb3207d2564639ab`：本地模式无需 PC 服务；远程模式由用户显式连接可信 HTTPS 服务，一次连接最多领取一个合成模拟任务。官方 API31/35 的准确 push 验收已通过，范围与未解决问题见[当前状态](docs/status.md)和[APK 安装边界](docs/android-apk.md)。本轮按 [七任务计划](docs/superpowers/plans/2026-10-19-next-stage.md) 纳入最新 main QA、PR39/40 修复、持续前台多任务与原生持久完成恢复。005bb 单 API31 已实际通过 display7、native15 与 namespace3；最终统一候选的完整 Android 矩阵待同 HEAD CI；精确结果与阻塞见[统一候选验收记录](docs/acceptance.md)，MuMu完整闭环/学校记录不在已通过范围。
 
