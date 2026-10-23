@@ -25,7 +25,10 @@ def test_windows_pin_partition_is_exhaustive_and_does_not_enable_native_qa():
         0
     ]
     pin = workflow.split("  windows-review-pin:\n", 1)[1].split("  console-browser-qa:", 1)[0]
-    command = "uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20"
+    linux = "uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20"
+    # Windows timed traceback dumping itself can crash the interpreter. Fatal
+    # crash tracebacks and fixed job deadlines remain enabled independently.
+    command = "uv run --no-sync python -m pytest -vv -o faulthandler_timeout=0 --durations=20"
     pipeline = "tests/agent/test_enrollment_review_pin.py"
     # Exact selectors establish all-tests-minus-P plus P, with no hidden filters,
     # no native opt-in and no unrelated ignored paths. Linux remains all-tests.
@@ -36,7 +39,7 @@ def test_windows_pin_partition_is_exhaustive_and_does_not_enable_native_qa():
         if "python -m pytest" in line
     ]
     assert test_steps == [
-        ("if: runner.os != 'Windows'", "run: " + command),
+        ("if: runner.os != 'Windows'", "run: " + linux),
         ("if: runner.os == 'Windows'", "run: " + command + " --ignore=" + pipeline),
     ]
     expression = (
