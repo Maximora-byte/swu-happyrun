@@ -1,5 +1,7 @@
 # SWU HappyRun
 
+2026-10-23 本地工作台候选：`swu-happyrun desktop` 一条命令打开中文页面，自动准备合成配置与代理，支持本地模拟、取消确认和重启保留记录。Windows 离线包可双击 `Start-HappyRun.cmd`。见[本地产品操作](docs/desktop.md)。范围为本地模拟；MuMu 位置写入和学校记录仍未验收。
+
 已交付原生 APK 的首阶段构建来自 [PR #35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 的 `28871b2d599a8ec8335570effb3207d2564639ab`：本地模式无需 PC 服务；远程模式由用户显式连接可信 HTTPS 服务，一次连接最多领取一个合成模拟任务。官方 API31/35 的准确 push 验收已通过，范围与未解决问题见[当前状态](docs/status.md)和[APK 安装边界](docs/android-apk.md)。本轮按 [七任务计划](docs/superpowers/plans/2026-10-19-next-stage.md) 纳入最新 main QA、PR39/40 修复、持续前台多任务与原生持久完成恢复。005bb 单 API31 已实际通过 display7、native15 与 namespace3；最终统一候选的完整 Android 矩阵待同 HEAD CI；精确结果与阻塞见[统一候选验收记录](docs/acceptance.md)，MuMu完整闭环/学校记录不在已通过范围。
 
 西南大学步道乐跑适配项目：共享控制协议、Python 调度服务器、可恢复执行代理和可替换设备驱动。

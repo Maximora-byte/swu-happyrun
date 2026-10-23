@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>HappyRun · 本地工作台</title>
+  <link rel="stylesheet" href="styles.css"><script src="app.js" defer></script>
+</head>
+<body>
+  <header><a class="brand" href="./"><span class="mark">H</span><span>HappyRun<small>本地工作台</small></span></a>
+    <span class="badge" id="connection">正在连接</span></header>
+  <main>
+    <section class="hero">
+      <div><p class="eyebrow">YOUR LOCAL WORKSPACE</p><h1>每一步，都有状态。</h1>
+        <p class="lead">从一条本地模拟任务开始。查看执行、确认停止，保留每次运行。</p></div>
+      <div class="orb" aria-hidden="true"><span>LOCAL</span><strong>H</strong><span>01 / 01</span></div>
+    </section>
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+    <section class="metrics" aria-label="运行环境">
+      <article><span>控制服务</span><strong id="service">连接中</strong><small>仅本机可访问</small></article>
+      <article><span>本地执行代理</span><strong id="worker">准备中</strong><small>独立合成设备 · fake</small></article>
+      <article><span>当前任务</span><strong id="active-count">—</strong><small>历史任务保存在本机</small></article>
+    </section>
+    <div class="grid">
+      <section class="card run-panel">
+        <div class="section-title"><div><p class="eyebrow">QUICK START</p><h2>开始一次模拟</h2></div><span class="pill">无需账号</span></div>
+        <div class="route-visual" aria-hidden="true"><div class="track"><span class="route-dot"></span></div><span>本地合成路线</span></div>
+        <div class="run-description"><h3>22 米，约 12 秒</h3><p>以 2 m/s 执行一条合成路线。完整经过领取、预检、运行、收尾和核验，结束后保留结果。</p></div>
+        <button id="start" class="primary" disabled>开始本地模拟 <span aria-hidden="true">↗</span></button>
+        <p class="hint">不连接乐跑，不操作 MuMu 定位，不上传学校记录。</p>
+      </section>
+      <section class="card current-panel">
+        <div class="section-title"><div><p class="eyebrow">LIVE STATUS</p><h2>运行现场</h2></div><span id="job-state" class="pill">尚未开始</span></div>
+        <p id="current-title" class="current-title">准备好，再出发。</p>
+        <p id="current-detail" class="muted">点击左侧按钮，工作台会自动准备任务与本地代理。</p>
+        <ol class="steps" id="steps"><li>等待</li><li>预检</li><li>运行</li><li>核验</li><li>完成</li></ol>
+        <div class="job-meta"><span>任务编号</span><code id="job-id">—</code><span>状态版本</span><code id="revision">—</code></div>
+        <div class="buttons"><button id="cancel" class="secondary" hidden>请求停止</button><button id="recover" class="secondary" hidden>确认结束待处理任务</button><button id="refresh" class="quiet">刷新状态</button></div>
+      </section>
+    </div>
+    <section class="card history-panel">
+      <div class="section-title"><div><p class="eyebrow">RUN HISTORY</p><h2>本机运行记录</h2></div><span id="history-count" class="muted">0 条</span></div>
+      <div id="history" class="history"><p class="empty">还没有运行记录。第一次模拟结束后，会出现在这里。</p></div>
+    </section>
+    <section class="scope"><span class="scope-icon" aria-hidden="true">i</span><div><strong>你现在使用的是本地模拟产品</strong><p>服务、任务持久化、取消与显式停止恢复可在此操作。MuMu 真实位置写入仍待登记和停止语义验收；步道乐跑登录、学校规则与有效记录尚未接入。模拟完成会显示“模拟完成”。</p></div></section>
+  </main>
+  <footer><span>HappyRun / Local Workstation</span><span>数据留在本机 · 协议 v1</span></footer>
+</body></html>

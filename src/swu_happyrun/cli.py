@@ -32,6 +32,10 @@ def _read(path, model):
 def _parser():
     parser = Parser(prog="swu-happyrun")
     commands = parser.add_subparsers(dest="command", required=True)
+    desktop = commands.add_parser("desktop", help="Start the local simulation workstation")
+    desktop.add_argument("--data-dir", type=Path)
+    desktop.add_argument("--port", type=int, default=8765)
+    desktop.add_argument("--no-browser", action="store_true")
     doctor = commands.add_parser("doctor")
     doctor.add_argument("--json", action="store_true")
     doctor.add_argument("--backend", choices=["mumu", "android"], default="mumu")
@@ -274,6 +278,10 @@ def _token(name):
 
 
 def _execute(args):
+    if args.command == "desktop":
+        from swu_happyrun.desktop.launcher import run
+
+        return run(root=args.data_dir, port=args.port, open_browser=not args.no_browser)
     if args.command == "mumu":
         return _mumu_probe_point(args) if args.operation == "probe-point" else _mumu_replay(args)
     if args.command == "doctor":
