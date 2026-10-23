@@ -19,6 +19,12 @@ import org.happyrun.app.BuildConfig;
 
 /** Explicit selfProbe-only GPS observer. It cannot grant permissions or inject location. */
 public final class ContinuousLocationTest extends InstrumentationTestCase {
+    private static final String SERVICE="org.happyrun.app.selfprobe.ProbeLocationService";
+    private static boolean serviceActive(Context target,String nonce) throws Exception {
+        // Reflection keeps this optional class out of the ordinary APK/test compilation.
+        return Boolean.TRUE.equals(Class.forName(SERVICE,true,target.getClassLoader())
+                .getMethod("isActive",String.class).invoke(null,nonce));
+    }
     public void testObserveWhenRequested() {
         Bundle args=((InstrumentationTestRunner)getInstrumentation()).getArguments();
         String nonce=args.getString("continuousNonce");
@@ -43,6 +49,8 @@ public final class ContinuousLocationTest extends InstrumentationTestCase {
         boolean[] removed={false};
         Activity[] ownActivity={null};
         boolean[] activityFinished={true};
+        boolean serviceRequested=false;
+        boolean serviceStopped=true;
         try {
             file.write(report,SystemClock::elapsedRealtimeNanos);
             try {
@@ -55,6 +63,17 @@ public final class ContinuousLocationTest extends InstrumentationTestCase {
                     report.error("own_activity_start_failed");return;
                 }
             } catch(RuntimeException failure) { report.error("own_activity_start_failed");return; }
+            serviceRequested=true;
+            serviceStopped=false;
+            Intent service=new Intent().setClassName("org.happyrun.app",SERVICE)
+                    .putExtra("nonce",nonce).putExtra("durationMs",duration);
+            try {
+                target.startForegroundService(service);
+                long serviceDeadline=SystemClock.elapsedRealtime()+4000;
+                while(!serviceActive(target,nonce) && SystemClock.elapsedRealtime()<serviceDeadline)
+                    Thread.sleep(50);
+                if(!serviceActive(target,nonce)) { report.error("foreground_service_start_failed");return; }
+            } catch(Exception failure) { report.error("foreground_service_start_failed");return; }
             getInstrumentation().runOnMainSync(reader::start);
             status(report.state(),report.errorCode());
             while("observing".equals(report.state()) && !file.stop.exists()) {
@@ -63,6 +82,7 @@ public final class ContinuousLocationTest extends InstrumentationTestCase {
                 Thread.sleep(Math.max(1,Math.min(200,(remaining+999999)/1000000)));
                 if(target.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED)
                     report.error("permission_required");
+                if(!serviceActive(target,nonce))report.error("foreground_service_ended");
                 file.write(report,SystemClock::elapsedRealtimeNanos);
             }
         } catch(InterruptedException interrupted) {
@@ -71,6 +91,15 @@ public final class ContinuousLocationTest extends InstrumentationTestCase {
         finally {
             try { getInstrumentation().runOnMainSync(()->removed[0]=reader.remove()); }
             catch(RuntimeException failure) { removed[0]=false; }
+            if(serviceRequested) {
+                try {
+                    target.stopService(new Intent().setClassName("org.happyrun.app",SERVICE));
+                    long stopDeadline=SystemClock.elapsedRealtime()+2000;
+                    while(serviceActive(target,nonce) && SystemClock.elapsedRealtime()<stopDeadline)
+                        Thread.sleep(25);
+                    serviceStopped=!serviceActive(target,nonce);
+                } catch(Exception failure) { serviceStopped=false; }
+            }
             if(ownActivity[0]!=null) {
                 activityFinished[0]=false;
                 try {
@@ -80,7 +109,7 @@ public final class ContinuousLocationTest extends InstrumentationTestCase {
                     });
                 } catch(RuntimeException failure) { activityFinished[0]=false; }
             }
-            report.finish(removed[0] && activityFinished[0]);
+            report.finish(removed[0] && activityFinished[0] && serviceStopped);
             try { file.write(report,SystemClock::elapsedRealtimeNanos); }
             catch(Exception failure) { report.error("private_write_failed"); }
             status(report.state(),report.errorCode());
