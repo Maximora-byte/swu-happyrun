@@ -106,28 +106,6 @@ def test_missing_executable_has_safe_error(tmp_path):
     assert "private" not in str(caught.value)
 
 
-@pytest.mark.parametrize("failed_start", [1, 2])
-def test_reader_start_failure_is_safe_and_cleans_direct_child(monkeypatch, failed_start):
-    import threading
-
-    original = threading.Thread.start
-    starts = 0
-
-    def start(thread):
-        nonlocal starts
-        starts += 1
-        if starts == failed_start:
-            raise RuntimeError("private resource error")
-        return original(thread)
-
-    monkeypatch.setattr(threading.Thread, "start", start)
-    began = time.monotonic()
-    with pytest.raises(ProbeError, match="command_reader_failed") as caught:
-        child("import time; time.sleep(10)")
-    assert "private" not in str(caught.value)
-    assert time.monotonic() - began < 2
-
-
 def test_exact_output_cap_is_allowed():
     assert len(child("import sys; sys.stdout.buffer.write(b'x' * 1048576)")) == 1048576
 

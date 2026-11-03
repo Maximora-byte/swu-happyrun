@@ -1,6 +1,10 @@
 """Synthetic transport and private protocol tests, never device acceptance."""
 
 import json
+import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -367,48 +371,66 @@ def test_reader_oserror_cannot_return_success(bridge, monkeypatch):
 
 
 @pytest.mark.parametrize("failed_start", [1, 2])
-def test_reader_start_failure_cleans_child_and_pipes(bridge, monkeypatch, failed_start):
-    import io
-    import subprocess
+def test_reader_start_failure_retains_ownership_and_uncertain_probe(
+    monkeypatch, request, failed_start
+):
+    # Unconfirmed startup is intentionally process-local and may never recover.
+    # Do not reset the production pending guard to let another test continue.
+    if os.environ.get("HAPPYRUN_TEST_PROBE_START_FAILURE") != "1":
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", f"{__file__}::{request.node.name}"],
+            env={**os.environ, "HAPPYRUN_TEST_PROBE_START_FAILURE": "1"},
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return
+
     import threading
 
-    probe, _, _ = bridge
+    from swu_happyrun.drivers import command
+
+    probe, _, _ = request.getfixturevalue("bridge")
     monkeypatch.undo()
+    original_popen, original_start = subprocess.Popen, threading.Thread.start
+    processes, starts = [], []
 
-    class Process:
-        stdout = io.BytesIO(b"valid")
-        stderr = io.BytesIO(b"")
-        returncode = None
-        killed = False
-
-        def poll(self):
-            return self.returncode
-
-        def wait(self, **kwargs):
-            return self.returncode
-
-        def kill(self):
-            self.killed = True
-            self.returncode = -9
-
-    process = Process()
-    original = threading.Thread.start
-    starts = []
+    def popen(_argv, **kwargs):
+        process = original_popen([sys.executable, "-c", "import time; time.sleep(5)"], **kwargs)
+        processes.append(process)
+        return process
 
     def start(thread):
-        starts.append(1)
+        starts.append(thread)
         if len(starts) == failed_start:
             raise RuntimeError("private details")
-        original(thread)
+        original_start(thread)
 
-    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: process)
+    monkeypatch.setattr(subprocess, "Popen", popen)
     monkeypatch.setattr(threading.Thread, "start", start)
-    with pytest.raises(ProbeError, match="command_reader_failed"):
-        probe._command(
-            ("exec-out", "run-as", "org.happyrun.app", "cat", "files/synthetic"), timeout=1
-        )
-    assert process.killed
-    assert process.stdout.closed and process.stderr.closed
+    args = ("exec-out", "run-as", "org.happyrun.app", "cat", "files/synthetic")
+    began = time.monotonic()
+    with pytest.raises(ProbeError, match="command_cleanup_unconfirmed") as caught:
+        probe._command(args, timeout=1)
+    assert caught.value.primary_code == "command_reader_failed"
+    assert "private details" not in str(caught.value)
+    assert time.monotonic() - began < 1.5
+    assert len(processes) == 1 and processes[0].poll() is not None
+    attempted_pipe = getattr(processes[0], ("stdout", "stderr")[failed_start - 1])
+    assert not attempted_pipe.closed
+    assert len(command._PENDING_CAPTURE[1]) == failed_start
+    assert not command._CAPTURE_LOCK.locked()
+    for _ in range(3):
+        with pytest.raises(ProbeError, match="command_cleanup_unconfirmed") as blocked:
+            probe._command(args, timeout=1)
+        assert blocked.value.primary_code == "command_reader_failed"
+    with pytest.raises(ProbeError, match="private_cleanup_unconfirmed") as uncertain:
+        probe.sample("location", duration_ms=10)
+    assert uncertain.value.primary_code == "command_reader_failed"
+    with pytest.raises(ProbeError, match="observation_recovery_required"):
+        probe.sample("location", duration_ms=10)
+    assert len(processes) == 1 and len(starts) == failed_start
 
 
 def test_primary_failure_survives_private_cleanup_failure(bridge, monkeypatch):

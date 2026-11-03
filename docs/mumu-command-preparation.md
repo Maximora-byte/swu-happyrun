@@ -79,6 +79,17 @@ A process-local nonblocking lock allows only one capture at a time; concurrent
 calls fail with `command_capture_busy`. After unconfirmed cleanup, no new child
 may start until the old direct child has exited AND every reader has finished.
 The pending object retains the original safe reason; there is no override/reset.
+Reader ownership is registered before attempting thread startup. A missing thread
+identity or false `is_alive()` during bootstrap is not proof that no reader exists.
+Cleanup and subsequent capture admission require each reader's own completion
+signal and thread termination, within the same cleanup budget. An interrupted or
+failed startup whose outcome cannot be confirmed stays pending, even if the OS
+thread was never launched. This may block all further captures in that host process
+until an operator restarts it; there is no automatic restart, retry or guard reset.
+A host restart does not confirm device stop, clear device uncertainty or authorize
+a second run. KeyboardInterrupt/SystemExit still propagate after bounded cleanup;
+a RuntimeError startup failure with unresolved ownership reports
+`command_cleanup_unconfirmed` with `primary_code=command_reader_failed`.
 Thus repeated diagnostics cannot accumulate child processes or reader threads.
 Readers own their pipe close operation and may remain as daemon threads until EOF;
 this avoids blocking the caller on a pipe lock held by an inherited-pipe reader.

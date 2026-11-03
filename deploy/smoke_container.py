@@ -30,6 +30,31 @@ SmokeFailure = _fixture.SmokeFailure
 require = _fixture.require
 
 
+def _status_route(path):
+    # Return only static labels: never interpolate identifiers or query values.
+    parts = path.split("?", 1)[0].split("/")
+    if len(parts) == 1 and parts[0] in {
+        "health",
+        "ready",
+        "jobs",
+        "devices",
+        "schedules",
+    }:
+        return parts[0]
+    if parts == ["leases", "claim"]:
+        return "lease_claim"
+    if len(parts) == 2 and parts[0] == "jobs":
+        return "job"
+    if len(parts) == 3 and parts[0] == "jobs":
+        return {
+            "renew": "job_renew",
+            "events": "job_events",
+            "cancel": "job_cancel",
+            "stop-ack": "job_stop_ack",
+        }.get(parts[2], "unknown")
+    return "unknown"
+
+
 class Api:
     def __init__(self, base, admin, agent, other):
         require(base == BASE, "Container probe requires fixed private loopback")
@@ -41,7 +66,12 @@ class Api:
         if key:
             headers["Idempotency-Key"] = key
         response = self.http.request(method, path, json=body, headers=headers)
-        require(response.status_code == expected, "Unexpected API status at " + path.split("/")[0])
+        if response.status_code != expected:
+            safe_method = method if method in {"GET", "POST"} else "unknown"
+            raise SmokeFailure(
+                f"Unexpected API status method={safe_method} route={_status_route(path)} "
+                f"expected={expected:d} actual={response.status_code:d}"
+            )
         require(
             all(t not in response.text for t in self.tokens.values()), "Response leaked credential"
         )
