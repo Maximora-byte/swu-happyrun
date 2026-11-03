@@ -119,3 +119,22 @@ binding 替换旧证据来规避校准检查；身份改变后须重新采样、
 观察并持续重新检查 boot 身份与上下文，不能重放缓存。MumuBinding 仅本地使用，
 capabilities 恒为空，不增加 wire 字段；即使结构有效也不授予执行权限或证实定位、
 传感器、真实页面、有效记录。R2/R4 仍需独立执行 guard 与现场证据。
+
+## R3：离线版本与记录拒绝门槛
+
+本轮 `drivers/budao` 只提供 L3 接口和离线拒绝检查。真实版本注册表为空；无版本选择器、无 ADB 调用、无真实开始/结束/上传能力，也不发出 `app_record`。全部新增夹具均是合成负例。即使所有候选字段匹配，仍返回 `unknown / needs_samples`。库存 metadata 检查通过不能激活此适配器。
+
+页面观察必须包含精确 package、versionName、正整数 versionCode、带时区的采集时间、本人授权、当前会话和动态点确认。30 秒及以上或未来页面拒绝；候选状态标签和布尔确认不构成实际观察的证明。成功 toast 不是记录页。当前适配器不把任何候选标签解释为可信状态。
+
+记录离线检查拒绝 pending、invalid、未知状态、旧记录、错误会话、缺 app 会话关联、缺 identity/namespace。即使候选会话和时间相同，也不能证明记录由本次执行产生；截图 hash、调用方附加的 job/session ID 均不能替代稳定记录身份。当前没有已验证的规范化 artifact/namespace 算法，因此结果始终没有记录证据。
+
+后续真实样本最小清单（本地私有保存，勿上传原页面/账号）：
+- 精确 package/versionName/versionCode 及实际观测来源
+- 开始前、运行中、结束确认、上传待定、记录详情和未知页面的脱敏结构
+- 本人授权、学校配置 revision、规则及当前会话动态点来源/CRS
+- 当前开始观察与应用会话、最终记录之间可验证的关联规则
+- 稳定 record namespace/identity 与 canonical artifact 规则；时间和 pending→valid 变化不能改变身份
+
+样本齐全后先在 Issue #9 固定来源、选择器、版本和关联规则，另行实现并验收真实版本。页面回放、设备 UI 流程、学校最终记录分别报告，不能相互替代。
+
+R4 接线建议：由现有 `DeviceDriver` 组合此 `BudaoAdapter`，沿用共享 `SchoolProfile` 和 `VerificationResult`。代理继续负责持久 intent、lease/fence 与恢复授权；未来每次写入前执行 guard 并限制 transport 时间。不得将此离线适配器直接注册成具有 app_ui/record_read/location_write 的物理驱动。`finish()` 不是取消时的 `stop()`；停止须由现有驱动独立保证，不能因页面/版本门禁阻止停机。verify_only 不调用 start/finish；真实记录关联缺失仍保持 needs_attention。
