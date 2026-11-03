@@ -34,9 +34,11 @@ jobs:
       - name: Full Python suite on Linux
         if: runner.os != 'Windows'
         run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20
+      # Timed traceback dumping can itself AV on Windows (pytest #7022).
+      # Keep fatal crash traces, verbose progress and the fixed job deadline.
       - name: Windows Python suite except separately tested pin pipeline
         if: runner.os == 'Windows'
-        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 --ignore=tests/agent/test_enrollment_review_pin.py
+        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=0 --durations=20 --ignore=tests/agent/test_enrollment_review_pin.py
       - run: uv run --no-sync python scripts/export_schema.py --check
       - run: uv build
       - run: uv run --no-sync python scripts/check_distribution_privacy.py
@@ -78,10 +80,10 @@ jobs:
       - run: uv sync --extra server --extra agent --extra dev --frozen
       - name: Pin authority and lock boundaries
         if: matrix.group == 'boundaries'
-        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 tests/agent/test_enrollment_review_pin.py -k "test_authority_at_each_pin_mutation_stops_immediately or test_publish_failure_retains_pin_attempt_without_repair or test_lock_conflict_has_zero_sqlite_storage_mkdir_or_native or test_original_device_byte_uses_owner_fd_no_second_handle or test_issue_and_read_pin_readonly_never_ready"
+        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=0 --durations=20 tests/agent/test_enrollment_review_pin.py -k "test_authority_at_each_pin_mutation_stops_immediately or test_publish_failure_retains_pin_attempt_without_repair or test_lock_conflict_has_zero_sqlite_storage_mkdir_or_native or test_original_device_byte_uses_owner_fd_no_second_handle or test_issue_and_read_pin_readonly_never_ready"
       - name: All remaining pin cases
         if: matrix.group == 'remaining'
-        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=60 --durations=20 tests/agent/test_enrollment_review_pin.py -k "not (test_authority_at_each_pin_mutation_stops_immediately or test_publish_failure_retains_pin_attempt_without_repair or test_lock_conflict_has_zero_sqlite_storage_mkdir_or_native or test_original_device_byte_uses_owner_fd_no_second_handle or test_issue_and_read_pin_readonly_never_ready)"
+        run: uv run --no-sync python -m pytest -vv -o faulthandler_timeout=0 --durations=20 tests/agent/test_enrollment_review_pin.py -k "not (test_authority_at_each_pin_mutation_stops_immediately or test_publish_failure_retains_pin_attempt_without_repair or test_lock_conflict_has_zero_sqlite_storage_mkdir_or_native or test_original_device_byte_uses_owner_fd_no_second_handle or test_issue_and_read_pin_readonly_never_ready)"
 
   console-browser-qa:
     runs-on: ubuntu-latest
@@ -100,7 +102,22 @@ jobs:
       - name: Install official Playwright Chromium
         run: uv run --no-sync python -m playwright install --with-deps chromium
       - name: Install Chinese screenshot fonts
-        run: sudo apt-get install --no-install-recommends -y fonts-noto-cjk
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          # Official SC font pinned independently of the large Ubuntu CJK package.
+          font_dir="$HOME/.local/share/fonts/happyrun-ci"
+          mkdir -p "$font_dir"
+          font_file="$(mktemp)"
+          trap 'rm -f "$font_file"' EXIT
+          curl --fail --location --proto '=https' --connect-timeout 15 --max-time 90 \
+            --retry 2 --retry-delay 2 --retry-max-time 180 \
+            'https://raw.githubusercontent.com/notofonts/noto-cjk/165c01b46ea533872e002e0785ff17e44f6d97d8/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf' \
+            --output "$font_file"
+          printf '%s  %s\n' '2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b' "$font_file" | sha256sum --check --status
+          install -m 0644 "$font_file" "$font_dir/NotoSansCJKsc-Regular.otf"
+          fc-cache -f "$font_dir"
+          test "$(fc-match -f '%{family}' 'Noto Sans CJK SC')" = 'Noto Sans CJK SC'
       - name: Check console JavaScript syntax and helpers
         run: node --check src/swu_happyrun/server/web/app.js && node tests/console/test_console_helpers.cjs
       - name: Exercise console with real Chromium and synthetic local data

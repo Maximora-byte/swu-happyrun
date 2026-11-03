@@ -12,6 +12,12 @@ Modifications: strict types/finite/range checks, explicit CRS, bounded convergen
 fail-closed domain handling, detached WGS84 points. No MuMu code or compensation
 is copied. Upstream license at that commit:
 
+The 2026-10-23 local tool in `src/swu_happyrun/desktop/mumu_mapping.py`
+composes the same WGS84-to-GCJ02 formulas with the BD09 angular forward
+transform. This is a version-pinned input hypothesis checked against two fresh
+own-APK GPS observations per session, not a general MuMu or school capability.
+The notices below also cover this formula composition.
+
 MIT License
 
 Copyright (c) 2026 EdmundMad0309
