@@ -79,6 +79,17 @@ A process-local nonblocking lock allows only one capture at a time; concurrent
 calls fail with `command_capture_busy`. After unconfirmed cleanup, no new child
 may start until the old direct child has exited AND every reader has finished.
 The pending object retains the original safe reason; there is no override/reset.
+Reader ownership is registered before attempting thread startup. A missing thread
+identity or false `is_alive()` during bootstrap is not proof that no reader exists.
+Cleanup and subsequent capture admission require each reader's own completion
+signal and thread termination, within the same cleanup budget. An interrupted or
+failed startup whose outcome cannot be confirmed stays pending, even if the OS
+thread was never launched. This may block all further captures in that host process
+until an operator restarts it; there is no automatic restart, retry or guard reset.
+A host restart does not confirm device stop, clear device uncertainty or authorize
+a second run. KeyboardInterrupt/SystemExit still propagate after bounded cleanup;
+a RuntimeError startup failure with unresolved ownership reports
+`command_cleanup_unconfirmed` with `primary_code=command_reader_failed`.
 Thus repeated diagnostics cannot accumulate child processes or reader threads.
 Readers own their pipe close operation and may remain as daemon threads until EOF;
 this avoids blocking the caller on a pipe lock held by an inherited-pipe reader.
@@ -95,3 +106,69 @@ behavior still requires exact-source CI and local independent acceptance.
 Read-only stdout retains the prior universal-newline return contract: after
 strict UTF-8 decoding, CRLF and lone CR become LF. Capture byte limits apply
 to the original bytes, before this normalization.
+
+## Controlled native invocation (N1, pending device acceptance)
+
+`MuMuNative684` is an independent, single-command experiment entry. It consumes
+this encoder and reuses the complete bounded-byte capture guard and lifecycle from the
+read-only capture fix; it does not call `run_readonly` to perform a write and is not registered
+as a normal device-driver capability. `adb: Path` is required in addition to the
+planned constructor arguments because binding has no Android SDK field. Before
+any write it actually queries the selected serial's `ro.build.version.sdk`, requires
+35, then repeats current binding and authorization checks. Host version must be
+exactly 6.8.4.0 and the bound package must be the own app `org.happyrun.app`.
+
+The caller must first persist its session start intent and hold the journal's
+per-device lock. Its authorization callback must verify that durable intent,
+cancellation and the current generation; the session's shared lock covers the
+whole invocation. A crash or uncertain outcome leaves unresolved intent; recovery
+must not replay that session, resume from a guessed point, or create a fresh writer
+to bypass the closed one. This reuses session intent rather than relabeling every
+point as a business start action. The N3 controller owns that durable integration.
+
+`write_location` passes raw longitude and latitude arguments without CRS conversion.
+`write_gyro` preserves raw x/y/z order. These operations perform real `Popen`
+invocations with `shell=False`. A fixed error is raised after every attempted
+invocation because this version has no implemented device-application receipt.
+Even exit zero only populates local `last_delivery` (byte lengths and SHA256,
+without raw stdout/stderr, coordinates or identifiers) and raises
+`write_ack_unconfirmed`. The writer then stays permanently closed. Independent
+N2 device-window-correlated observation can establish what that point produced;
+it cannot turn a process receipt into a queue-empty or stop acknowledgement.
+
+Execution shares the caller's host-clock deadline across SDK probing, guards and
+write capture, with a five-second host-monotonic cap. Both streams are limited to
+1 MiB of original bytes each and decoded strictly as UTF-8 for this write path;
+no replacement decoding, newline rewriting or inferred vendor reply is used.
+Direct-child cleanup has a separate 0.5-second total wait/join budget. Process
+creation, OS scheduling and caller-supplied synchronous checks are not hard
+real-time guarantees; those checks must themselves be bounded. The shared process module admits
+one capture at a time across read-only, native and own-probe callers and refuses another until both any pending direct
+child and every retained reader finish. This does not bound detached descendants
+that have closed their inherited pipes. A primary failure is retained when cleanup
+cannot be confirmed; there is no automatic retry.
+
+`stop()` immediately closes both channels and wakes the active local capture,
+without waiting for its lock or invoking an undocumented vendor reset. It reports
+`stop_unconfirmed`, including for a fresh instance after a host-process restart.
+Killing a direct child, EOF, a static readback or stopping an observer does not prove
+that MuMu has no queued work. No location CRS, vendor queue-empty guarantee or
+supported stop/clear command is established by the pinned 6.8.4 help. The vendor's
+[command reference](https://mumu.163.com/help/20240726/35047_1170006.html) describes
+gyro arguments as angles under gravity-sensing adjustment; that does not identify
+Android `TYPE_GRAVITY` acceleration, angular velocity, or step-count semantics,
+and is not a substitute for exact-version observations.
+
+The user-facing single-point command must consume this class through N3's durable
+CLI path. The Python regression command below validates isolated child-process
+behavior only; it is not a user device invocation or MuMu acceptance result:
+
+```powershell
+python -m pytest tests/agent/test_mumu_commands_684.py tests/agent/test_mumu_native_684.py tests/agent/test_mumu_calibration.py tests/contracts -q
+```
+
+Fresh binding observations run before entering the shared capture guard because
+they can themselves use read-only ADB. Only the final local authorization, cancel
+and deadline checks run inside that guard immediately before Popen. This is not
+an atomic device-identity transaction: the short host-side interval cannot prevent
+an external device change, so the independent readback must recheck nonce/boot.
