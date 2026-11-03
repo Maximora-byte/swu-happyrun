@@ -17,6 +17,7 @@ import re
 import stat
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path, PureWindowsPath
 from uuid import UUID
 
@@ -303,6 +304,17 @@ def parse_plan_payload(root: Path, raw: bytes) -> ApprovedTransactionPlan:
         raise ApprovalNotReady() from None
 
 
+@lru_cache(maxsize=8)
+def _parse_pinned_payload(root: Path, raw: bytes) -> ApprovedTransactionPlan:
+    """Reuse only pure parsing of exact bytes; never cache live authorization.
+
+    Results contain frozen dataclasses/tuples/Paths. The loader still rereads and
+    pins both files, checks their ancestry, current revocation/epoch and expiry
+    on every call. Frozen-input and phase validation remain fresh separately.
+    """
+    return parse_plan_payload(root, raw)
+
+
 def load_transaction_plan(
     root: Path, anchors: RunnerAnchors, *, now: float
 ) -> ApprovedTransactionPlan:
@@ -330,7 +342,7 @@ def load_transaction_plan(
         _require(_chain(folder)[-1][1] == anchors.plan_parent_identity)
         _require(stat.S_ISDIR(folder.lstat().st_mode))
         raw = _read(folder / "approved-plan-v2.json", anchors.plan)
-        plan = parse_plan_payload(root, raw)
+        plan = _parse_pinned_payload(root, raw)
         _require(
             plan.plan_sha256 == anchors.plan_sha256
             and plan.epoch == authority["epoch"]
