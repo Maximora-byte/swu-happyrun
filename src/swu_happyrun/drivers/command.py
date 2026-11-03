@@ -26,7 +26,9 @@ class ProbeError(RuntimeError):
         super().__init__(code)
 
 
-def _read_pipe(pipe, target: bytearray, failed: threading.Event, reasons: list[str]) -> None:
+def _read_pipe(
+    pipe, target: bytearray, failed: threading.Event, reasons: list[str], done: threading.Event
+) -> None:
     try:
         while True:
             block = pipe.read1(8192)
@@ -47,6 +49,7 @@ def _read_pipe(pipe, target: bytearray, failed: threading.Event, reasons: list[s
         except Exception:
             reasons.append("command_reader_failed")
             failed.set()
+        done.set()
 
 
 def run_readonly(path: Path, *args: str, timeout: float = 5) -> str:
@@ -58,7 +61,9 @@ def run_readonly(path: Path, *args: str, timeout: float = 5) -> str:
         if _PENDING_CAPTURE is not None:
             process, threads, primary = _PENDING_CAPTURE
             try:
-                finished = process.poll() is not None and all(not t.is_alive() for t in threads)
+                finished = process.poll() is not None and all(
+                    done.is_set() and not thread.is_alive() for thread, _pipe, done in threads
+                )
             except OSError:
                 finished = False
             if not finished:
@@ -89,7 +94,6 @@ def _capture(path: Path, *args: str, timeout: float) -> str:
     data = {"stdout": bytearray(), "stderr": bytearray()}
     failed, reasons = threading.Event(), []
     threads = []
-    owned_pipes = []
     process = None
     reason = "ok"
     cleanup_confirmed = True
@@ -104,15 +108,22 @@ def _capture(path: Path, *args: str, timeout: float) -> str:
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         for name in data:
+            pipe, done = getattr(process, name), threading.Event()
             thread = threading.Thread(
                 target=_read_pipe,
-                args=(getattr(process, name), data[name], failed, reasons),
+                args=(pipe, data[name], failed, reasons, done),
                 daemon=True,
                 name="happyrun-readonly-capture",
             )
-            thread.start()
-            threads.append(thread)
-            owned_pipes.append(getattr(process, name))
+            # Publish ownership before attempting start: an OS thread can exist
+            # before ident/is_alive become observable. Only its own completion
+            # signal proves that it cannot later begin reading this pipe.
+            threads.append((thread, pipe, done))
+            try:
+                thread.start()
+            except BaseException:
+                reason = "command_reader_failed"
+                raise
         while True:
             if failed.is_set():
                 reason = reasons[0]
@@ -122,7 +133,9 @@ def _capture(path: Path, *args: str, timeout: float) -> str:
             if remaining <= 0:
                 reason = "command_timeout"
                 break
-            if process.poll() is not None and all(not t.is_alive() for t in threads):
+            if process.poll() is not None and all(
+                done.is_set() and not thread.is_alive() for thread, _pipe, done in threads
+            ):
                 break
             failed.wait(min(0.01, remaining))
     except FileNotFoundError:
@@ -142,12 +155,15 @@ def _capture(path: Path, *args: str, timeout: float) -> str:
                 process.wait(timeout=max(0, cleanup_deadline - time.monotonic()))
             except (OSError, subprocess.TimeoutExpired):
                 cleanup_confirmed = False
-            for thread in threads:
-                thread.join(timeout=max(0, cleanup_deadline - time.monotonic()))
-            if any(t.is_alive() for t in threads):
-                cleanup_confirmed = False
+            for thread, _pipe, done in threads:
+                # join() rejects a thread still bootstrapping. Wait for reader
+                # completion first, spending only the original cleanup budget.
+                if done.wait(timeout=max(0, cleanup_deadline - time.monotonic())):
+                    thread.join(timeout=max(0, cleanup_deadline - time.monotonic()))
+                if not done.is_set() or thread.is_alive():
+                    cleanup_confirmed = False
             for pipe in (process.stdout, process.stderr):
-                if pipe not in owned_pipes:
+                if not any(pipe is owned for _thread, owned, _done in threads):
                     try:
                         pipe.close()
                     except OSError:
