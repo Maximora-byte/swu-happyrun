@@ -452,8 +452,14 @@ def _original_read(path, limit):
         info = os.fstat(descriptor)
         if (info.st_dev, info.st_ino) != chain[-1][1:3] or info.st_size > limit:
             raise UnsafeReplay("original_file_invalid")
-        data = os.read(descriptor, limit + 1)
-        if len(data) > limit or _original_chain(path) != chain:
+        # The capacity is a rejection limit, not an allocation request. One
+        # extra byte detects growth without allocating 128 MiB for a tiny DB.
+        data = os.read(descriptor, info.st_size + 1)
+        if (
+            len(data) != info.st_size
+            or os.fstat(descriptor).st_size != info.st_size
+            or _original_chain(path) != chain
+        ):
             raise UnsafeReplay("original_file_changed")
         return data
     except OSError:

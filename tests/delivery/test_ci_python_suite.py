@@ -508,3 +508,28 @@ def test_source_mismatch_cannot_hide_in_a_different_platform_group(tmp_path):
             ],
             job_results=["success"],
         )
+
+
+@pytest.mark.parametrize(("system", "timeout"), [("Windows", 0), ("Linux", 60)])
+def test_platform_dump_option_preserves_full_pytest_entry(tmp_path, monkeypatch, system, timeout):
+    module = helper()
+    monkeypatch.delenv("PYTEST_ADDOPTS", raising=False)
+    monkeypatch.delenv("PYTEST_PLUGINS", raising=False)
+    monkeypatch.setattr(module, "identity", lambda sha: {"os": system})
+    calls = []
+
+    def capture(command, **kwargs):
+        calls.append((command, kwargs))
+        raise RuntimeError("synthetic command captured")
+
+    monkeypatch.setattr(module.subprocess, "Popen", capture)
+    with pytest.raises(RuntimeError, match="synthetic command captured"):
+        module.run_suite(tmp_path / "receipt", 0, 6, 1500, "0" * 40)
+    assert len(calls) == 1
+    command, kwargs = calls[0]
+    assert command[:6] == [sys.executable, "-m", "pytest", "tests", "-vv", "-o"]
+    assert command[6] == f"faulthandler_timeout={timeout}"
+    assert command[7:10] == ["--durations=20", "-p", "scripts.ci_python_suite"]
+    assert "no:faulthandler" not in command
+    assert command[command.index("--ci-count") + 1] == "6"
+    assert kwargs["cwd"] == module.ROOT

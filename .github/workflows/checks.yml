@@ -11,7 +11,7 @@ permissions:
 jobs:
   contracts-and-diagnostics:
     # Windows tests run in full-node shards below; retain both-platform packaging
-    # and diagnostics. Product deadlines and the original reporter stay unchanged.
+    # and diagnostics. Product deadlines and the fatal crash reporter stay unchanged.
     timeout-minutes: ${{ matrix.os == 'windows-latest' && 30 || 15 }}
     strategy:
       fail-fast: false

@@ -56,7 +56,7 @@ def test_full_node_union_is_gated_on_all_jobs_and_same_attempt_artifacts():
         assert forbidden not in main + windows + aggregate
 
 
-def test_original_reporter_and_full_module_entry_are_preserved():
+def test_fatal_reporter_and_full_module_entry_are_preserved():
     helper = (ROOT / "scripts/ci_python_suite.py").read_text()
     tree = ast.parse(helper)
     command = next(
@@ -66,14 +66,18 @@ def test_original_reporter_and_full_module_entry_are_preserved():
         and any(isinstance(target, ast.Name) and target.id == "command" for target in node.targets)
     )
     assert ast.unparse(command.elts[0]) == "sys.executable"
-    assert [item.value for item in command.elts[1:8]] == [
-        "-m",
-        "pytest",
-        "tests",
-        "-vv",
-        "-o",
-        "faulthandler_timeout=60",
-        "--durations=20",
-    ]
+    assert [item.value for item in command.elts[1:6]] == ["-m", "pytest", "tests", "-vv", "-o"]
+    assert ast.unparse(command.elts[6]) == "f'faulthandler_timeout={dump_seconds}'"
+    assert command.elts[7].value == "--durations=20"
+    assert "no:faulthandler" not in helper
+    timeout = next(
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "dump_seconds" for target in node.targets
+        )
+    )
+    assert ast.unparse(timeout) == "0 if initial['os'] == 'Windows' else 60"
     assert '"PYTEST_PLUGINS"' in helper
     assert "child.wait(timeout=budget)" in helper

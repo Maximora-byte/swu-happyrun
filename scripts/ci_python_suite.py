@@ -308,6 +308,9 @@ def run_suite(output: Path, index: int, count: int, budget: int, expected_sha: s
     initial = identity(expected_sha)
     output.mkdir(parents=True, exist_ok=False)
     write_json(output / "invocation.json", {"schema": 1, "identity": initial})
+    # Timed thread dumps can themselves AV on Windows (pytest #7022).
+    # Fatal traces, full node receipts and the independent child budget remain.
+    dump_seconds = 0 if initial["os"] == "Windows" else 60
     command = [
         sys.executable,
         "-m",
@@ -315,7 +318,7 @@ def run_suite(output: Path, index: int, count: int, budget: int, expected_sha: s
         "tests",
         "-vv",
         "-o",
-        "faulthandler_timeout=60",
+        f"faulthandler_timeout={dump_seconds}",
         "--durations=20",
         "-p",
         "scripts.ci_python_suite",

@@ -15,9 +15,13 @@ Source baseline: `6a0dac84bf66125c7e2bd506bb0d8c988b1dcc34`, tree
   Its original 15-minute job limit remains, with a 750-second child limit to
   leave time for packaging and evidence. Windows lint/schema/build/install
   checks remain in the existing platform matrix.
-- The direct child still uses `python -m pytest tests -vv
-  -o faulthandler_timeout=60 --durations=20`. Neither product deadlines,
-  assertions, dependencies, system permissions nor native QA gates change.
+- The direct child still uses `python -m pytest tests -vv --durations=20`.
+  Linux retains `-o faulthandler_timeout=60`; Windows uses `=0` because timed
+  traceback dumping can itself crash ([pytest #7022](https://github.com/pytest-dev/pytest/issues/7022)).
+  Fatal crash traces remain enabled, and the independent child/job budgets and
+  full lifecycle audit still reject crashes, hangs and incomplete execution.
+  Neither product deadlines, assertions, dependencies, system permissions nor
+  native QA gates change.
   Plugin arguments apply only to that child; nested pytest tests do not inherit
   plugin activation through environment variables.
 - On child timeout the runner kills and waits for its direct pytest child only.
