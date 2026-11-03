@@ -150,7 +150,7 @@ def test_collector_nonzero_command_is_safe(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("path_type", [Path, PureWindowsPath], ids=["native", "windows"])
-def test_readonly_command_keeps_space_path_one_argument(monkeypatch, path_type):
+def test_readonly_command_keeps_space_path_one_argument(stub_command_process, path_type):
     from swu_happyrun.drivers import command
 
     calls = []
@@ -159,7 +159,7 @@ def test_readonly_command_keeps_space_path_one_argument(monkeypatch, path_type):
         calls.append((args, kwargs))
         return type("Result", (), {"returncode": 0, "stdout": "ok"})()
 
-    monkeypatch.setattr(command.subprocess, "run", run)
+    stub_command_process(run)
     path = path_type("C:/MuMu Player/adb.exe")
     assert command.run_readonly(path, "-s", "serial", "get-state") == "ok"
     assert calls[0][0] == [str(path), "-s", "serial", "get-state"]

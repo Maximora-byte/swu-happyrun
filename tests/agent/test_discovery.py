@@ -44,7 +44,7 @@ def test_missing_host_is_not_success(monkeypatch):
     assert report["capabilities"] == []
 
 
-def test_stopped_instance_does_not_contact_adb(monkeypatch, tmp_path):
+def test_stopped_instance_does_not_contact_adb(stub_command_process, tmp_path):
     calls = []
 
     def run(args, **kwargs):
@@ -66,7 +66,7 @@ def test_stopped_instance_does_not_contact_adb(monkeypatch, tmp_path):
             "",
         )
 
-    monkeypatch.setattr(subprocess, "run", run)
+    stub_command_process(run)
     report = collect_report(
         manager=tmp_path / "MuMuManager.exe",
         index="0",

@@ -21,19 +21,19 @@ def response(**changes):
     }
 
 
-def stub(monkeypatch, payload, returncode=0):
+def stub(stub_command_process, payload, returncode=0):
     calls = []
 
     def run(args, **kwargs):
         calls.append((args, kwargs))
         return subprocess.CompletedProcess(args, returncode, json.dumps(payload), "private stderr")
 
-    monkeypatch.setattr(subprocess, "run", run)
+    stub_command_process(run)
     return calls
 
 
-def test_info_uses_explicit_vmindex(monkeypatch, tmp_path):
-    calls = stub(monkeypatch, response())
+def test_info_uses_explicit_vmindex(stub_command_process, tmp_path):
+    calls = stub(stub_command_process, response())
     result = MuMuManager(tmp_path / "MuMuManager.exe").info("all")
     assert calls[0][0][1:] == ["info", "--vmindex", "all"]
     assert result[0].backend == "mumu"
@@ -41,17 +41,17 @@ def test_info_uses_explicit_vmindex(monkeypatch, tmp_path):
     assert result[0].app_version is None
 
 
-def test_path_with_spaces_is_one_argument(monkeypatch):
-    calls = stub(monkeypatch, response())
+def test_path_with_spaces_is_one_argument(stub_command_process):
+    calls = stub(stub_command_process, response())
     path = Path("C:/Program Files/模拟器/MuMuManager.exe")
     MuMuManager(path).info("0")
     assert calls[0][0][0] == str(path)
     assert calls[0][1]["shell"] is False
-    assert calls[0][1]["timeout"] == 5
+    assert calls[0][1]["stdin"] is subprocess.DEVNULL
 
 
-def test_cli_error_is_not_empty_success(monkeypatch, tmp_path):
-    stub(monkeypatch, response(), returncode=1)
+def test_cli_error_is_not_empty_success(stub_command_process, tmp_path):
+    stub(stub_command_process, response(), returncode=1)
     with pytest.raises(ProbeError, match="command_failed") as caught:
         MuMuManager(tmp_path / "manager.exe").info("all")
     assert "private stderr" not in str(caught.value)
@@ -68,42 +68,40 @@ def test_cli_error_is_not_empty_success(monkeypatch, tmp_path):
         response(index="1"),
     ],
 )
-def test_invalid_manager_response_fails_closed(monkeypatch, tmp_path, payload):
-    stub(monkeypatch, payload)
+def test_invalid_manager_response_fails_closed(stub_command_process, tmp_path, payload):
+    stub(stub_command_process, payload)
     with pytest.raises(ProbeError):
         MuMuManager(tmp_path / "manager.exe").info("all")
 
 
-def test_malformed_json_is_diagnosed(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(args, 0, "not-json", "")
-    )
+def test_malformed_json_is_diagnosed(stub_command_process, tmp_path):
+    stub_command_process(lambda args, **kw: subprocess.CompletedProcess(args, 0, "not-json", ""))
     with pytest.raises(ProbeError, match="invalid_response"):
         MuMuManager(tmp_path / "manager.exe").info("0")
 
 
-def test_stable_identity_and_stopped_metadata(monkeypatch, tmp_path):
-    stub(monkeypatch, response())
+def test_stable_identity_and_stopped_metadata(stub_command_process, tmp_path):
+    stub(stub_command_process, response())
     manager = MuMuManager(tmp_path / "manager.exe")
     assert manager.info("0")[0].device_id == manager.info("0")[0].device_id
     assert manager.inspect("0")[0].android_started is False
     assert manager.inspect("0")[0].android_version == "15.0"
 
 
-def test_single_instance_flat_response_from_real_cli(monkeypatch, tmp_path):
+def test_single_instance_flat_response_from_real_cli(stub_command_process, tmp_path):
     # MuMu 6.8.4 returns a flat object for index 0, a keyed mapping for all.
-    stub(monkeypatch, response()["0"])
+    stub(stub_command_process, response()["0"])
     assert MuMuManager(tmp_path / "manager.exe").inspect("0")[0].index == "0"
 
 
-def test_flat_response_is_not_an_all_inventory(monkeypatch, tmp_path):
-    stub(monkeypatch, response()["0"])
+def test_flat_response_is_not_an_all_inventory(stub_command_process, tmp_path):
+    stub(stub_command_process, response()["0"])
     with pytest.raises(ProbeError):
         MuMuManager(tmp_path / "manager.exe").inspect("all")
 
 
-def test_invalid_index_never_executes(monkeypatch, tmp_path):
-    calls = stub(monkeypatch, response())
+def test_invalid_index_never_executes(stub_command_process, tmp_path):
+    calls = stub(stub_command_process, response())
     with pytest.raises(ValueError):
         MuMuManager(tmp_path / "manager.exe").info("0 --start")
     assert not calls
@@ -112,16 +110,15 @@ def test_invalid_index_never_executes(monkeypatch, tmp_path):
 @pytest.mark.parametrize(
     "error,code",
     [
-        (subprocess.TimeoutExpired(["private"], 5), "command_timeout"),
         (FileNotFoundError("private path"), "executable_missing"),
         (PermissionError("private path"), "command_unavailable"),
     ],
 )
-def test_process_errors_are_bounded_and_sanitized(monkeypatch, tmp_path, error, code):
+def test_process_errors_are_bounded_and_sanitized(stub_command_process, tmp_path, error, code):
     def run(*args, **kwargs):
         raise error
 
-    monkeypatch.setattr(subprocess, "run", run)
+    stub_command_process(run)
     with pytest.raises(ProbeError, match=code) as caught:
         MuMuManager(tmp_path / "manager.exe").info("all")
     assert "private" not in str(caught.value)
