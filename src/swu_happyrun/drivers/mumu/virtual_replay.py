@@ -8,6 +8,8 @@ created, and recovery can only inspect/stop the previous unresolved session.
 
 import json
 import math
+import os
+import stat
 from collections.abc import Callable
 from pathlib import Path
 from threading import Event, Lock, RLock, get_ident
@@ -427,10 +429,34 @@ def read_private_json(path: Path):
     from swu_happyrun.core.profiles import _unique_keys
 
     path = Path(path)
-    if path.is_symlink() or path.stat().st_size > 1_000_000:
+    limit = 1_000_000
+    before = path.lstat()
+
+    def regular_file(info):
+        return stat.S_ISREG(info.st_mode) and not (
+            getattr(info, "st_file_attributes", 0)
+            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        )
+
+    if not regular_file(before) or before.st_size > limit:
         raise DriverError("replay_input_invalid")
-    with path.open(encoding="utf-8") as handle:
-        return json.load(handle, object_pairs_hook=_unique_keys)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_BINARY", 0)
+    # Nonblocking open plus fstat also rejects a FIFO swapped in after lstat.
+    with os.fdopen(os.open(path, flags), "rb") as handle:
+        opened = os.fstat(handle.fileno())
+        identity = (before.st_dev, before.st_ino)
+        if (
+            not regular_file(opened)
+            or (opened.st_dev, opened.st_ino) != identity
+            or opened.st_size > limit
+        ):
+            raise DriverError("replay_input_invalid")
+        data = handle.read(limit + 1)
+    after = path.lstat()
+    if len(data) > limit or not regular_file(after) or (after.st_dev, after.st_ino) != identity:
+        raise DriverError("replay_input_invalid")
+    return json.loads(data.decode("utf-8"), object_pairs_hook=_unique_keys)
 
 
 def _read_calibration(path, binding, clock):
@@ -576,12 +602,16 @@ def run_local_cli(args, *, execution, clock, emit):
             return 3
         finally:
             # A failed start still left durable intent before any device action.
-            if session._native is not None and not session.progress["stop_confirmed"]:
-                try:
-                    emit(session.stop())
-                except DriverError:
-                    emit(session.progress)
-            session.close()
+            try:
+                if session._native is not None and not session.progress["stop_confirmed"]:
+                    try:
+                        emit(session.stop())
+                    except DriverError:
+                        emit(session.progress)
+            finally:
+                # Storage/reporting failures must not skip process-lock release.
+                # Closing never clears the durable marker or acknowledges stop.
+                session.close()
 
 
 def _read_control_commands(stream, session, commands):
