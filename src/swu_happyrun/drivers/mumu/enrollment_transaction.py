@@ -115,9 +115,9 @@ def _observe(path, role, *, cap=MAX_JOURNAL_BYTES):
     )
     try:
         opened = os.fstat(fd)
-        _require(FileIdentity.from_stat(opened) == before[-1][1])
+        _require(FileIdentity.from_stat(opened) == before[-1][1] and 0 <= opened.st_size <= cap)
         with os.fdopen(fd, "rb", closefd=False) as source:
-            raw = source.read(cap + 1)
+            raw = source.read(opened.st_size + 1)
         after = os.fstat(fd)
         _require(
             len(raw) == opened.st_size <= cap
