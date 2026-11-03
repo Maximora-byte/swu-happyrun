@@ -103,7 +103,9 @@ def test_context_must_match_exact_version_and_profile():
 
 
 @pytest.mark.parametrize(
-    "text", ['{"schema_version":1,"schema_version":1}', "null", "[]", "{", "x" * 65537]
+    "text",
+    ['{"schema_version":1,"schema_version":1}', "null", "[]", "{", "x" * 65537],
+    ids=["duplicate-keys", "null", "array", "malformed", "over-limit"],
 )
 def test_bad_json_duplicate_keys_and_large_inputs_rejected(text):
     from swu_happyrun.drivers.adapter_inputs import validate_sample_inventory
