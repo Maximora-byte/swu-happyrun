@@ -190,3 +190,50 @@ def test_each_variant_uses_matching_instrumentation_and_full_native_suite():
         assert method in native
         for directory in ("qa/android", "qa/android/native-debug", "qa/android/native-optional"):
             assert f"{directory}/polling_{method}.txt" in workflow
+
+
+def test_optional_observer_permissions_are_exact_and_never_allowed_in_debug():
+    xml = (ROOT / "android/app/src/selfProbe/AndroidManifest.xml").read_text(encoding="utf-8")
+    xml = xml.replace("<manifest ", '<manifest package="org.happyrun.app" ')
+    checker.verify_manifest(xml, True)
+    merged = xml.replace(
+        "<application>",
+        '<uses-permission android:name="android.permission.INTERNET"/><application>',
+    )
+    checker.verify_manifest(merged, True)
+    for name in ("CAMERA", "ACCESS_BACKGROUND_LOCATION", "ACTIVITY_RECOGNITION"):
+        with pytest.raises(AssertionError):
+            checker.verify_manifest(
+                merged.replace(
+                    "<application>",
+                    f'<uses-permission android:name="android.permission.{name}"/><application>',
+                ),
+                True,
+            )
+    with pytest.raises(AssertionError):
+        checker.verify_manifest(merged, False)
+    with pytest.raises(AssertionError):
+        checker.verify_manifest(
+            merged.replace("ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"), True
+        )
+    with pytest.raises(AssertionError):
+        checker.verify_manifest(
+            merged.replace(
+                '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n',
+                "",
+            ),
+            True,
+        )
+
+
+def test_ordinary_manifest_rejects_location_without_module_metadata():
+    xml = (ROOT / "android/app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+    xml = xml.replace("<manifest ", '<manifest package="org.happyrun.app" ')
+    xml = xml.replace(
+        "<application ",
+        '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>'
+        '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>'
+        "<application ",
+    )
+    with pytest.raises(AssertionError):
+        checker.verify_manifest(xml, False)
