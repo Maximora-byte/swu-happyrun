@@ -81,6 +81,9 @@ def require_phase_scope(reviewed, current, additions, *, live_staging=()):
                 state_artifacts=tuple(
                     path for path in root.state_artifacts if Path(path) not in changes
                 ),
+                directory_identities=tuple(
+                    item for item in root.directory_identities if Path(item[0]) not in changes
+                ),
             )
         )
     normalized = replace(current, roots=tuple(roots), reasons=(), status=previous.status)
