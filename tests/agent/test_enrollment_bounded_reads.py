@@ -92,3 +92,48 @@ def test_short_read_still_rejected(read_evidence, monkeypatch):
     track_reads(monkeypatch, lambda source, size: source.read(size)[:-1])
     with pytest.raises(authority.ApprovalNotReady):
         read(128 * 1024 * 1024)
+
+
+def test_runtime_header_uses_opened_journal_size(monkeypatch, tmp_path):
+    import sqlite3
+    from contextlib import closing
+    from types import SimpleNamespace
+
+    from swu_happyrun.drivers.mumu.enrollment_runtime import _header
+
+    path = tmp_path / "journal.sqlite"
+    with closing(sqlite3.connect(path)) as database, database:
+        database.execute("CREATE TABLE fixture (value)")
+    requests = []
+    original = os.read
+
+    def tracked(descriptor, size):
+        requests.append(size)
+        return original(descriptor, size)
+
+    monkeypatch.setattr(os, "read", tracked)
+    _header(SimpleNamespace(path=path))
+    assert requests and max(requests) <= path.stat().st_size + 1
+
+
+@pytest.mark.parametrize("change", ["grow", "shrink", "short"])
+def test_original_read_rejects_changed_length(monkeypatch, tmp_path, change):
+    from swu_happyrun.agent.journal import UnsafeReplay, _original_read
+
+    path = tmp_path / "original"
+    path.write_bytes(b"original")
+    original = os.read
+
+    def changed(descriptor, size):
+        if change == "grow":
+            with path.open("ab") as target:
+                target.write(b"growth")
+        elif change == "shrink":
+            with path.open("r+b") as target:
+                target.truncate(3)
+        data = original(descriptor, size)
+        return data[:-1] if change == "short" else data
+
+    monkeypatch.setattr(os, "read", changed)
+    with pytest.raises(UnsafeReplay, match="original_file_changed"):
+        _original_read(path, 128 * 1024 * 1024)

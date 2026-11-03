@@ -46,7 +46,7 @@ def wait_for(client, predicate, *, seconds=30):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         response = client.get("/api/v1/desktop/workspace")
-        assert response.status_code == 200
+        assert response.status_code == 200, (response.status_code, response.text)
         state = response.json()
         if predicate(state):
             return state

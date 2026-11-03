@@ -30,10 +30,17 @@ from swu_happyrun.desktop.mumu_admission import (
     require_clean_legacy_scope,
 )
 from swu_happyrun.desktop.mumu_mapping import VENDOR_CRS, vendor_point
-from swu_happyrun.desktop.mumu_transport import LocalMuMuTransport
+from swu_happyrun.desktop.mumu_transport import (
+    OBSERVATION_DURATION_SECONDS,
+    LocalMuMuTransport,
+)
 from swu_happyrun.desktop.workspace import _check_path
 from swu_happyrun.drivers.command import ProbeError
 from swu_happyrun.drivers.identity import device_id
+
+# Leave room for the final bounded write/readback, stable hold and stop receipt.
+# This is a conservative scheduling reserve, not a hard OS-I/O deadline.
+OBSERVATION_STOP_RESERVE_SECONDS = 90
 
 
 def validate_local_route(route):
@@ -109,6 +116,8 @@ class TrajectoryController:
         self._route = None
         self._trace = None
         self._last_write_at = 0.0
+        self._clock = SystemClock()
+        self._observation_deadline = None
         self._view = dict(
             state="disconnected",
             error_code=None,
@@ -136,7 +145,9 @@ class TrajectoryController:
             if not self._started:
                 self.thread.start()
                 self._started = True
-            return copy.deepcopy(self._view)
+            value = copy.deepcopy(self._view)
+            value["observation_remaining_seconds"] = self._observation_remaining()
+            return value
 
     def _set(self, **values):
         with self._lock:
@@ -187,6 +198,7 @@ class TrajectoryController:
                     raise ValueError("route_required")
                 choose_calibration_points(self._route)
                 self._view["state"] = "calibrating"
+            self._view["error_code"] = None
             self._pending = action
             self._commands.put((action, values))
 
@@ -219,9 +231,13 @@ class TrajectoryController:
                 try:
                     action, values = self._commands.get(timeout=0.1)
                 except queue.Empty:
-                    if self._view["state"] == "running":
+                    if self._view["state"] in {"ready", "paused", "running"}:
                         try:
-                            self._tick()
+                            if (
+                                not self._stop_for_observation_deadline()
+                                and self._view["state"] == "running"
+                            ):
+                                self._tick()
                         except Exception as error:
                             self._failure(error)
                     elif self._view["state"] in {
@@ -410,9 +426,42 @@ class TrajectoryController:
             self._record(dict(kind="probe_prepare_intent"))
             self._transport.prepare_probe(self._check)
             self._check()
+            # Start earlier than the Android window. Never renew it for a
+            # second calibration, a later start or a pause/resume cycle.
+            self._observation_deadline = self._clock.monotonic() + OBSERVATION_DURATION_SECONDS
             self._transport.start_observation(self.root)
             self._set(observation_state="observing")
         self._set(stop_confirmed=False)
+
+    def _observation_remaining(self):
+        deadline = self._observation_deadline
+        if deadline is None:
+            return None
+        return max(0.0, deadline - self._clock.monotonic())
+
+    def _stop_for_observation_deadline(self):
+        with self._lock:
+            # An action may have arrived just after the queue timed out. Let
+            # dispatch consume it before doing another tick or automatic stop.
+            if self._pending is not None or self._halt.is_set():
+                return True
+            remaining = self._observation_remaining()
+            if remaining is None or remaining > OBSERVATION_STOP_RESERVE_SECONDS:
+                return False
+            # Seal admission before blocking stop I/O. Otherwise a start/resume
+            # can be queued during cleanup and run after its session is released.
+            self._view["state"] = "stopping"
+        self._stop()
+        return True
+
+    def _has_observation_budget(self, seconds):
+        remaining = self._observation_remaining()
+        if remaining is None or seconds + OBSERVATION_STOP_RESERVE_SECONDS >= remaining:
+            # No new location command was attempted. Preserve ready/paused so
+            # the user can shorten the request or explicitly stop the session.
+            self._set(error_code="observation_budget_insufficient")
+            return False
+        return True
 
     def _record(self, value):
         if self._trace is None:
@@ -480,6 +529,11 @@ class TrajectoryController:
 
     def _do_calibrate(self):
         self._ensure_session()
+        # A calibration adds three guarded write/readback cycles. Keep the
+        # same observation deadline, and finish without new points if too late.
+        if not self._has_observation_budget(90):
+            self._stop()
+            return
         self._set(writes=0, max_error_m=None, device_verified=False)
         first, second = choose_calibration_points(self._route)
         # Restore the start while the running app is still idle. Otherwise its
@@ -494,12 +548,15 @@ class TrajectoryController:
             raise ProbeError("calibration_required")
         self._check()
         self._transport.assert_current()
-        self._execution = RouteExecution.for_local_replay(
+        execution = RouteExecution.for_local_replay(
             self._route,
             speed_mps=speed_mps,
             maximum_duration_seconds=maximum_duration_seconds,
-            clock=SystemClock(),
+            clock=self._clock,
         )
+        if not self._has_observation_budget(execution.duration_seconds):
+            return
+        self._execution = execution
         value = self._execution.start()
         self._record(
             dict(
@@ -523,13 +580,23 @@ class TrajectoryController:
 
     def _do_pause(self):
         value = self._execution.pause()
+        if value.state in {"completed", "stopped"}:
+            self._write(value.position)
+            self._set(progress=_progress_view(value))
+            self._stop(final_state=value.state)
+            return
         self._stable_window(2.2)
         self._set(state="paused", progress=_progress_view(value))
 
     def _do_resume(self):
         self._check()
         self._transport.assert_current()
-        self._set(state="running", progress=_progress_view(self._execution.resume()))
+        remaining = self._execution.duration_seconds - self._execution.snapshot.elapsed_seconds
+        if not self._has_observation_budget(remaining):
+            return
+        self._set(
+            state="running", progress=_progress_view(self._execution.resume()), error_code=None
+        )
 
     def _stable_window(self, seconds):
         first = self._report()
@@ -613,6 +680,7 @@ class TrajectoryController:
             self._set(progress=_progress_view(self._execution.stop()))
         self._uncertain = False
         self._calibration = None
+        self._observation_deadline = None
         self._set(state=final_state, stop_confirmed=True, error_code=None)
         self._release()
 

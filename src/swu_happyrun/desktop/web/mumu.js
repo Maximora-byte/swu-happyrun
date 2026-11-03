@@ -4,7 +4,7 @@
   const prefix = "/api/v1/desktop/mumu";
   const names = {disconnected:"尚未连接",connecting:"正在连接",connected:"实例已连接",calibrating:"正在校准",ready:"校准就绪",running:"轨迹运行中",paused:"已暂停",stopping:"等待停止确认",completed:"轨迹已完成",stopped:"已确认停止",needs_attention:"需要处理",unavailable:"暂不可用"};
   const details = {disconnected:"连接实例后导入路线，完成校准才可启动。",connecting:"正在绑定实例并建立 Android 位置观察窗口。",connected:"导入路线后校准位置读回。校准完成前不会开放轨迹启动。",calibrating:"正在写入校准点并等待新鲜读回，通常需要 10–30 秒。可随时请求停止。",ready:"位置读回已校准。检查路线、速度和时长后，可显式启动轨迹。",running:"正在按单调时钟沿路线发送定位；实际位置以 Android 读回为准。",paused:"轨迹推进已暂停，最后定位保留。继续与停止均需显式操作。",stopping:"正在结束发送线程并等待在途命令结束，请等待确认。",completed:"轨迹发送已结束。学校记录尚未接入，此状态不代表乐跑记录有效。",stopped:"发送线程及在途命令已确认结束，最后定位保留。",needs_attention:"操作状态需要处理，不会自动重跑。请显式停止恢复；若上次进程中断或定位命令未确认，可能需要关闭选定 MuMu 实例才能确认停止。",unavailable:"MuMu 工具暂不可用，请检查本机安装与实例状态。"};
-  const errorNames = {mumu_not_found:"未找到本机 MuMu 安装",mumu_unavailable:"MuMu 通道暂不可用",instance_not_running:"所选实例尚未运行",instance_not_found:"找不到所选实例",instance_changed:"实例身份已变化，请停止后重新连接",calibration_required:"请先完成位置读回校准",calibration_failed:"校准未通过，请检查实际读回并显式停止恢复",calibration_timeout:"校准等待新鲜定位超时",stale_sample:"定位读回已过期",observation_unavailable:"Android 位置观察窗口不可用",stop_unconfirmed:"尚未确认停止，请保留现场并继续处理",operation_in_progress:"另一项操作正在进行，请等待状态更新",invalid_state:"当前状态不允许这项操作",invalid_route:"路线格式或来源未通过校验",location_write_uncertain:"定位写入结果未确认，请显式停止恢复",device_locked:"设备已有未决会话，请先处理原会话"};
+  const errorNames = {mumu_not_found:"未找到本机 MuMu 安装",mumu_unavailable:"MuMu 通道暂不可用",instance_not_running:"所选实例尚未运行",instance_not_found:"找不到所选实例",instance_changed:"实例身份已变化，请停止后重新连接",calibration_required:"请先完成位置读回校准",calibration_failed:"校准未通过，请检查实际读回并显式停止恢复",calibration_timeout:"校准等待新鲜定位超时",stale_sample:"定位读回已过期",observation_unavailable:"Android 位置观察窗口不可用",stop_unconfirmed:"尚未确认停止，请保留现场并继续处理",operation_in_progress:"另一项操作正在进行，请等待状态更新",invalid_state:"当前状态不允许这项操作",invalid_route:"路线格式或来源未通过校验",location_write_uncertain:"定位写入结果未确认，请显式停止恢复",device_locked:"设备已有未决会话，请先处理原会话",observation_budget_insufficient:"剩余观察时间不足，请缩短时长或停止后重新校准；暂停不会延长观察窗口"};
   const editable = new Set(["connected", "ready", "stopped", "completed"]);
   const stoppable = new Set(["connecting", "connected", "calibrating", "ready", "running", "paused", "needs_attention"]);
   let state = null, busy = false, polling = false, fresh = false, uncertain = false;
@@ -105,6 +105,7 @@
     $("writes").textContent = Number.isSafeInteger(state.writes) ? String(state.writes) : "—";
     const observations = {active:"正在观察",observing:"正在观察",running:"正在观察",stopped:"已结束",starting:"正在建立",unavailable:"不可用",fresh:"新鲜读回",stale:"读回过期",closed:"已关闭",ready:"观察已就绪"};
     $("observation").textContent = state.observation_state ? observations[state.observation_state] || state.observation_state : "尚未连接";
+    if (finite(state.observation_remaining_seconds) && state.observation_state === "observing") $("observation").textContent += ` · 剩余 ${Math.max(0, Math.floor(state.observation_remaining_seconds))} 秒（含收尾）`;
     if (state.error_code && state.error_code !== lastError) { lastError = state.error_code; tell(errorText(state.error_code)); }
     if (!state.error_code) lastError = "";
     drawRoute();
@@ -129,8 +130,9 @@
       const next = await request("");
       if (started !== generation) return;
       state = next; fresh = true;
-      const target = {connect:["connected","ready"],route:["connected","ready","stopped","completed"],calibrate:["ready"],start:["running","completed"],pause:["paused"],resume:["running","completed"],stop:["stopped","completed"]};
-      if (pending && (target[pending]?.includes(state.state) || ["needs_attention","unavailable"].includes(state.state))) pending = null;
+      const target = {connect:["connected","ready"],route:["connected","ready","stopped","completed"],calibrate:["ready"],start:["running","completed"],pause:["paused","completed","stopped"],resume:["running","completed"],stop:["stopped","completed"]};
+      const budgetRejected = ["start","resume"].includes(pending) && ["ready","paused"].includes(state.state) && state.error_code === "observation_budget_insufficient";
+      if (pending && (budgetRejected || (["completed","stopped"].includes(state.state) && state.stop_confirmed) || target[pending]?.includes(state.state) || ["needs_attention","unavailable"].includes(state.state))) pending = null;
       if (state.stop_confirmed) uncertain = false;
       render();
     } catch (error) {

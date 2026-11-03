@@ -69,6 +69,8 @@ def main():
     }
     unauthorized_once = True
     fail_start = False
+    reject_budget = False
+    finish_on_pause = False
 
     def intercept(request_route):
         nonlocal unauthorized_once
@@ -96,11 +98,20 @@ def main():
             if fail_start:
                 request_route.fulfill(status=503, json={"error": {"code": "device_locked"}})
                 return
-            state.update(state="running", stop_confirmed=False)
+            if reject_budget:
+                state.update(error_code="observation_budget_insufficient")
+            else:
+                state.update(state="running", stop_confirmed=False, error_code=None)
         elif operation == "/pause":
-            state.update(state="paused")
+            state.update(
+                state="completed" if finish_on_pause else "paused",
+                stop_confirmed=finish_on_pause,
+            )
         elif operation == "/resume":
-            state.update(state="running")
+            if reject_budget:
+                state.update(error_code="observation_budget_insufficient")
+            else:
+                state.update(state="running", error_code=None)
         elif operation == "/stop":
             state.update(state="stopping", stop_confirmed=False)
         else:
@@ -237,6 +248,44 @@ def main():
                 expect(page.locator("#job-state")).to_have_text("模拟完成", timeout=30000)
                 expect(page.locator(".history-row")).to_have_count(1)
                 cases.append("existing_simulation_remains_functional")
+                fail_start = False
+                reject_budget = True
+                state.update(
+                    state="ready",
+                    error_code=None,
+                    device_verified=True,
+                    observation_state="observing",
+                    observation_remaining_seconds=50,
+                    stop_confirmed=False,
+                )
+                expect(page.locator("#mumu-observation")).to_contain_text("剩余 50 秒")
+                page.locator("#mumu-start").click()
+                expect(page.locator("#mumu-notice")).to_contain_text(
+                    "observation_budget_insufficient"
+                )
+                expect(page.locator("#mumu-duration")).to_be_enabled()
+                expect(page.locator("#mumu-start")).to_be_enabled()
+                starts = counts["/start"]
+                page.wait_for_timeout(1200)
+                assert counts["/start"] == starts
+                cases.append("budget_rejection_preserves_explicit_retry_without_automatic_start")
+                state.update(state="paused", error_code=None)
+                expect(page.locator("#mumu-resume")).to_be_visible()
+                page.locator("#mumu-resume").click()
+                expect(page.locator("#mumu-notice")).to_contain_text(
+                    "observation_budget_insufficient"
+                )
+                expect(page.locator("#mumu-resume")).to_be_enabled()
+                expect(page.locator("#mumu-stop")).to_be_enabled()
+                cases.append("resume_budget_rejection_keeps_stop_available")
+                reject_budget = False
+                state.update(state="running", error_code=None)
+                finish_on_pause = True
+                expect(page.locator("#mumu-pause")).to_be_visible()
+                page.locator("#mumu-pause").click()
+                expect(page.locator("#mumu-state")).to_have_text("轨迹已完成")
+                expect(page.locator("#mumu-route-file")).to_be_enabled()
+                cases.append("pause_at_natural_end_clears_pending_action")
                 assert not errors, errors
                 browser.close()
         finally:

@@ -18,6 +18,7 @@ from swu_happyrun.drivers.mumu.discovery import discover_installations, host_ver
 
 PACKAGE = "org.happyrun.app"
 CONTINUOUS_TEST = "org.happyrun.app.observation.ContinuousLocationTest#testObserveWhenRequested"
+OBSERVATION_DURATION_SECONDS = 1800
 
 
 def _unique(pairs):
@@ -316,7 +317,7 @@ class LocalMuMuTransport:
             self.nonce,
             "-e",
             "continuousDurationMs",
-            "1800000",
+            str(OBSERVATION_DURATION_SECONDS * 1000),
             f"{PACKAGE}.test/android.test.InstrumentationTestRunner",
         ]
         self.observer = subprocess.Popen(
