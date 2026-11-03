@@ -1,5 +1,6 @@
 """Isolated actual Python children; none of these tests invoke MuMu or ADB."""
 
+import os
 import subprocess
 import sys
 import time
@@ -344,9 +345,25 @@ def test_actual_sdk_timeout_starts_no_write(processes):
     assert [c[0] for c in calls] == ["adb"]
 
 
-def test_reader_start_failure_closes_child_and_next_capture_works(processes, monkeypatch):
+def test_reader_start_failure_retains_ownership_and_blocks_next_capture(monkeypatch, request):
+    # A failed start may remain unresolved forever. Keep this process-local latch
+    # in a disposable interpreter, rather than resetting production ownership.
+    if os.environ.get("HAPPYRUN_TEST_UNRESOLVED_START") != "1":
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", f"{__file__}::{request.node.name}"],
+            env={**os.environ, "HAPPYRUN_TEST_UNRESOLVED_START": "1"},
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return
+
     import threading
 
+    from swu_happyrun.drivers import command
+
+    processes = request.getfixturevalue("processes")
     original = threading.Thread.start
 
     def start(thread):
@@ -356,10 +373,16 @@ def test_reader_start_failure_closes_child_and_next_capture_works(processes, mon
 
     with monkeypatch.context() as patch:
         patch.setattr(threading.Thread, "start", start)
-        with pytest.raises(DriverError, match="write_capture_failed"):
+        with pytest.raises(DriverError, match="write_cleanup_unconfirmed"):
             native().write_location(POINT, deadline=time.monotonic() + 3)
-    with pytest.raises(DriverError, match="write_ack_unconfirmed"):
-        native().write_location(POINT, deadline=time.monotonic() + 3)
+    assert command._PENDING_CAPTURE[0].poll() is not None
+    assert command._PENDING_CAPTURE[2] == "command_reader_failed"
+    assert not command._CAPTURE_LOCK.locked()
+    assert [call[0] for call in processes[0]] == ["adb", "manager"]
+    for _ in range(3):
+        with pytest.raises(DriverError, match="write_cleanup_unconfirmed"):
+            native().write_location(POINT, deadline=time.monotonic() + 3)
+    assert len(processes[0]) == 2
 
 
 def test_actual_pending_direct_child_alone_blocks_next_capture(processes, monkeypatch):
@@ -393,7 +416,10 @@ def test_actual_pending_direct_child_alone_blocks_next_capture(processes, monkey
     try:
         with pytest.raises(DriverError, match="write_cleanup_unconfirmed"):
             native().write_location(POINT, deadline=time.monotonic() + 1)
-        assert all(not t.is_alive() for t in command._PENDING_CAPTURE[1])
+        assert all(
+            done.is_set() and not thread.is_alive()
+            for thread, _pipe, done in command._PENDING_CAPTURE[1]
+        )
         before = len(processes[0])
         with pytest.raises(DriverError, match="write_cleanup_unconfirmed"):
             native().write_location(POINT, deadline=time.monotonic() + 3)
