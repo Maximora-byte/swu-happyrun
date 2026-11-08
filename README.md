@@ -1,5 +1,7 @@
 # SWU HappyRun
 
+简体中文 | [English](README.en.md)
+
 西南大学步道乐跑适配项目，规划 Windows/MuMu 执行代理、服务器调度和 vivo 无 Root 兼容性验证。
 
 最新分工（2026-10-18）：**Dot 主导全部主要开发，本地 Codex 负责实测与集成验收。** 当前实施入口为[今晚至次日的冲刺任务](docs/handoffs/2026-10-18-dot-lead-sprint.md)；下列原始计划的旧负责人列由该分工覆盖。
