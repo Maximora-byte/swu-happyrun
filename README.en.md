@@ -4,9 +4,13 @@
 
 Adaptation project for Southwest University's Budao Lepao, planning a Windows/MuMu execution agent, server scheduling, and root-free vivo compatibility validation.
 
-Latest responsibilities (2026-10-18): **Dot leads all major development; local Codex handles real-world testing and integration acceptance.** The current implementation entry point is [the overnight sprint](docs/handoffs/2026-10-18-dot-lead-sprint.md); this assignment supersedes the older owner columns in the original plans below.
+**Current development and acceptance entry point: [collaboration status](docs/status.md).** It records merged work, product candidates, independent acceptance, and remaining blockers by date and exact commit. Before adopting a candidate, verify its actual HEAD and corresponding acceptance report.
 
-**The current branch inherits the C0 shared protocol library and L0 read-only diagnostics, and fixes recovery state-transition edges, pending review and merge. The server and execution agent are not yet implemented; full compatibility with any Budao Lepao version has not been verified.**
+Current responsibilities: **Dot leads all major development; local Codex handles real-world testing and integration acceptance.** The [2026-10-18 sprint handoff](docs/handoffs/2026-10-18-dot-lead-sprint.md) is retained as historical context; this assignment supersedes the older owner columns in the original plans.
+
+- **Implemented on main:** C0/C1 shared contracts, core models and state logic, plus L0 read-only MuMu/ADB diagnostics and their tests. C0/L0 and C1 have been merged into main.
+- **Product candidates awaiting integration:** Server, execution agent, unified CLI, web, and Android product implementations have candidates and scoped acceptance records, but have not been merged into main. Passing software tests and candidate builds does not mean the complete product has been delivered.
+- **Device and school acceptance remain incomplete:** Installation, read-only observations, and synthetic workflows each have limited evidence scopes. They do not establish successful real MuMu execution, root-free vivo compatibility, or final school-accepted records. Full compatibility with any Budao Lepao version has not been verified.
 
 ## Local development and probing
 
@@ -17,7 +21,7 @@ uv run --no-sync python scripts/export_schema.py --check
 uv run --no-sync python -m swu_happyrun.drivers.mumu.discovery --json --index 0
 ```
 
-Diagnostic exit code 2 means an environment condition needs attention, such as an instance that is not running or a disconnected device. This command only reads information. See the [compatibility record](docs/compatibility.md) for detailed behavior and local evidence. The unified CLI is scheduled for L2.
+Diagnostic exit code 2 means an environment condition needs attention, such as an instance that is not running or a disconnected device. This command only reads information. See the [compatibility record](docs/compatibility.md) for detailed behavior and local evidence. main has no unified CLI entry point yet; see [collaboration status](docs/status.md) for L2 candidate progress and acceptance scope.
 
 ## Development entry points
 
@@ -37,20 +41,18 @@ Diagnostic exit code 2 means an environment condition needs attention, such as a
 | --- | --- | --- |
 | Shared contracts, core logic, CLI, and implementation tests | Dot develops; local Codex independently verifies | `contracts/`, `src/swu_happyrun/core/`, `tests/contracts/` |
 | Windows/MuMu, ADB, and execution agent | Dot develops; local Codex tests on devices | `src/swu_happyrun/agent/`, `src/swu_happyrun/drivers/`, `tests/agent/` |
-| Service API, database, leases, scheduling, and container configuration | ChatGPT Dot in the Matrix group | `src/swu_happyrun/server/`, `tests/server/`, `deploy/` |
+| Service API, database, leases, scheduling, and container configuration | Dot develops; local Codex independently verifies | `src/swu_happyrun/server/`, `tests/server/`, `deploy/` |
 
-These source directories are planned ownership boundaries and are not yet implemented. Both parties use independent branches and PRs; GitHub Issues track task status, while Matrix is used for notifications and clarification. Successful message delivery, Dot's acceptance of a task, code submission, passing tests, and device acceptance are recorded separately.
-
-Eleven development/handoff tasks have been created. In this round, only the Dot handoff package was prepared, as selected by the user. No Matrix kickoff message has been sent, and cloud development has not started.
+These are component ownership boundaries, not a claim that every directory is already on main. main includes `contracts/`, `core/`, `drivers/`, and their tests; `agent/`, `server/`, `tests/server/`, and `deploy/` belong to product candidates awaiting integration. Both parties use independent branches and PRs, with progress recorded in GitHub Issues/PRs and [collaboration status](docs/status.md). Message delivery, code submission, software testing, device acceptance, and school-record acceptance are recorded separately. Early handoff packages or notification status do not determine whether development has started.
 
 ## Compatibility and data
 
-The known user environment is a root-free vivo X200 Pro and a MuMu 6.8.4.0 / Android 15 instance on Windows. Campus, current school rules, Lepao version, and actual routes must be collected during initial onboarding.
+The known user environment is a root-free vivo X200 Pro and a MuMu 6.8.4.0 / Android 15 instance on Windows. The status page records some map inputs and installation and pre-login observations of Budao Lepao 4.3.1(231). Official school rules, the user's actual app pages/records, and real adaptation acceptance still have gaps; see [collaboration status](docs/status.md).
 
-The first server version schedules online device agents; device-free API-only execution is a separate research track. Emulator route completion, upload prompts, and the final valid record require different acceptance evidence. This repository does not provide fabricated school IDs, check-in points, or “100% success” promises.
+The server design delegates task execution to online device agents, with the related product implementation still in candidates; device-free API-only execution is a separate research track. Emulator route completion, upload prompts, and the final valid record require different acceptance evidence. This repository does not provide fabricated school IDs, check-in points, or “100% success” promises.
 
 Account sessions, device screenshots, raw routes, and databases belong in Git-ignored local directories. See [third-party sources](THIRD_PARTY_NOTICES.md) for reference projects and reuse boundaries.
 
 ---
 
-This is an English translation of the Chinese README, preserving its stated project snapshot. Consult [current collaboration status](docs/status.md) for newer development evidence. Linked documents may still be in Chinese; this README does not imply that runtime interfaces or all project documentation have been localized.
+This English README follows the Chinese README's implementation and acceptance boundaries. Consult [current collaboration status](docs/status.md) for dated development evidence and verify the relevant candidate HEAD before use. Linked documents may still be in Chinese; this README does not imply that runtime interfaces or all project documentation have been localized.
