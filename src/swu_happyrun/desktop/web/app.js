@@ -7,7 +7,7 @@
   const names = {queued:"等待领取",leased:"已领取",preflight:"预检中",ready:"准备就绪",running:"执行中",finishing:"收尾中",verifying:"核验中",completed:"模拟完成",succeeded:"记录核验通过",failed:"失败",cancelled:"已取消",cancelling:"等待停止确认",needs_attention:"需要处理"};
   const terminal = new Set(["completed", "failed", "cancelled", "succeeded"]);
   let state = null, selected = null, busy = false, pendingCreate = null, connected = false;
-  let refreshing = false, noticeGeneration = 0;
+  let refreshing = false, fresh = false, noticeGeneration = 0;
   function tell(message) { $("notice").textContent = message; $("notice").hidden = !message; }
   async function api(path, options = {}) {
     const controller = new AbortController();
@@ -20,13 +20,17 @@
       return value;
     } finally { clearTimeout(timer); }
   }
+  function canStart() {
+    return fresh && !busy && state && state.service_ready && state.worker_alive &&
+      state.worker_status === "ready" && !state.jobs.some(job => !terminal.has(job.state));
+  }
   function render() {
     if (!state) return;
     const active = state.jobs.filter(job => !terminal.has(job.state));
     $("service").textContent = state.service_ready ? "运行正常" : "尚未就绪";
     $("worker").textContent = !state.worker_alive ? "需要检查" : state.worker_status === "ready" ? "已连接" : state.worker_status === "starting" ? "连接中" : "需要检查";
     $("active-count").textContent = active.length ? `${active.length} 项进行中` : "空闲";
-    $("start").disabled = busy || !state.service_ready || !state.worker_alive || state.worker_status !== "ready" || active.length > 0;
+    $("start").disabled = !canStart();
     $("start").firstChild.textContent = pendingCreate ? "核对上一次创建 " : "开始本地模拟 ";
     const current = state.jobs.find(job => job.job_id === selected) || active[0] || state.jobs[0];
     if (current) {
@@ -57,8 +61,8 @@
     if (!connected || refreshing) return;
     refreshing = true;
     const generation = noticeGeneration;
-    try { state = await api("/workspace"); $("connection").textContent = "本机已连接"; render(); }
-    catch (error) { $("connection").textContent = "连接中断"; $("start").disabled = true; if (generation === noticeGeneration) tell(error.message); }
+    try { state = await api("/workspace"); fresh = true; $("connection").textContent = "本机已连接"; render(); }
+    catch (error) { fresh = false; $("connection").textContent = "连接中断"; $("start").disabled = true; if (generation === noticeGeneration) tell(error.message); }
     finally {refreshing = false;}
   }
   async function action(call) {
@@ -67,7 +71,7 @@
     try {await call();} catch(error) {tell(error.message);}
     finally {busy = false; await refresh(); render();}
   }
-  $("start").addEventListener("click", () => action(async () => {
+  $("start").addEventListener("click", () => canStart() && action(async () => {
     if (!pendingCreate) pendingCreate = {spec:state.job_template, key:crypto.randomUUID()};
     const job = await api("/jobs", {method:"POST",headers:{"Idempotency-Key":pendingCreate.key},body:JSON.stringify(pendingCreate.spec)});
     selected = job.job_id; pendingCreate = null;

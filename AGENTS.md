@@ -2,14 +2,14 @@
 
 Read `docs/status.md`, the design, the control-plane contract, and your assigned implementation plan before editing.
 
-Latest human direction (2026-10-18): **ChatGPT Dot leads implementation across the project; local Codex leads real-world testing, acceptance, and integration review.** This supersedes older per-directory ownership in the original plans. Read [the overnight handoff](docs/handoffs/2026-10-18-dot-lead-sprint.md).
+Latest human direction (2026-11-12): **ChatGPT Dot owns implementation, testing, independent review coordination, and integration across the project. A local Codex handoff is no longer required.** Independent review must remain separate from implementation; this change does not waive exact-head checks, device authorization, or real-device/school-record evidence. The [2026-10-18 handoff](docs/handoffs/2026-10-18-dot-lead-sprint.md) is historical background, superseded where its ownership rules conflict.
 
 ## Ownership and collaboration
 
 - Cloud ChatGPT Dot owns implementation of shared contracts, `core/`, `agent/`, `drivers/`, the CLI, `server/`, implementation tests, dependencies, CI and `deploy/`. Use `dot/*` branches and small reviewable PRs.
-- Local Codex owns Windows/MuMu/vivo execution, independent acceptance and fault testing, evidence, issue reproduction, integration review and merge checks. QA work uses `codex/*` branches; product fixes are handed back to Dot.
-- Do not commit to another worker's branch. Record shared contract/dependency/CI changes in the associated issue before editing. Dot may now implement them; it need not wait for local Codex to write the code. Incompatible protocol changes still require a contract PR first.
-- Existing PR #13 is a handoff baseline, not accepted code: retain the `verify_only` recovery-path blocker. Dot should inherit its code in its own branch, incorporate the latest coordination instructions, fix the blocker, and submit a replacement/integration PR rather than writing to the `codex/*` branch.
+- Dot coordinates independent reviewers and fault testing, evidence, issue reproduction and merge checks. Windows/MuMu/vivo execution requires an available authorized environment; software tests do not substitute for real-device acceptance. No named local worker is a mandatory handoff gate.
+- Do not commit to another worker's branch. Record shared contract/dependency/CI changes in the associated issue before editing. Dot owns their implementation and independent review coordination. Incompatible protocol changes still require a contract PR first.
+- Historical PR #13 and its `verify_only` blocker remain historical evidence, not a current implementation baseline. Product integration reached main through PR #120; use the [integration record](docs/integration-candidate.md) and exact current commit for new changes. Never infer recovery acceptance from an old PR or revive superseded unsafe paths.
 - A server PR can be reviewed and tested with fake devices. It must not claim MuMu, vivo, or accepted running-record verification.
 - GitHub is the source of truth for code and task status. Matrix notifications carry issue/PR URLs and commit SHAs, never credentials or raw device data.
 - Do not substitute OpenClaw or Hermes for the user-requested ChatGPT Dot without the user's direction.
