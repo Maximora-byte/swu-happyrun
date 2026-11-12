@@ -1,4 +1,6 @@
-> 集成候选说明：下文保留产品分支的历史状态；默认分支的另一份历史状态见 [main 快照](status-main-20261020.md)。当前范围与未决门槛见 [集成说明](integration-candidate.md)，历史验收不代表本候选验收。
+> **2026-11-12 当前状态：** [PR #120](https://github.com/Maximora-byte/swu-happyrun/pull/120) 已以 [`1431a4f`](https://github.com/Maximora-byte/swu-happyrun/commit/1431a4f4328659c45a405a0d82b149487c3e84c6) 合入 main，产品 tree 为 `b7eb99fee77ada0464a5163b5705a6fa8fc402ff`。合前 [`c850586`](https://github.com/Maximora-byte/swu-happyrun/commit/c850586071f93e67e90bcf7e590ba0867caf93d2) 的软件检查与合后 main CI 分开核对，详见[集成记录](integration-candidate.md)。用户已取消强制本地 Codex 交接，Dot 全权开发并协调独立审查；真实设备与学校验收门槛不变。
+>
+> 下文完整保留产品分支的历史状态；另一份历史状态见 [main 快照](status-main-20261020.md)。历史失败不改写，历史通过也不冒充当前提交的新验收。
 
 # 协作状态
 

@@ -1,5 +1,8 @@
 # 分支与 PR 地图 / Branch and PR map
 
+> **当前入口更新（2026-11-12）：** 产品已通过 [PR #120](https://github.com/Maximora-byte/swu-happyrun/pull/120) 合入 main。下方 `main@f578b17d` 与开放 PR 数是合前快照，不是当前主分支状态；请读[集成记录](integration-candidate.md)和[文档导航](README.md)。
+> Product integration is now on main. The inventory below remains a historical pre-merge snapshot.
+
 盘点日期 / Snapshot date: **2026-11-12 UTC**。此表记录本次整理前的 **42 个开放 PR**，不是自动更新的看板，也不是合并批准；最新状态以 [GitHub PR 列表](https://github.com/Maximora-byte/swu-happyrun/pulls) 为准。本次复核仍为原 42 个开放 PR 加整理 PR [#119](https://github.com/Maximora-byte/swu-happyrun/pull/119)，共 43 个；#119 不计入下方基线表。
 This snapshot lists the 42 open PRs inspected before this cleanup. A recheck found the same 42 plus cleanup PR #119 (43 total); #119 is excluded from the baseline table. This is not a live dashboard or merge approval.
 

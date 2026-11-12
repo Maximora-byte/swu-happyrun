@@ -1,5 +1,5 @@
-> **本集成候选 / This integration candidate:** 本分支继承 `dot/complete-windows-suite@e9cdc554`，包含产品代码。先读[集成基线和放行条件](integration-candidate.md)、[本地工作台](desktop.md)和[MuMu 工具](mumu-desktop.md)。下文关于默认分支的描述是 `main@f578b17d` 的历史快照，不是本候选缺少功能。
-> This branch contains the product implementation. The default-branch statements below describe the pinned old main, not this candidate.
+> **2026-11-12 当前入口 / Current entry:** 产品已通过 [PR #120](https://github.com/Maximora-byte/swu-happyrun/pull/120) 合入 main。请先读[集成记录](integration-candidate.md)、[本地工作台](desktop.md)和[MuMu 工具](mumu-desktop.md)。历史 PR 地图中的 `main@f578b17d` 不代表现在的 main。
+> Main includes the product. Historical branch snapshots and device receipts remain version-bound.
 
 # 文档导航 / Documentation index
 
@@ -10,15 +10,16 @@ Start by checking the branch. Default-branch documentation, candidate features a
 
 | 目的 / Goal | 入口 / Read first |
 | --- | --- |
+| 第一次使用 / First run | [中文新手教程 / Chinese tutorial](tutorial-zh.md) |
 | 判断当前能做什么 / Understand available functionality | [状态入口 / Status guide](status.md)、[分支与 PR 地图 / Branch and PR map](repository-map.md) |
-| 运行主分支环境诊断 / Run default-branch diagnostics | [根目录 README / Root README](../README.md)、[兼容性与诊断 / Compatibility](compatibility.md) |
-| 查看独立桌面/MuMu 产品 / Find the separate desktop/MuMu product | [固定候选使用说明 / Candidate desktop guide](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/desktop.md)、[RC3 版本限定实测 / Version-bound RC3 receipt](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/qa/2026-10-23-rc3-delivery.md) |
+| 安装 main 与环境诊断 / Install main and run diagnostics | [根目录 README / Root README](../README.md)、[兼容性与诊断 / Compatibility](compatibility.md) |
+| 使用桌面/MuMu 产品 / Use the desktop/MuMu product | [工作台 / Desktop guide](desktop.md)、[MuMu 工具 / MuMu tool](mumu-desktop.md)、[RC3 历史实测 / Historical RC3 receipt](qa/2026-10-23-rc3-delivery.md) |
 | 理解协议和边界 / Understand contracts and boundaries | [控制平面 v1 / Control-plane contract](contracts/control-plane-v1.md)、[生成 Schema / Generated schema](../contracts/protocol-v1.schema.json) |
 | 了解设计背景 / Understand the design | [设计说明 / Design](superpowers/specs/2026-10-18-swu-happyrun-design.md)、[设计评估 / Design review](design-review.md) |
 | 准备改动 / Prepare a contribution | [贡献约定 / Agent instructions](../AGENTS.md)、[PR 模板 / PR template](../.github/pull_request_template.md)、[第三方来源 / Third-party notices](../THIRD_PARTY_NOTICES.md) |
 
-主分支安装与诊断不代表其已包含可执行服务器或统一 CLI。另一个候选已收录桌面/MuMu 连续写入和读回的版本限定实测，不能忽略，也不能外推为最新 HEAD 或学校业务已通过。候选文档请从地图中的准确提交进入，核对对应产品源码和验收范围。
-Default-branch diagnostics do not ship a server or unified CLI. A separate candidate contains version-bound desktop/MuMu write/readback evidence; neither ignore it nor extrapolate it to the latest head or school acceptance. Open the recorded commit and check the tested product source and scope.
+main 现包含服务器、执行代理、统一 CLI、桌面与 Android 源码。运行说明与软件检查请绑定准确提交；RC2/RC3 的设备实测仍只适用于各自源码，不能外推为当前 HEAD 或学校业务已通过。当前协作由 Dot 全权推进并协调独立审查，见 [贡献约定](../AGENTS.md)。
+Main includes the server, agent, CLI, desktop and Android sources. Pin software checks and builds to an exact commit; historical device evidence does not establish current-head or school acceptance.
 
 ## 目录与维护方式 / Directories and maintenance
 

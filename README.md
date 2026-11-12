@@ -1,8 +1,15 @@
 # SWU HappyRun
 
-> **2026-11-12 集成候选，尚未合入 main / Integration candidate, not merged into main.**
-> 本分支完整继承较新的桌面产品及 Windows 全量测试分片；下方 RC2/RC3 是各自固定源码的历史设备回执，不能当作本候选新验收。先读[当前集成说明与未决门槛](docs/integration-candidate.md)、[文档导航](docs/README.md)和[PR 地图](docs/repository-map.md)。旧原生 CLI/enrollment 门禁、#110 和学校业务验收限制保持不变。
-> This candidate preserves the newer desktop product and full Windows test accounting. Historical RC2/RC3 device evidence is source-bound, not acceptance of this candidate. See the integration guide before using or merging it.
+第一次使用请从[中文新手教程](docs/tutorial-zh.md)开始：安装、合成模拟、停止恢复与排查。
+
+> **2026-11-12 产品已合入 main / Product integrated into main.**
+> [PR #120](https://github.com/Maximora-byte/swu-happyrun/pull/120) 以 merge commit [`1431a4f`](https://github.com/Maximora-byte/swu-happyrun/commit/1431a4f4328659c45a405a0d82b149487c3e84c6) 纳入桌面产品、服务器、代理、统一 CLI 和 Android 源码，tree 为 `b7eb99fee77ada0464a5163b5705a6fa8fc402ff`。合前准确 HEAD [`c850586`](https://github.com/Maximora-byte/swu-happyrun/commit/c850586071f93e67e90bcf7e590ba0867caf93d2) 的软件检查与合后 main 检查分别记录，不能互相冒用。见[集成记录与验证边界](docs/integration-candidate.md)、[文档导航](docs/README.md)。本次未发布新安装包，也未重跑真实设备或学校业务验收。
+> Main now contains the product implementation. Pre-merge checks and post-merge CI are separate receipts; historical RC2/RC3 evidence is not fresh device acceptance.
+
+## 历史交付回执 / Historical delivery receipts
+
+下列 RC3 和 Android 阶段说明保留原时点、准确源码和限制，不代表当前 main 的新验收或最新安装包。
+The following dated receipts retain their original source and limits; they do not establish current-main acceptance.
 
 2026-10-23 本地交付 RC3：`swu-happyrun desktop` 打开中文工作台，支持 MuMu 实际定位与轨迹、两点校准后返回起点的新鲜读回、跨应用前台持续观察、暂停继续、停止和中断恢复，以及独立持久化合成模拟。Windows 离线包双击 `Start-HappyRun.cmd`，配套自身探针用 `Install-MuMu-Probe.cmd` 安装。RC3 已离线安装验收，实际 MuMu 持续写入 14 次，最大读回误差 0.882 米；小程序实际轨迹和学校有效记录未完成。见[使用说明](docs/desktop.md)、[MuMu 操作](docs/mumu-desktop.md)和[固定源码、CI 与交付验收](docs/qa/2026-10-23-rc3-delivery.md)。此前 RC2 的 421.48 米完整路线、116 次写入和故障恢复证据保留在[历史验收](docs/qa/2026-10-23-local-product.md)，不标为 RC3 重跑结果。
 
@@ -12,17 +19,17 @@
 
 **当前本地交付不包含学校有效记录验收。** MuMu 6.8.4.0 / Android 15 的本地轨迹范围见上述报告；vivo 无 Root、具体乐跑版本与纯业务接口仍需本地证据。未知规则、点位、应用页面和能力拒绝执行。fake `completed` 不表示真实记录 `succeeded`。
 
-## 资源细化 R1–R5 统一候选
+## R1–R5 历史候选范围
 
-本候选纳入实例绑定、合成定位/传感器校准边界、空注册表的应用/记录适配接口、MuMu driver 合成协议链与三份研究材料。真实 backend 默认关闭，模拟仍只声明 fake 能力；实际乐跑版本选择器、真实停止证明与学校记录尚未具备。见[资源驱动计划](docs/superpowers/plans/2026-10-19-resource-guided-adaptation.md)、[R4 边界](docs/acceptance-r4-boundary.md)和[本地输入门槛](docs/onboarding.md)。最终下载请以本 PR 的准确 HEAD 和同构建 app/test 配对清单为准。
+本候选纳入实例绑定、合成定位/传感器校准边界、空注册表的应用/记录适配接口、MuMu driver 合成协议链与三份研究材料。真实 backend 默认关闭，模拟仍只声明 fake 能力；实际乐跑版本选择器、真实停止证明与学校记录尚未具备。见[资源驱动计划](docs/superpowers/plans/2026-10-19-resource-guided-adaptation.md)、[R4 边界](docs/acceptance-r4-boundary.md)和[本地输入门槛](docs/onboarding.md)。下载历史构建须核对其准确 HEAD 和同构建 app/test 配对清单；当前集成不等于新包发布。
 
 ## 本轮实现与版本选择
 
-Dot 负责主要实现、测试、依赖与交付；本地 Codex 负责 Windows、真实设备与集成独立验收。本轮通过 GitHub Issue/PR 交付代码、不可变 HEAD 和验证结果；不把消息通知或计划勾选当作完成证据。
+2026-11-12 起，Dot 全权负责开发、测试、依赖、交付及独立审查协调，不再强制本地 Codex 交接。独立审查仍与实现分开；真实设备操作需要相应授权与环境，学校记录验收必须有独立证据。通过 GitHub Issue/PR 交付不可变 HEAD 和验证结果，不把通知或计划勾选当作完成证据。
 
-实现分支已提供共享模型/Schema、恢复与证据约束、API/SQLite、租约与设备归属、日程、profile 校验、fake driver、agent journal 和 CLI。各组件进度、已发布 PR/阶段 HEAD 与验证层次见 [当前状态](docs/status.md)。旧设计中的负责人列由 [Dot 主导冲刺说明](docs/handoffs/2026-10-18-dot-lead-sprint.md) 覆盖。
+main 已提供共享模型/Schema、恢复与证据约束、API/SQLite、租约与设备归属、日程、profile 校验、fake driver、agent journal 和 CLI。各组件进度、已发布 PR/阶段 HEAD 与验证层次见 [当前状态](docs/status.md)。当前分工以 [AGENTS.md](AGENTS.md) 为准，日期化计划与交接保留历史含义。
 
-**安装时选择集成候选 PR 正文及对应 Actions `github.sha` 指定的完整提交。** 单独的堆叠 PR 只包含其自身与父分支范围：部署文档 PR 基于服务器分支时，并不独自包含 L1/L2；下述 CLI/fake 命令必须在同时集成服务器、驱动与代理的候选上运行。不要混用多个分支的最新文件代替固定候选。
+**安装时选择 main 的准确完整提交，并核对该提交的 Actions `github.sha` 与产物清单。** main 已包含服务器、驱动与代理；历史堆叠 PR 仍只代表各自范围。不要混用多个分支的最新文件，也不要将旧安装包当作当前提交的构建。
 
 ## 本地管理控制台
 
@@ -32,7 +39,7 @@ Dot 负责主要实现、测试、依赖与交付；本地 Codex 负责 Windows�
 
 ## 安装和软件自检
 
-Python 3.11+；以下从完整候选仓库根目录执行，Windows PowerShell 与 Linux 均可使用：
+Python 3.11+；以下从 main 完整检出目录执行，Windows PowerShell 与 Linux 均可使用：
 
 ```sh
 uv sync --extra server --extra agent --extra dev --frozen
@@ -59,7 +66,7 @@ smoke 启动临时回环服务器，通过实际 HTTP 注册 fake 设备、创�
 
 ## CLI 与只读诊断
 
-集成候选支持 `doctor`、`profiles check`、`route check`、`server`、`agent`、`devices`、`jobs` 和 `schedules`；使用各命令 `--help` 查看参数。已安装入口为 `swu-happyrun`，等价模块入口为 `python -m swu_happyrun`。
+main 支持 `doctor`、`profiles check`、`route check`、`server`、`agent`、`devices`、`jobs` 和 `schedules`；使用各命令 `--help` 查看参数。已安装入口为 `swu-happyrun`，等价模块入口为 `python -m swu_happyrun`。
 
 ```sh
 uv run --no-sync python -m swu_happyrun doctor --json
