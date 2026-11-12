@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wizard_title">首次使用 · 按提示完成检查</string>
+    <string name="wizard_intro">环境会自动检查。先看下面的状态，再按下一步操作；不需要 Root 或框架也能体验本地模拟。</string>
+    <string name="wizard_refresh">我已设置，重新验证</string>
+    <string name="wizard_steps">查看启用步骤</string>
+    <string name="root_check">可选：检查 Root 授权</string>
+    <string name="root_cancel">取消本次 Root 检查</string>
+    <string name="root_confirm_title">进行一次只读 Root 检查？</string>
+    <string name="root_confirm_message">将执行固定命令 su -c id，仅检查本次是否获得 Root 身份，不更改系统。可能弹出你的 Root 管理器授权，请由你自行决定。
+
+约 30 秒后尝试结束，可取消，不会自动重试；拒绝授权仍可继续本地模拟。取消检查不会撤销你在管理器中已作出的授权决定。</string>
+    <string name="root_confirm">开始一次检查</string>
+    <string name="wizard_environment">查看环境检查详情</string>
+</resources>

@@ -1,0 +1,3 @@
+<resources>
+    <string-array name="happyrun_self_probe_scope"><item>org.happyrun.app</item></string-array>
+</resources>

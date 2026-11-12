@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item type="id" name="app_scroll" />
+    <item type="id" name="start_simulation" />
+    <item type="id" name="stop_simulation" />
+    <item type="id" name="refresh_checks" />
+    <item type="id" name="task_state" />
+    <item type="id" name="task_progress" />
+    <item type="id" name="task_summary" />
+    <item type="id" name="task_id" />
+    <item type="id" name="capability_list" />
+    <item type="id" name="actual_run_blocked" />
+    <item type="id" name="operation_notice" />
+    <item type="id" name="task_history" />
+    <item type="id" name="framework_probe" />
+    <item type="id" name="wizard_refresh" />
+    <item type="id" name="wizard_next" />
+    <item type="id" name="root_evidence" />
+    <item type="id" name="root_check" />
+    <item type="id" name="root_cancel" />
+    <item type="id" name="wizard_environment" />
+</resources>

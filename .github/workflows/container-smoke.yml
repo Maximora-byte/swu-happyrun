@@ -1,0 +1,45 @@
+name: container-smoke
+
+on:
+  push:
+    branches: [main, "dot/**", "codex/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-compose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+        with:
+          version: "0.12.19"
+          python-version: "3.11"
+          enable-cache: true
+      - name: Install frozen test and fake-agent dependencies
+        run: uv sync --frozen --extra server --extra agent --extra dev
+      - name: Check existing Docker availability without changing host permissions
+        run: |
+          docker version
+          docker compose version
+      - name: Real Compose build, HTTP agent, lease, schedule, volume recreation
+        env:
+          HAPPYRUN_DISPOSABLE_DOCKER: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p qa/container
+          uv run --no-sync python deploy/smoke_container.py > qa/container/report.json
+      - name: Publish only bounded synthetic summary
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: container-smoke-${{ github.sha }}
+          path: qa/container/report.json
+          if-no-files-found: error
+          retention-days: 7

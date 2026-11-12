@@ -1,0 +1,45 @@
+name: mumu-adapter-build-only
+on:
+  push:
+    branches: [dot/mumu-own-https-runner]
+  pull_request:
+    paths:
+      - '.github/workflows/mumu-adapter-build-only.yml'
+      - 'android/app/src/remoteQaAndroidTest/java/org/happyrun/app/remoteqa/RemoteMumuHttpsAcceptanceTest.java'
+      - 'tests/delivery/test_mumu_build_only_workflow.py'
+permissions:
+  contents: read
+jobs:
+  compile-adapter:
+    if: >-
+      github.repository == 'Maximora-byte/swu-happyrun' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/dot/mumu-own-https-runner') ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.head_ref == 'dot/mumu-own-https-runner'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Compile adapter with official SDK and disposable build-only CA
+        shell: bash
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          test -d "$ANDROID_HOME"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' </dev/null || { echo 'SDK unavailable; review any new license explicitly.' >&2; exit 1; }
+          umask 077
+          private=$(mktemp -d "$RUNNER_TEMP/mumu-build-ca.XXXXXX")
+          resource=android/app/build/generated/remoteQa/res/raw/remote_qa_ca.pem
+          cleanup() {
+            rm -rf -- "$private"
+            rm -f -- "$resource"
+          }
+          trap cleanup EXIT
+          openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj '/CN=Disposable Build Only CA' -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign' -keyout "$private/ca.key" -out "$private/ca.pem" >/dev/null 2>&1
+          mkdir -p "$(dirname "$resource")"
+          cp "$private/ca.pem" "$resource"
+          bash scripts/android_gradle.sh -PremoteQaInstrumentation assembleRemoteQa assembleRemoteQaAndroidTest

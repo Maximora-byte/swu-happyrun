@@ -1,0 +1,158 @@
+{
+  "fixture_version": 1,
+  "notice": "A local simulation is not a server AGENT client or a physical app adapter. Environment facts, installed packages, su files and permissions do not establish execution capabilities or accepted records.",
+  "record_verified": false,
+  "scope": "android_local_simulation_reference_only",
+  "simulation_completion": "completed",
+  "simulation_structural_edges": [
+    [
+      "queued",
+      "leased"
+    ],
+    [
+      "queued",
+      "failed"
+    ],
+    [
+      "queued",
+      "cancelled"
+    ],
+    [
+      "leased",
+      "queued"
+    ],
+    [
+      "leased",
+      "preflight"
+    ],
+    [
+      "leased",
+      "verifying"
+    ],
+    [
+      "leased",
+      "cancelling"
+    ],
+    [
+      "leased",
+      "needs_attention"
+    ],
+    [
+      "leased",
+      "failed"
+    ],
+    [
+      "preflight",
+      "queued"
+    ],
+    [
+      "preflight",
+      "ready"
+    ],
+    [
+      "preflight",
+      "cancelling"
+    ],
+    [
+      "preflight",
+      "needs_attention"
+    ],
+    [
+      "preflight",
+      "failed"
+    ],
+    [
+      "ready",
+      "queued"
+    ],
+    [
+      "ready",
+      "running"
+    ],
+    [
+      "ready",
+      "cancelling"
+    ],
+    [
+      "ready",
+      "needs_attention"
+    ],
+    [
+      "ready",
+      "failed"
+    ],
+    [
+      "running",
+      "finishing"
+    ],
+    [
+      "running",
+      "cancelling"
+    ],
+    [
+      "running",
+      "needs_attention"
+    ],
+    [
+      "running",
+      "failed"
+    ],
+    [
+      "finishing",
+      "verifying"
+    ],
+    [
+      "finishing",
+      "cancelling"
+    ],
+    [
+      "finishing",
+      "needs_attention"
+    ],
+    [
+      "finishing",
+      "failed"
+    ],
+    [
+      "verifying",
+      "cancelling"
+    ],
+    [
+      "verifying",
+      "needs_attention"
+    ],
+    [
+      "verifying",
+      "completed"
+    ],
+    [
+      "verifying",
+      "failed"
+    ],
+    [
+      "cancelling",
+      "needs_attention"
+    ],
+    [
+      "cancelling",
+      "cancelled"
+    ],
+    [
+      "needs_attention",
+      "leased"
+    ],
+    [
+      "needs_attention",
+      "cancelling"
+    ]
+  ],
+  "simulation_verification": {
+    "evidence": [],
+    "reason_code": "simulation_only",
+    "status": "unknown"
+  },
+  "source_schema_sha256": "45a152d9710b9566f562222ae728cce4de6a40cefd73b286403bb621a76cdaee",
+  "structural_edges_are_authorization": false,
+  "verified_execution_capabilities": [],
+  "wire_protocol_client": false
+}

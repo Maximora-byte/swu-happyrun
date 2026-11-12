@@ -1,50 +1,96 @@
 # SWU HappyRun
 
-西南大学步道乐跑适配项目，规划 Windows/MuMu 执行代理、服务器调度和 vivo 无 Root 兼容性验证。
+> **2026-11-12 集成候选，尚未合入 main / Integration candidate, not merged into main.**
+> 本分支完整继承较新的桌面产品及 Windows 全量测试分片；下方 RC2/RC3 是各自固定源码的历史设备回执，不能当作本候选新验收。先读[当前集成说明与未决门槛](docs/integration-candidate.md)、[文档导航](docs/README.md)和[PR 地图](docs/repository-map.md)。旧原生 CLI/enrollment 门禁、#110 和学校业务验收限制保持不变。
+> This candidate preserves the newer desktop product and full Windows test accounting. Historical RC2/RC3 device evidence is source-bound, not acceptance of this candidate. See the integration guide before using or merging it.
 
-最新分工（2026-10-18）：**Dot 主导全部主要开发，本地 Codex 负责实测与集成验收。** 当前实施入口为[今晚至次日的冲刺任务](docs/handoffs/2026-10-18-dot-lead-sprint.md)；下列原始计划的旧负责人列由该分工覆盖。
+2026-10-23 本地交付 RC3：`swu-happyrun desktop` 打开中文工作台，支持 MuMu 实际定位与轨迹、两点校准后返回起点的新鲜读回、跨应用前台持续观察、暂停继续、停止和中断恢复，以及独立持久化合成模拟。Windows 离线包双击 `Start-HappyRun.cmd`，配套自身探针用 `Install-MuMu-Probe.cmd` 安装。RC3 已离线安装验收，实际 MuMu 持续写入 14 次，最大读回误差 0.882 米；小程序实际轨迹和学校有效记录未完成。见[使用说明](docs/desktop.md)、[MuMu 操作](docs/mumu-desktop.md)和[固定源码、CI 与交付验收](docs/qa/2026-10-23-rc3-delivery.md)。此前 RC2 的 421.48 米完整路线、116 次写入和故障恢复证据保留在[历史验收](docs/qa/2026-10-23-local-product.md)，不标为 RC3 重跑结果。
 
-**当前分支继承 C0 共享协议库与 L0 只读诊断，并修复恢复结构边，待评审合并。服务器及执行代理尚未实现；未验证任何步道乐跑版本的完整兼容性。**
+已交付原生 APK 的首阶段构建来自 [PR #35](https://github.com/Maximora-byte/swu-happyrun/pull/35) 的 `28871b2d599a8ec8335570effb3207d2564639ab`：本地模式无需 PC 服务；远程模式由用户显式连接可信 HTTPS 服务，一次连接最多领取一个合成模拟任务。官方 API31/35 的准确 push 验收已通过，范围与未解决问题见[当前状态](docs/status.md)和[APK 安装边界](docs/android-apk.md)。本轮按 [七任务计划](docs/superpowers/plans/2026-10-19-next-stage.md) 纳入最新 main QA、PR39/40 修复、持续前台多任务与原生持久完成恢复。005bb 单 API31 已实际通过 display7、native15 与 namespace3；最终统一候选的完整 Android 矩阵待同 HEAD CI；精确结果与阻塞见[统一候选验收记录](docs/acceptance.md)，MuMu完整闭环/学校记录不在已通过范围。
 
-## 本地开发与探测
+西南大学步道乐跑适配项目：共享控制协议、Python 调度服务器、可恢复执行代理和可替换设备驱动。
 
-```powershell
-uv sync --all-extras --frozen
+**当前本地交付不包含学校有效记录验收。** MuMu 6.8.4.0 / Android 15 的本地轨迹范围见上述报告；vivo 无 Root、具体乐跑版本与纯业务接口仍需本地证据。未知规则、点位、应用页面和能力拒绝执行。fake `completed` 不表示真实记录 `succeeded`。
+
+## 资源细化 R1–R5 统一候选
+
+本候选纳入实例绑定、合成定位/传感器校准边界、空注册表的应用/记录适配接口、MuMu driver 合成协议链与三份研究材料。真实 backend 默认关闭，模拟仍只声明 fake 能力；实际乐跑版本选择器、真实停止证明与学校记录尚未具备。见[资源驱动计划](docs/superpowers/plans/2026-10-19-resource-guided-adaptation.md)、[R4 边界](docs/acceptance-r4-boundary.md)和[本地输入门槛](docs/onboarding.md)。最终下载请以本 PR 的准确 HEAD 和同构建 app/test 配对清单为准。
+
+## 本轮实现与版本选择
+
+Dot 负责主要实现、测试、依赖与交付；本地 Codex 负责 Windows、真实设备与集成独立验收。本轮通过 GitHub Issue/PR 交付代码、不可变 HEAD 和验证结果；不把消息通知或计划勾选当作完成证据。
+
+实现分支已提供共享模型/Schema、恢复与证据约束、API/SQLite、租约与设备归属、日程、profile 校验、fake driver、agent journal 和 CLI。各组件进度、已发布 PR/阶段 HEAD 与验证层次见 [当前状态](docs/status.md)。旧设计中的负责人列由 [Dot 主导冲刺说明](docs/handoffs/2026-10-18-dot-lead-sprint.md) 覆盖。
+
+**安装时选择集成候选 PR 正文及对应 Actions `github.sha` 指定的完整提交。** 单独的堆叠 PR 只包含其自身与父分支范围：部署文档 PR 基于服务器分支时，并不独自包含 L1/L2；下述 CLI/fake 命令必须在同时集成服务器、驱动与代理的候选上运行。不要混用多个分支的最新文件代替固定候选。
+
+## 本地管理控制台
+
+服务器内置同源管理页面：启动后打开 `http://127.0.0.1:8080/console/`，或显式使用 `server --open-browser`。此选项仅在loopback绑定且成功监听后尝试打开浏览器，默认不打开，也不会启动执行代理。控制台不改变真实设备和学校记录的验收限制。
+
+见[安装与启动](docs/installation.md)、[控制台操作](docs/console.md)、[API与安全范围](docs/console-api.md)。真实Chromium交互/截图验收以对应提交的独立CI结果为准；页面和API检查不能替代浏览器验收。
+
+## 安装和软件自检
+
+Python 3.11+；以下从完整候选仓库根目录执行，Windows PowerShell 与 Linux 均可使用：
+
+```sh
+uv sync --extra server --extra agent --extra dev --frozen
 uv run --no-sync python -m pytest -q
 uv run --no-sync python scripts/export_schema.py --check
+uv run --no-sync ruff check .
+uv run --no-sync ruff format --check .
+uv build
+uv run --no-sync python scripts/check_install.py
+uv run --no-sync python -m swu_happyrun --help
+uv run --no-sync python deploy/smoke_fake.py
+```
+
+smoke 启动临时回环服务器，通过实际 HTTP 注册 fake 设备、创建并重放任务、运行 CLI 代理、查询 `completed`，再重启同一数据库确认持久化；同时检查 `/health` 和 `/ready`。只有本次命令成功才算本次 smoke 通过。完整故障矩阵和未运行范围见 [交付验证记录](docs/delivery-validation.md) 与 [50 项验收设计覆盖](docs/acceptance-coverage.md)。
+
+- [Windows/Linux 安装与运行](docs/installation.md)
+- [Linux Docker/Compose、非 root 与持久化](docs/server.md)
+- [fake 联调、取消、断线与恢复](docs/fake-e2e.md)
+- [本地验收与最小输入清单](docs/local-qa.md)
+- [vivo 无 Root 证据与后续路径](docs/research/vivo-noroot.md)
+- [纯接口证据与后续路径](docs/research/direct-protocol.md)
+
+核心、服务器、代理依赖分别安装；server extra 不依赖 Windows/MuMu。Python CI 候选 artifact 仅包含 wheel、sdist 和 SHA256SUMS；Android 另交普通 APK、匹配 instrumentation APK、签名及合成测试白名单证据。实际下载是否可用以对应提交的 Actions 结果为准。未创建 Release。
+
+## CLI 与只读诊断
+
+集成候选支持 `doctor`、`profiles check`、`route check`、`server`、`agent`、`devices`、`jobs` 和 `schedules`；使用各命令 `--help` 查看参数。已安装入口为 `swu-happyrun`，等价模块入口为 `python -m swu_happyrun`。
+
+```sh
+uv run --no-sync python -m swu_happyrun doctor --json
+```
+
+只读探测旧模块入口仍可使用：
+
+```sh
 uv run --no-sync python -m swu_happyrun.drivers.mumu.discovery --json --index 0
 ```
 
-诊断退出码 2 表示需要处理环境条件，例如实例未启动或设备未连接。该命令只读取信息，详细行为与本机证据见[兼容性记录](docs/compatibility.md)。统一 CLI 在 L2 交付。
+必须先确认实例 0 是用户指定的测试实例。诊断退出码 2 表示有待处理条件，例如实例停止或 ADB 无连接，不能当作设备执行通过。当前真实设备 CLI 后端在缺少已验证应用适配器时返回 `adapter_not_verified`。
 
-## 开发入口
+## 安全与证据边界
 
-- [设计评估与修订结论](docs/design-review.md)
-- [双端开发总计划](docs/superpowers/plans/2026-10-18-development.md)
-- [服务器实施计划：云端 Dot](docs/superpowers/plans/2026-10-18-server.md)
-- [执行端实施计划：本地 Codex](docs/superpowers/plans/2026-10-18-agent.md)
-- [两端接口契约 v1](docs/contracts/control-plane-v1.md)
-- [完整设计说明](docs/superpowers/specs/2026-10-18-swu-happyrun-design.md)
-- [当前协作状态](docs/status.md)
-- [Dot 接手说明](docs/handoffs/dot-server.md)
-- [GitHub 开发任务](https://github.com/Maximora-byte/swu-happyrun/issues)
+- ADMIN 与各 AGENT 使用独立 token；身份由管理员注册，不能靠代理自行声明所有权。
+- 先持久化意图，再执行设备动作；租约丢失、上传不明或停止未确认时不自动开始第二次运行。
+- 真实学校规则、路线、点位和应用选择器来自实际输入，不猜测、不套用他校协议。
+- 账号、token、截图、路线、数据库和 journal 放私有目录，不提交 Git 或群消息。
+- 无 Root vivo 路径不自动安装 Root/LSPosed，不关闭 TLS 或系统保护。
+- 本交付不修改生产服务器、DNS、账号或安全设置；容器文件存在不等于已完成部署。
 
-## 分工
+## 设计与协议
 
-| 工作 | 负责人 | 主要目录 |
-| --- | --- | --- |
-| 共享契约、核心逻辑、CLI 与实现测试 | Dot 开发，本地 Codex 独立验收 | `contracts/`、`src/swu_happyrun/core/`、`tests/contracts/` |
-| Windows/MuMu、ADB 与执行代理 | Dot 开发，本地 Codex 设备实测 | `src/swu_happyrun/agent/`、`src/swu_happyrun/drivers/`、`tests/agent/` |
-| 服务 API、数据库、租约、调度、容器配置 | Matrix 群中的 ChatGPT Dot | `src/swu_happyrun/server/`、`tests/server/`、`deploy/` |
+- [控制协议 v1](docs/contracts/control-plane-v1.md)
+- [完整设计](docs/superpowers/specs/2026-10-18-swu-happyrun-design.md)
+- [设计评估](docs/design-review.md)
+- [开发总计划](docs/superpowers/plans/2026-10-18-development.md)
+- [服务器计划](docs/superpowers/plans/2026-10-18-server.md)
+- [执行端计划](docs/superpowers/plans/2026-10-18-agent.md)
+- [兼容性历史证据](docs/compatibility.md)
+- [第三方来源与许可](THIRD_PARTY_NOTICES.md)
 
-以上源码目录是计划中的责任边界，尚未实现。双方使用独立分支和 PR，GitHub Issue 记录任务状态；Matrix 用于通知与澄清。消息发送成功、Dot 接单、代码提交、测试通过和设备验收分别记录。
-
-已创建 11 个开发/交接任务。本轮按用户选择只准备 Dot 交接包，尚未发送 Matrix 启动消息，云端开发未启动。
-
-## 兼容性与数据
-
-已知用户环境为无 Root 的 vivo X200 Pro，以及 Windows 上的 MuMu 6.8.4.0 / Android 15 实例。校区、学校当前规则、乐跑版本及真实路线需要在首次接入时采集。
-
-服务器首版负责调度在线设备代理；无设备的纯接口执行单独研究。模拟器轨迹完成、上传提示和最终有效记录使用不同的验收证据。仓库不提供虚构的学校 ID、打卡点或“100% 成功”承诺。
-
-账号会话、设备截图、原始轨迹和数据库放在被 Git 忽略的本地目录。参考项目及其复用边界见 [第三方来源](THIRD_PARTY_NOTICES.md)。
+计划是实现目标；最终状态及测试证据以当前 PR、状态页与对应不可变提交的检查结果为准。

@@ -1,0 +1,25 @@
+# Completed fake simulation recovery (Issue 36)
+
+The Python runner permits administrator-authorized `verify_only` to complete a stopped synthetic run only when `FakeDriver` independently reopens its private state through the existing validated loader. Both the current driver and persisted snapshot must match the authorized job ID, run-session ID, complete JobSpec (including profile and route revisions), device, agent and current fence. Both must retain started, stopped and route-finished facts, with no active motion. An upload-uncertain scenario cannot qualify. Missing, legacy-without-completion, corrupted, substituted or mismatching state fails closed.
+
+Normal binding checks preserve the same session/spec and reject a lower fence before saving the new authorized recovery binding. Rebinding or stopping does not create the route-finished flag. Recovery does not prepare, start or tick; it performs idempotent stop, verifying transition and read-only validation. The synthetic verification result remains unknown/simulation_only with no app_record. Generic drivers returning that result do not qualify for recovery completion. Device verification behavior is unchanged.
+
+The files are local synthetic state, not tamper-proof evidence against a process that can rewrite its own private files. The owning agent's per-device lock remains required. This change makes no physical-device, school acceptance, upload or real credential claim.
+
+Regression evidence includes a real TCP server and child process that reaches the route endpoint, persists stop, then exits immediately before completion reporting. After lease expiry and explicit ADMIN verify_only approval, a new runner/driver completes with unchanged start/tick/stop counters and no upload intent. Negative recovery covers start_crash, incomplete route and upload uncertainty with reconstructed drivers. Driver-level checks cover missing/corrupt files, changed job/session/spec/fence, absent legacy completion flag, in-memory-only state and still-active state. The Android runner remains a separate implementation; this Python fix does not implement native completion recovery.
+
+## Historical agent binding (Codex follow-up)
+
+A same-job recovery must retain the historical `agent_id` before any new
+binding is saved. Comparing agents only after `bind_session` is insufficient:
+it would replace the historical value before verifying completion. The driver
+now rejects that mismatch together with session/spec mismatch before replacing
+or writing the binding. A legitimate same-agent recovery with a newer fence
+still succeeds. The emergency stop path may reserialize the unchanged state;
+it does not rewrite the mismatched historical identity or create completion.
+
+Regression tests reconstruct the driver from synthetic state *before* binding,
+cover missing/other historical agent, wrong session/spec/device/job and stale
+authorization fence, and retain the valid higher-fence completion path. These
+checks detect inconsistent local state; the JSON file is not a tamper-proof
+attestation against a writer with access to the application data directory.
