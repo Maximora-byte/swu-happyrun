@@ -6,7 +6,7 @@
 PR #120 merged the product into main. This is a software integration, not a new package release or fresh device/school acceptance.
 
 - 合前 [`c850586`](https://github.com/Maximora-byte/swu-happyrun/commit/c850586071f93e67e90bcf7e590ba0867caf93d2)：托管检查 69 项 success、1 项预期 skipped（`compile-adapter`）；[push 检查](https://github.com/Maximora-byte/swu-happyrun/actions/runs/43219462088)、两份 PR 检查 [43219471327](https://github.com/Maximora-byte/swu-happyrun/actions/runs/43219471327) / [43219473640](https://github.com/Maximora-byte/swu-happyrun/actions/runs/43219473640) 已完成。Linux 全量软件测试 3195 passed、16 skipped、1 warning、6 subtests passed（458.89 秒）；Windows/Python 3.13 定向 19 项及共享契约 121 项通过。跳过不算通过，设备验收不在此范围。
-- 合后 `main@1431a4f`：更新本文时 CI 仍在独立运行，尚不能称合后全绿。最新状态请查询 [main checks](https://github.com/Maximora-byte/swu-happyrun/actions/runs/43222204881)、[main container smoke](https://github.com/Maximora-byte/swu-happyrun/actions/runs/43222204576) 与[该合并提交的检查](https://github.com/Maximora-byte/swu-happyrun/commit/1431a4f4328659c45a405a0d82b149487c3e84c6/checks)，不能用合前绿灯代替。
+- 合后 `main@1431a4f`：2026-11-12 13:11 UTC 核验 23 项检查全部 success；[main checks](https://github.com/Maximora-byte/swu-happyrun/actions/runs/43222204881) 与 [main container smoke](https://github.com/Maximora-byte/swu-happyrun/actions/runs/43222204576) 均 completed/success。Windows/Python 3.11 与 3.13 各六个分片及 completeness 检查通过。该结果仅绑定[合并提交 1431a4f](https://github.com/Maximora-byte/swu-happyrun/commit/1431a4f4328659c45a405a0d82b149487c3e84c6/checks)，不代表后续 PR #122 或其他新 HEAD 已通过。
 - 2026-11-12 用户取消强制本地 Codex 交接，由 Dot 全权开发并协调独立审查。实现与审查仍分开，精确提交检查、真实设备授权和学校有效记录证据不省略，见 [AGENTS.md](../AGENTS.md)。
 - 旧 CLI/enrollment 门禁、#110 历史故障与设备/学校验收限制保持不变。旧 PR 的包含关系与逐项处置分开核实，不按编号批量合并或关闭。
 
