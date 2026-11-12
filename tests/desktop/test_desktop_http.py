@@ -46,6 +46,14 @@ def wait_for(client, predicate, *, seconds=30):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         response = client.get("/api/v1/desktop/workspace")
+        # Workspace polling is read-only. The store deliberately returns this
+        # bounded, retryable response under concurrent scheduler/agent writes.
+        # Do not retry mutations or swallow other errors, and keep the deadline.
+        if response.status_code == 503:
+            error = response.json().get("error", {})
+            if error.get("code") == "database_busy" and error.get("retryable") is True:
+                time.sleep(0.1)
+                continue
         assert response.status_code == 200, (response.status_code, response.text)
         state = response.json()
         if predicate(state):

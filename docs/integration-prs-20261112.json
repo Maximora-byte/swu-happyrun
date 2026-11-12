@@ -1,0 +1,797 @@
+{
+  "repository": "Maximora-byte/swu-happyrun",
+  "trusted_sha": "74d4aa3f224756d6083775bef9525feca8943e86",
+  "windows_sha": "e9cdc55481432937f17ecbafc4d674afe4021b24",
+  "relationship": "trusted is strict ancestor; windows has four extra commits, seven changed files, no src change",
+  "counts": {
+    "documentation_in_progress": 1,
+    "documentation_independent": 2,
+    "ancestor_included": 22,
+    "superseded_by_candidate": 8,
+    "missing_test_fix": 1,
+    "alternative_diagnostics": 2,
+    "not_included_optional_delivery": 1,
+    "superseded_native_path": 1,
+    "exact_changed_files_present": 2,
+    "not_included_optional_probe": 1,
+    "patch_equivalent": 2
+  },
+  "pull_requests": [
+    {
+      "number": 119,
+      "title": "docs: organize navigation, branch map and historical status",
+      "head_branch": "dot/docs-repository-navigation-20261112",
+      "head_sha": "09caa171f7db03eb387dcd22f79b2e3c138e0b53",
+      "base_branch": "main",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "base_sha": "f578b17dcb9cbebd1045a621a92c3dbea91017d3",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/119",
+      "classification": "documentation_in_progress",
+      "reason": "Current #119 cleanup is being revised separately; integrate only its reviewed exact head."
+    },
+    {
+      "number": 118,
+      "title": "docs: align README with current implementation and acceptance status",
+      "head_branch": "dot/docs-current-status-20261111",
+      "head_sha": "78aa1298618a48dac97d1de5b6e695867624e4ba",
+      "base_branch": "main",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "base_sha": "f578b17dcb9cbebd1045a621a92c3dbea91017d3",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/118",
+      "classification": "documentation_independent",
+      "reason": "Main-relative README state fix, may conflict semantically with candidate product README."
+    },
+    {
+      "number": 117,
+      "title": "docs: add Chinese–English README navigation and English edition",
+      "head_branch": "dot/bilingual-readme",
+      "head_sha": "5739fdc5efe126a4cf3440cc14471a6a08811701",
+      "base_branch": "main",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "base_sha": "f578b17dcb9cbebd1045a621a92c3dbea91017d3",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/117",
+      "classification": "documentation_independent",
+      "reason": "Main-relative bilingual README; preserve candidate product guidance when reconciling."
+    },
+    {
+      "number": 111,
+      "title": "ci: account for every Python node in bounded Windows shards",
+      "head_branch": "dot/complete-windows-suite",
+      "head_sha": "e9cdc55481432937f17ecbafc4d674afe4021b24",
+      "base_branch": "dot/trusted-runtime-context",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": true,
+      "base_sha": "74d4aa3f224756d6083775bef9525feca8943e86",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/111",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 109,
+      "title": "feat: bind runtime storage context and original uncertainty retention",
+      "head_branch": "dot/trusted-runtime-context",
+      "head_sha": "74d4aa3f224756d6083775bef9525feca8943e86",
+      "base_branch": "dot/bounded-scope-coverage",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "3aa844f4c0303e3ec47198c61458505e0831db2a",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/109",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 108,
+      "title": "feat: add bounded full-scope enrollment reinspection",
+      "head_branch": "dot/bounded-scope-coverage",
+      "head_sha": "e4a3732784c61f9e178d5ef4e1aa1d10b4684bb5",
+      "base_branch": "dot/reviewed-runner-entry",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "e4a3732784c61f9e178d5ef4e1aa1d10b4684bb5"
+      ],
+      "unmatched_commit_paths_equal": [
+        "src/swu_happyrun/drivers/mumu/enrollment_authority.py",
+        "src/swu_happyrun/drivers/mumu/enrollment_transaction.py",
+        "src/swu_happyrun/drivers/mumu/enrollment_transaction_plan.py",
+        "tests/agent/test_enrollment_transaction_plan.py"
+      ],
+      "unmatched_commit_paths_different": [
+        ".github/workflows/checks.yml",
+        "tests/agent/test_enrollment_bounded_reads.py",
+        "tests/delivery/test_enrollment_ci_budget.py"
+      ],
+      "base_sha": "7763ece6bb5edde47961454a106be783d492f6cf",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/108",
+      "classification": "superseded_by_candidate",
+      "reason": "Bounded read product changes present byte-for-byte; newer tests and CI supersede old branch."
+    },
+    {
+      "number": 107,
+      "title": "feat: wire independently fixed enrollment entry points",
+      "head_branch": "dot/reviewed-runner-entry",
+      "head_sha": "20c762576ed104066f767e54122f536248ea19b3",
+      "base_branch": "dot/recheck-candidate",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "20c762576ed104066f767e54122f536248ea19b3"
+      ],
+      "unmatched_commit_paths_equal": [
+        "src/swu_happyrun/drivers/mumu/enrollment_authority.py",
+        "src/swu_happyrun/drivers/mumu/enrollment_transaction.py",
+        "src/swu_happyrun/drivers/mumu/enrollment_transaction_plan.py",
+        "tests/agent/test_enrollment_transaction_plan.py"
+      ],
+      "unmatched_commit_paths_different": [
+        ".github/workflows/checks.yml",
+        "tests/agent/test_enrollment_bounded_reads.py",
+        "tests/delivery/test_enrollment_ci_budget.py"
+      ],
+      "base_sha": "94dcbfcce7b53630196d7b6f0868709eed7c7241",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/107",
+      "classification": "superseded_by_candidate",
+      "reason": "Bounded read product changes present byte-for-byte; newer tests and CI supersede old branch."
+    },
+    {
+      "number": 103,
+      "title": "test: synchronize interrupted capture fixture reader cleanup",
+      "head_branch": "dot/capture-interruption-fixtures",
+      "head_sha": "d09b926d7106bd770bad9f31defc3c92cdaeec71",
+      "base_branch": "dot/recheck-candidate",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "d09b926d7106bd770bad9f31defc3c92cdaeec71"
+      ],
+      "unmatched_commit_paths_equal": [],
+      "unmatched_commit_paths_different": [
+        "tests/agent/test_readonly_capture.py"
+      ],
+      "base_sha": "87c507b0629c3330fd6cb8aee512b8c1418c89d1",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/103",
+      "classification": "missing_test_fix",
+      "reason": "d09b926 reader-thread join/delayed-exit fixture changes absent; candidate for small cherry-pick and focused tests."
+    },
+    {
+      "number": 96,
+      "title": "test(smoke): retain bounded HTTP status failure diagnostics",
+      "head_branch": "dot/http-status-diagnostics",
+      "head_sha": "010c984d5fb1dbcf8b8291eaaa281a4276e75d87",
+      "base_branch": "dot/night-virtual-run-candidate",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "010c984d5fb1dbcf8b8291eaaa281a4276e75d87"
+      ],
+      "unmatched_commit_paths_equal": [],
+      "unmatched_commit_paths_different": [
+        "deploy/smoke_container.py",
+        "tests/container/test_http_status_diagnostics.py"
+      ],
+      "base_sha": "25aea0177020eef34449764ddc5e3bf0e5afdd24",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/96",
+      "classification": "alternative_diagnostics",
+      "reason": "Old route-label diagnostics absent, but candidate uses newer ApiStatusFailure and bounded busy polling; do not overwrite."
+    },
+    {
+      "number": 95,
+      "title": "fix: retain capture ownership across interrupted reader bootstrap",
+      "head_branch": "dot/fix-reader-bootstrap-ownership",
+      "head_sha": "f0651bf9316c9d7f679a5e7afa8ba5aee1c4dd35",
+      "base_branch": "dot/night-virtual-run-candidate",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "f0651bf9316c9d7f679a5e7afa8ba5aee1c4dd35"
+      ],
+      "unmatched_commit_paths_equal": [],
+      "unmatched_commit_paths_different": [
+        "deploy/smoke_container.py",
+        "tests/container/test_http_status_diagnostics.py"
+      ],
+      "base_sha": "25aea0177020eef34449764ddc5e3bf0e5afdd24",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/95",
+      "classification": "alternative_diagnostics",
+      "reason": "Same final diagnostics delta as #96; newer error classification exists."
+    },
+    {
+      "number": 94,
+      "title": "fix(replay): always close session after cleanup persistence failure",
+      "head_branch": "dot/replay-cleanup-finally",
+      "head_sha": "3f2e07c4ccd0cd0155d862258dcb4d258664e477",
+      "base_branch": "dot/night-virtual-run-candidate",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "25aea0177020eef34449764ddc5e3bf0e5afdd24",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/94",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 93,
+      "title": "N5: same-source six-APK and wheel local delivery schema",
+      "head_branch": "dot/night-delivery-tools",
+      "head_sha": "726ed1ebc6b668cf9f662b4df4ca6ecd5c17c318",
+      "base_branch": "dot/night-virtual-run-candidate",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 3,
+      "non_equivalent_commits": [
+        "270e8751ac8b11358df90d36dc0c35e106010710",
+        "42bee2964808a15371db6e1627e147fe560a9569",
+        "726ed1ebc6b668cf9f662b4df4ca6ecd5c17c318"
+      ],
+      "unmatched_commit_paths_equal": [],
+      "unmatched_commit_paths_different": [
+        "docs/night-local-delivery.md",
+        "scripts/build_local_https_delivery.py",
+        "scripts/check_local_https_delivery.py",
+        "scripts/check_mumu_https.py",
+        "scripts/local_delivery_v2.py",
+        "tests/delivery/test_local_delivery_v2.py"
+      ],
+      "base_sha": "25aea0177020eef34449764ddc5e3bf0e5afdd24",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/93",
+      "classification": "not_included_optional_delivery",
+      "reason": "local_delivery_v2 six-APK packaging/checking tools and tests absent. Separate optional scope, not required for desktop baseline."
+    },
+    {
+      "number": 92,
+      "title": "fix(agent): validate cancellation and stop-ack response identity",
+      "head_branch": "dot/night-n4-cancel-response-identity",
+      "head_sha": "17fe18d91ff45fbfcecb118b627e96dc998ab3dd",
+      "base_branch": "dot/night-integration-base",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "c3dd5e4175ebdc50c741cf3f4f619930e0b23cf1",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/92",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 91,
+      "title": "feat(mumu): fail-closed local replay and controlled point probe (N3)",
+      "head_branch": "dot/night-local-virtual-replay",
+      "head_sha": "1e4197043046a34ffe329a89d4e796e057fd18ed",
+      "base_branch": "dot/night-replay-deps",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "1e4197043046a34ffe329a89d4e796e057fd18ed"
+      ],
+      "unmatched_commit_paths_equal": [],
+      "unmatched_commit_paths_different": [
+        "src/swu_happyrun/drivers/mumu/virtual_replay.py",
+        "tests/agent/test_mumu_replay_adapters.py",
+        "tests/agent/test_replay_private_input.py"
+      ],
+      "base_sha": "2d7370a5df81df65c7cf50db6428d728f403dd03",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/91",
+      "classification": "superseded_native_path",
+      "reason": "Bounded private input reader upgraded; old executable native CLI deliberately replaced with closed enrollment gate. Do not restore."
+    },
+    {
+      "number": 90,
+      "title": "feat: bounded own-app MuMu 6.8.4 native invocation (N1)",
+      "head_branch": "dot/mumu-native-684-bounded",
+      "head_sha": "6fe5fdb820fbb6e804531cd4352312ac3291ed74",
+      "base_branch": "dot/night-integration-base",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "6fe5fdb820fbb6e804531cd4352312ac3291ed74"
+      ],
+      "unmatched_commit_paths_equal": [
+        "docs/mumu-command-preparation.md",
+        "tests/agent/test_reader_start_ownership.py"
+      ],
+      "unmatched_commit_paths_different": [
+        "src/swu_happyrun/drivers/command.py",
+        "tests/agent/test_mumu_native_684.py",
+        "tests/agent/test_readonly_capture.py"
+      ],
+      "base_sha": "c3dd5e4175ebdc50c741cf3f4f619930e0b23cf1",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/90",
+      "classification": "superseded_by_candidate",
+      "reason": "Native adapter unchanged; capture enhanced with binary evidence and tests use synthetic adapter."
+    },
+    {
+      "number": 89,
+      "title": "Add correlated private own-APK location and gravity readback",
+      "head_branch": "dot/night-own-probe-readback",
+      "head_sha": "2d7000d8dcdedf952bedff150abfdbe862d47ed4",
+      "base_branch": "dot/night-integration-base",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "c3dd5e4175ebdc50c741cf3f4f619930e0b23cf1",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/89",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 87,
+      "title": "Bound read-only command capture and retain unconfirmed child/reader ownership",
+      "head_branch": "dot/bounded-readonly-capture",
+      "head_sha": "fb5e229ef62b14c52a61f5fafa2c00255420391a",
+      "base_branch": "dot/android-foreground-agent",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 3,
+      "non_equivalent_commits": [
+        "17b214ce372e98ad3712c31fa4a891c034b5abac",
+        "65d44ae8747affd10fc7928e664cb9002cf0b120",
+        "fb5e229ef62b14c52a61f5fafa2c00255420391a"
+      ],
+      "unmatched_commit_paths_equal": [
+        "tests/agent/conftest.py",
+        "tests/agent/test_adb.py",
+        "tests/agent/test_identity.py",
+        "tests/agent/test_reader_start_ownership.py"
+      ],
+      "unmatched_commit_paths_different": [
+        "docs/mumu-command-preparation.md",
+        "src/swu_happyrun/drivers/command.py",
+        "tests/agent/test_discovery.py",
+        "tests/agent/test_manager.py",
+        "tests/agent/test_mumu_binding.py",
+        "tests/agent/test_readonly_capture.py"
+      ],
+      "base_sha": "ec15ea880012b85f7e25778b6b8d149553827040",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/87",
+      "classification": "superseded_by_candidate",
+      "reason": "Capture/newline/reader ownership integrated in evolved binary capture implementation; legacy tests updated."
+    },
+    {
+      "number": 77,
+      "title": "fix(server): return SQLite busy responses before HTTP timeout",
+      "head_branch": "dot/sqlite-busy-response",
+      "head_sha": "45a2b9fde32f011f67eb62bf0c06c575188a18b2",
+      "base_branch": "dot/android-foreground-agent",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "45a2b9fde32f011f67eb62bf0c06c575188a18b2"
+      ],
+      "unmatched_commit_paths_equal": [
+        "docs/server.md",
+        "src/swu_happyrun/server/store.py",
+        "tests/server/test_sqlite_busy_response.py"
+      ],
+      "unmatched_commit_paths_different": [],
+      "base_sha": "9534f51efe3a557e6b4bda5605426e4004a34783",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/77",
+      "classification": "exact_changed_files_present",
+      "reason": "All files touched by non-ancestor final commit are byte-identical to candidate."
+    },
+    {
+      "number": 74,
+      "title": "test(android): 自身定位/重力只读观察器，注入能力保持关闭",
+      "head_branch": "dot/owned-channel-observer",
+      "head_sha": "1377dc2ae1076580e5181831eb21333ba9cbd0f8",
+      "base_branch": "dot/android-foreground-agent",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "1377dc2ae1076580e5181831eb21333ba9cbd0f8"
+      ],
+      "unmatched_commit_paths_equal": [
+        "android/app/src/androidTest/java/org/happyrun/app/observation/AndroidObservation.java",
+        "android/app/src/androidTest/java/org/happyrun/app/observation/ObservationSession.java",
+        "tests/delivery/test_selfprobe_packaging.py"
+      ],
+      "unmatched_commit_paths_different": [
+        "android/app/src/androidTest/java/org/happyrun/app/observation/AndroidObservationTest.java",
+        "android/app/src/androidTest/java/org/happyrun/app/observation/ObservationWindow.java",
+        "android/app/src/selfProbe/AndroidManifest.xml",
+        "docs/owned-channel-observer.md",
+        "scripts/check_selfprobe_apks.py",
+        "tests/android_contracts/test_owned_observation.py",
+        "tests/java/OwnedObservationCheck.java"
+      ],
+      "base_sha": "9534f51efe3a557e6b4bda5605426e4004a34783",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/74",
+      "classification": "superseded_by_candidate",
+      "reason": "Observer exists with tighter 5-second window, gravity accuracy checks and further updates."
+    },
+    {
+      "number": 70,
+      "title": "Issue57: bounded hello control error and fixture diagnostics",
+      "head_branch": "dot/hello-control-diagnostics",
+      "head_sha": "92cb81cf868741f24b28378ebd3015a14a77f242",
+      "base_branch": "dot/android-foreground-agent",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "92cb81cf868741f24b28378ebd3015a14a77f242"
+      ],
+      "unmatched_commit_paths_equal": [
+        "android/app/src/remoteQaAndroidTest/java/org/happyrun/app/remoteqa/RemoteHttpsAcceptanceTest.java",
+        "docs/qa/hello-control-diagnostics.md",
+        "scripts/check_remote_https_android.py",
+        "scripts/remote_https_fixture.py",
+        "scripts/remote_instrumentation_diagnostics.py",
+        "tests/delivery/test_hello_control_diagnostics.py",
+        "tests/delivery/test_remote_instrumentation_diagnostics.py"
+      ],
+      "unmatched_commit_paths_different": [],
+      "base_sha": "8f9f3351ee2d297f58c55b8b1c1dcf31ff33ff17",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/70",
+      "classification": "exact_changed_files_present",
+      "reason": "All files touched by non-ancestor final commit are byte-identical to candidate."
+    },
+    {
+      "number": 61,
+      "title": "docs(mumu): 6.8.4 通道探针设计与离线证据检查",
+      "head_branch": "dot/mumu-channel-probes",
+      "head_sha": "15870e115d34403789c0caa267db6ca5e0357f25",
+      "base_branch": "dot/android-foreground-agent",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "15870e115d34403789c0caa267db6ca5e0357f25"
+      ],
+      "unmatched_commit_paths_equal": [],
+      "unmatched_commit_paths_different": [
+        "docs/mumu-684-channel-probes.md",
+        "src/swu_happyrun/drivers/mumu/channel_probe_plan.py",
+        "tests/agent/test_mumu_channel_probe_plan.py"
+      ],
+      "base_sha": "a449955b26c6461adf99fcb981a04b7a39812900",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/61",
+      "classification": "not_included_optional_probe",
+      "reason": "Offline channel_probe_plan model/trace validator absent; no transport or capability grant. Separate optional research."
+    },
+    {
+      "number": 51,
+      "title": "R4: fail-closed MuMu composition and synthetic protocol integration",
+      "head_branch": "dot/mumu-driver-integration",
+      "head_sha": "491a6eca195bbf7dc3356673c1e42a6f670d80dc",
+      "base_branch": "dot/mumu-calibration-boundaries",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "491a6eca195bbf7dc3356673c1e42a6f670d80dc"
+      ],
+      "unmatched_commit_paths_equal": [
+        "tests/agent/test_adapter_inputs.py",
+        "tests/delivery/test_cross_platform_qa_sources.py",
+        "tests/delivery/test_foreground_activity_contract.py"
+      ],
+      "unmatched_commit_paths_different": [
+        "scripts/check_native_navigation.py"
+      ],
+      "base_sha": "6b66c2e20da808d920bc34a2f773d4888468e33b",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/51",
+      "classification": "superseded_by_candidate",
+      "reason": "Encoding/ID fixtures retained; navigation checker enhanced with bounded raw-byte diagnostics."
+    },
+    {
+      "number": 49,
+      "title": "R2: synthetic calibration and confirmed-stop boundaries",
+      "head_branch": "dot/mumu-calibration-boundaries",
+      "head_sha": "dbb78557e47070bbccf61e75f6e104067d3ee2ac",
+      "base_branch": "dot/mumu-instance-binding",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "dbb78557e47070bbccf61e75f6e104067d3ee2ac"
+      ],
+      "unmatched_commit_paths_equal": [
+        "tests/agent/test_adapter_inputs.py",
+        "tests/delivery/test_cross_platform_qa_sources.py",
+        "tests/delivery/test_foreground_activity_contract.py"
+      ],
+      "unmatched_commit_paths_different": [
+        "scripts/check_native_navigation.py",
+        "tests/agent/test_mumu_binding.py"
+      ],
+      "base_sha": "3694b340d10776193d9b36822cf82fdabf211890",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/49",
+      "classification": "superseded_by_candidate",
+      "reason": "Portable fixtures retained, supplemented by current capture stubs, symlink policies and explicit IDs."
+    },
+    {
+      "number": 48,
+      "title": "R3: offline Budao version and record rejection gates",
+      "head_branch": "dot/budao-version-gates",
+      "head_sha": "320bfdffeb6d5d267262813e13851d4443d7e52c",
+      "base_branch": "dot/mumu-instance-binding",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 1,
+      "non_equivalent_commits": [
+        "320bfdffeb6d5d267262813e13851d4443d7e52c"
+      ],
+      "unmatched_commit_paths_equal": [
+        "tests/agent/test_adapter_inputs.py",
+        "tests/delivery/test_cross_platform_qa_sources.py",
+        "tests/delivery/test_foreground_activity_contract.py"
+      ],
+      "unmatched_commit_paths_different": [
+        "scripts/check_native_navigation.py",
+        "tests/agent/test_mumu_binding.py"
+      ],
+      "base_sha": "e5185f24500e409626b777f7d273b48db2d603ff",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/48",
+      "classification": "superseded_by_candidate",
+      "reason": "Portable fixtures retained, supplemented by current capture stubs, symlink policies and explicit IDs."
+    },
+    {
+      "number": 46,
+      "title": "Issue41: integrated foreground simulation, recovery and exact-head Android acceptance",
+      "head_branch": "dot/android-foreground-agent",
+      "head_sha": "a49225d5f59ee2324d47275ab9d25e77cc645680",
+      "base_branch": "dot/android-remote-agent",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 0,
+      "non_equivalent_commits": [],
+      "unmatched_commit_paths_equal": [],
+      "unmatched_commit_paths_different": [],
+      "base_sha": "0bb9344ddefe8054177101583282c57f27f5b38a",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/46",
+      "classification": "patch_equivalent",
+      "reason": "All branch-only nonmerge commits patch-equivalent to complete-windows-suite."
+    },
+    {
+      "number": 43,
+      "title": "test(server): prove mid-write probe batch rollback",
+      "head_branch": "dot/fix-probe-batch-atomicity",
+      "head_sha": "a3fd8a6f71a9745e68a2f235c34b6367bdf4aac6",
+      "base_branch": "dot/android-remote-agent",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "0bb9344ddefe8054177101583282c57f27f5b38a",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/43",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 35,
+      "title": "Android: one-shot remote fake agent and isolated real HTTPS acceptance",
+      "head_branch": "dot/android-remote-agent",
+      "head_sha": "2d0fcc550f9c1f6cf8cc6e0106dcafd106cf181a",
+      "base_branch": "dot/integration-candidate",
+      "dot/trusted-runtime-context": false,
+      "dot/complete-windows-suite": false,
+      "non_equivalent_commit_count": 0,
+      "non_equivalent_commits": [],
+      "unmatched_commit_paths_equal": [],
+      "unmatched_commit_paths_different": [],
+      "base_sha": "77494e21756e514f53e51b3a2c72f22555f0aae6",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/35",
+      "classification": "patch_equivalent",
+      "reason": "All branch-only nonmerge commits patch-equivalent to complete-windows-suite."
+    },
+    {
+      "number": 34,
+      "title": "test(server): add real container API, lease and schedule acceptance",
+      "head_branch": "dot/server-container-validation",
+      "head_sha": "260d0739cbcc7c0b80dd91ca2573b1e6caab25dd",
+      "base_branch": "dot/web-console",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "f3d0699d8923ce7d2325abedcb680fc70f650f4a",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/34",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 33,
+      "title": "feat(android): add beginner setup guide and optional own-app Root/framework diagnostics",
+      "head_branch": "dot/android-onboarding",
+      "head_sha": "091f2428139176370390daa40b0570fcc9fa612a",
+      "base_branch": "dot/android-app",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "629f2e9b86d7a72502f528abd1c1edf999d6a842",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/33",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 32,
+      "title": "feat(android): add native local diagnostic and simulation APK candidate",
+      "head_branch": "dot/android-app",
+      "head_sha": "0402c11753af534e42af6bc24525cea115968198",
+      "base_branch": "dot/web-console",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "f3d0699d8923ce7d2325abedcb680fc70f650f4a",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/32",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 31,
+      "title": "feat(console): add usable Chinese desktop and mobile task console",
+      "head_branch": "dot/web-console",
+      "head_sha": "f3d0699d8923ce7d2325abedcb680fc70f650f4a",
+      "base_branch": "dot/fix-signal-reentrancy",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "585e1b0674022c8262109a7ea5e5720c0532eee9",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/31",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 30,
+      "title": "fix: prevent signal-handler deadlocks and synchronize fault regressions",
+      "head_branch": "dot/fix-signal-reentrancy",
+      "head_sha": "585e1b0674022c8262109a7ea5e5720c0532eee9",
+      "base_branch": "dot/route-engine",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "58264f22ba8829ec707f2d1a07617332f42ef48d",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/30",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 29,
+      "title": "feat: complete simulated routes before reporting successful execution",
+      "head_branch": "dot/route-engine",
+      "head_sha": "58264f22ba8829ec707f2d1a07617332f42ef48d",
+      "base_branch": "dot/agent-shutdown-reconnect",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "9c358125a9724fafd3468a64f069e5ec92acab49",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/29",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 28,
+      "title": "fix: gracefully stop agents and retry only safe idle connections",
+      "head_branch": "dot/agent-shutdown-reconnect",
+      "head_sha": "9c358125a9724fafd3468a64f069e5ec92acab49",
+      "base_branch": "dot/android-diagnostics",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "5e841d1fa8e231caa33608cdd689f0b79b1f9d8d",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/28",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 27,
+      "title": "feat: normalize explicit coordinate systems for offline route validation",
+      "head_branch": "dot/coordinate-conversion",
+      "head_sha": "9db9c8f31567b3300699e79b3a340f7bbaf3c22c",
+      "base_branch": "dot/candidate-review-base-19c15ba7",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "19c15ba7cfad7fc1039b7b552677a3bd3e82cf6b",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/27",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 26,
+      "title": "feat: diagnose Android devices without requiring MuMu",
+      "head_branch": "dot/android-diagnostics",
+      "head_sha": "5e841d1fa8e231caa33608cdd689f0b79b1f9d8d",
+      "base_branch": "dot/candidate-review-base-19c15ba7",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "19c15ba7cfad7fc1039b7b552677a3bd3e82cf6b",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/26",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 25,
+      "title": "feat: deliver installable HappyRun candidate with real HTTP fault verification",
+      "head_branch": "dot/integration-candidate",
+      "head_sha": "77494e21756e514f53e51b3a2c72f22555f0aae6",
+      "base_branch": "main",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "cb91204ebe18afbdc467084ea74aa4feb4b17414",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/25",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 24,
+      "title": "feat: add deployment package and candid acceptance guides",
+      "head_branch": "dot/delivery-package",
+      "head_sha": "cc81d124e4feab978ae60a694ae06391cb6cb728",
+      "base_branch": "dot/server-schedules",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "561155a24582c0e5bfcb4fbba7a9f2d2c53eaea9",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/24",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 23,
+      "title": "S2: persistent schedules, managed background ticks and readiness",
+      "head_branch": "dot/server-schedules",
+      "head_sha": "561155a24582c0e5bfcb4fbba7a9f2d2c53eaea9",
+      "base_branch": "dot/server-leases",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "e3ffab6a0309d2b7e484edfe9498f4e2aab9e1b2",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/23",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 22,
+      "title": "S1: fenced leases, conservative recovery and record binding",
+      "head_branch": "dot/server-leases",
+      "head_sha": "e3ffab6a0309d2b7e484edfe9498f4e2aab9e1b2",
+      "base_branch": "dot/server-api",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "c474119cdc18fa34fefffd5e8ea64c79f0106159",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/22",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 21,
+      "title": "feat: add recoverable agent runtime and JSON CLI (L2)",
+      "head_branch": "dot/agent-runtime",
+      "head_sha": "e935632079c805952e7b143e5438c7d829b34f22",
+      "base_branch": "dot/driver-validation",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "10b2172bebd8aba302cc8a0345503b32d38589f6",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/21",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 20,
+      "title": "L1: validate local routes and add session-bound fake fault driver",
+      "head_branch": "dot/driver-validation",
+      "head_sha": "10b2172bebd8aba302cc8a0345503b32d38589f6",
+      "base_branch": "dot/c1-recovery-protocol",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "21a650567f210cd1860111ae998999b9bb27f213",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/20",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    },
+    {
+      "number": 18,
+      "title": "S0: authenticated durable task API and identity isolation",
+      "head_branch": "dot/server-api",
+      "head_sha": "c474119cdc18fa34fefffd5e8ea64c79f0106159",
+      "base_branch": "dot/c0-recovery-contract",
+      "dot/trusted-runtime-context": true,
+      "dot/complete-windows-suite": true,
+      "base_sha": "6ed02c29924ccc3ab26c028fbf46d15477d84eb0",
+      "url": "https://github.com/Maximora-byte/swu-happyrun/pull/18",
+      "classification": "ancestor_included",
+      "reason": "Exact PR head is ancestor of complete-windows-suite."
+    }
+  ],
+  "limits": [
+    "Read-only graph/content analysis, not device acceptance or full security review.",
+    "Patch equivalence does not prove runtime equivalence; listed semantic comparisons require integration tests.",
+    "No PR closed, merged, or modified."
+  ]
+}
