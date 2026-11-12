@@ -9,12 +9,13 @@ Start by checking the branch. Default-branch documentation, candidate features a
 | --- | --- |
 | 判断当前能做什么 / Understand available functionality | [状态入口 / Status guide](status.md)、[分支与 PR 地图 / Branch and PR map](repository-map.md) |
 | 运行主分支环境诊断 / Run default-branch diagnostics | [根目录 README / Root README](../README.md)、[兼容性与诊断 / Compatibility](compatibility.md) |
+| 查看独立桌面/MuMu 产品 / Find the separate desktop/MuMu product | [固定候选使用说明 / Candidate desktop guide](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/desktop.md)、[RC3 版本限定实测 / Version-bound RC3 receipt](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/qa/2026-10-23-rc3-delivery.md) |
 | 理解协议和边界 / Understand contracts and boundaries | [控制平面 v1 / Control-plane contract](contracts/control-plane-v1.md)、[生成 Schema / Generated schema](../contracts/protocol-v1.schema.json) |
 | 了解设计背景 / Understand the design | [设计说明 / Design](superpowers/specs/2026-10-18-swu-happyrun-design.md)、[设计评估 / Design review](design-review.md) |
 | 准备改动 / Prepare a contribution | [贡献约定 / Agent instructions](../AGENTS.md)、[PR 模板 / PR template](../.github/pull_request_template.md)、[第三方来源 / Third-party notices](../THIRD_PARTY_NOTICES.md) |
 
-主分支安装与诊断不代表已有可执行服务器、统一 CLI 或已验证的真实跑步流程。候选文档请从地图中的准确提交进入，先核对相应的验收限制。
-Default-branch installation and diagnostics do not establish a runnable server, unified CLI or verified real-device running flow. Open candidate documentation at the recorded commit and read its acceptance limits first.
+主分支安装与诊断不代表其已包含可执行服务器或统一 CLI。另一个候选已收录桌面/MuMu 连续写入和读回的版本限定实测，不能忽略，也不能外推为最新 HEAD 或学校业务已通过。候选文档请从地图中的准确提交进入，核对对应产品源码和验收范围。
+Default-branch diagnostics do not ship a server or unified CLI. A separate candidate contains version-bound desktop/MuMu write/readback evidence; neither ignore it nor extrapolate it to the latest head or school acceptance. Open the recorded commit and check the tested product source and scope.
 
 ## 目录与维护方式 / Directories and maintenance
 

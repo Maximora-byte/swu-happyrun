@@ -1,20 +1,25 @@
 # 分支与 PR 地图 / Branch and PR map
 
-盘点日期 / Snapshot date: **2026-11-12 UTC**。此表记录本次整理前的 **42 个开放 PR**，不是自动更新的看板，也不是合并批准；最新状态以 [GitHub PR 列表](https://github.com/Maximora-byte/swu-happyrun/pulls) 为准。本次整理 PR 不计入该基线数量。
-This snapshot lists the 42 open PRs inspected before this cleanup. It is not a live dashboard or merge approval; the cleanup PR itself is excluded.
+盘点日期 / Snapshot date: **2026-11-12 UTC**。此表记录本次整理前的 **42 个开放 PR**，不是自动更新的看板，也不是合并批准；最新状态以 [GitHub PR 列表](https://github.com/Maximora-byte/swu-happyrun/pulls) 为准。本次复核仍为原 42 个开放 PR 加整理 PR [#119](https://github.com/Maximora-byte/swu-happyrun/pull/119)，共 43 个；#119 不计入下方基线表。
+This snapshot lists the 42 open PRs inspected before this cleanup. A recheck found the same 42 plus cleanup PR #119 (43 total); #119 is excluded from the baseline table. This is not a live dashboard or merge approval.
 
 ## 默认分支与候选 / Default branch and candidate
 
 | 入口 / Entry | 核对的提交 / Inspected commit | 用途与边界 / Purpose and limits |
 | --- | --- | --- |
 | `main` | [`f578b17d`](https://github.com/Maximora-byte/swu-happyrun/tree/f578b17dcb9cbebd1045a621a92c3dbea91017d3) | 共享模型、状态结构与 MuMu/ADB 只读诊断；无 `server/`、`agent/`、统一 CLI、网页或 Android 产品实现。Shared contracts and read-only diagnostics; no complete product entry point. |
-| `dot/recheck-candidate` | [`94dcbfcc`](https://github.com/Maximora-byte/swu-happyrun/tree/94dcbfcce7b53630196d7b6f0868709eed7c7241) | 候选集成与诊断入口，不是发布版或设备验收结论。Candidate integration, not a release or device-acceptance claim. |
+| `dot/recheck-candidate` | [`94dcbfcc`](https://github.com/Maximora-byte/swu-happyrun/tree/94dcbfcce7b53630196d7b6f0868709eed7c7241) | 较早的候选集成线，其旧回放限制不代表所有后续候选。Earlier integration line; its legacy replay limits are not global candidate limits. |
+| `dot/trusted-runtime-context`（[#109](https://github.com/Maximora-byte/swu-happyrun/pull/109)） | [`74d4aa3f`](https://github.com/Maximora-byte/swu-happyrun/tree/74d4aa3f224756d6083775bef9525feca8943e86) | 含独立桌面/MuMu 产品及 RC2/RC3 固定源码实测回执；后续修订不自动继承旧验收。Contains the desktop/MuMu product and version-bound evidence, not blanket acceptance of later changes. |
 
 默认分支中实际存在：[`src/swu_happyrun/core/`](../src/swu_happyrun/core/)、[`drivers/mumu/`](../src/swu_happyrun/drivers/mumu/)、[`tests/contracts/`](../tests/contracts/)、[`tests/agent/`](../tests/agent/)、[`scripts/`](../scripts/)。`tests/agent/` 的名称不能据此证明产品代理已进入 main。
 The listed directories exist on the inspected default branch. A test-directory name does not establish a shipped agent runtime.
 
-候选分支的[回放边界](https://github.com/Maximora-byte/swu-happyrun/blob/94dcbfcce7b53630196d7b6f0868709eed7c7241/docs/virtual-replay.md)、[纯接口研究](https://github.com/Maximora-byte/swu-happyrun/blob/94dcbfcce7b53630196d7b6f0868709eed7c7241/docs/research/direct-protocol.md)只说明候选范围；不能用 fake/软件测试替代连续定位、可靠停止或学校有效记录验收。
-Candidate documentation describes its own scope. Fake/software tests do not establish continuous location delivery, confirmed stopping or school-valid records.
+### 不同执行路径与证据 / Execution paths and evidence
+
+- 较早 `dot/recheck-candidate` 的[回放边界](https://github.com/Maximora-byte/swu-happyrun/blob/94dcbfcce7b53630196d7b6f0868709eed7c7241/docs/virtual-replay.md)描述该路径的限制，不代表后续独立桌面工具没有实际写入能力。Legacy replay limitations are path-specific.
+- `dot/trusted-runtime-context` 已有[桌面入口](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/desktop.md)、[MuMu 工具说明](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/mumu-desktop.md)与固定源码回执：RC2 产品 `a7138c19` 的[421.476 米 / 116 次写入](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/qa/2026-10-23-local-product.md)；RC3 产品 `31b5d408` 的[14 次持续写入、暂停/继续和停止确认](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/qa/2026-10-23-rc3-delivery.md)。验收环境为 Windows/Python 3.13、MuMu 6.8.4.0 / Android 15 API35；RC2 与 RC3 不能互相冒称重跑结果。These are separate version-bound device test receipts, reviewed here without rerunning them.
+- 较新 HEAD `74d4aa3` 修改了轨迹预算与 journal 读取，不能把前述产品实测直接归为它的全量实测；旧 CLI/enrollment 门禁及 #110 也仍需分别处理。Later changes and legacy gates require separate verification.
+- [纯接口研究](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/research/direct-protocol.md)、小程序实际轨迹、上传与学校有效记录仍未验收。自身定位读回成功不证明第三方采纳位置或服务端认可成绩。Local positioning evidence does not establish third-party app or school-record acceptance.
 
 ## 如何阅读堆叠 PR / Reading stacked PRs
 
