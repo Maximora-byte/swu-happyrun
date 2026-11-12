@@ -1,5 +1,17 @@
 # 协作状态
 
+## 阅读入口 / Reading guide
+
+**2026-11-12 仓库整理快照：** 当前默认分支仍以共享协议与只读环境诊断为主；服务器、执行代理、网页和 Android 产品增量仍在候选分支。主分支功能目录和开放 PR 的准确 HEAD 见[分支与 PR 地图](repository-map.md)，按用途查找资料请看[文档导航](README.md)。本次只整理文档，不增加能力、不合并产品代码，也不更新任何设备或学校成绩验收结论。
+
+**Repository snapshot, 2026-11-12:** the default branch contains shared contracts and read-only environment diagnostics. Server, agent, web and Android product increments remain on candidate branches. See the [branch and PR map](repository-map.md) for inspected heads and the [documentation index](README.md) for navigation. This documentation change adds no capabilities or acceptance claims.
+
+下文完整保留 **2026-10-20 的阶段记录**。其中“当前”“最新”“下一轮”、候选 SHA、测试数和时间目标均指当时，不应替代今天的 GitHub 状态；例如 `628c23da` 是当时受测候选，不是持续移动的分支别名。准备安装、集成或测试前，重新核对目标 PR 的 HEAD、base、检查和验收范围。
+
+The remainder is the preserved **2026-10-20 checkpoint**. Its “current/latest/next” wording, SHAs, test counts and deadlines are historical. Recheck the exact target head, base, checks and acceptance scope before installation, integration or testing.
+
+## 历史记录 / Historical checkpoint: 2026-10-20
+
 更新：2026-10-20（Asia/Shanghai）。Dot 主导实现和修复；本地 Codex 负责独立测试、设备观测和集成审核。本轮只使用 GitHub，没有发送 Matrix 消息。
 
 ## 最新候选与本机验收
