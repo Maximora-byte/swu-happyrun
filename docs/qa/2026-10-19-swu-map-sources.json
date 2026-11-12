@@ -1,0 +1,116 @@
+{
+  "retrieved_at": "2026-10-19T09:05:33.843742+00:00",
+  "source": "OpenStreetMap API 0.6 map export",
+  "source_sha256": "0d974b582d0883c2d4a23dc95d8177c5af3da95379560c6db649fd41f044f354",
+  "attribution": "© OpenStreetMap contributors",
+  "license": "ODbL-1.0",
+  "license_url": "https://www.openstreetmap.org/copyright",
+  "campus": {
+    "type": "way",
+    "id": 413071891,
+    "version": 21
+  },
+  "amap_status": "not_cross_verified",
+  "tencent_status": "not_cross_verified",
+  "items": [
+    {
+      "field": 1,
+      "name": "西南大学第一运动场",
+      "track": {
+        "type": "way",
+        "id": 843421789,
+        "version": 1,
+        "timestamp": "2020-09-02T08:01:40Z"
+      },
+      "naming": {
+        "type": "way",
+        "id": 843421786,
+        "version": 2,
+        "name": "西南大学第一运动场"
+      },
+      "naming_relation": {
+        "method": "track_vertices_in_named_polygon",
+        "inside_count": 28,
+        "unique_track_vertices": 28
+      },
+      "node_count": 29,
+      "closed": true,
+      "all_vertices_in_campus": true,
+      "length_m_approx": 421.476,
+      "crs": "WGS84",
+      "geojson_axis_order": "longitude,latitude",
+      "route_model_axis_fields": "latitude,longitude",
+      "route_model_valid": true,
+      "status": "map_candidate_only",
+      "school_rules_confirmed": false,
+      "device_execution_enabled": false,
+      "record_verified": false
+    },
+    {
+      "field": 2,
+      "name": "西南大学第二运动场",
+      "track": {
+        "type": "way",
+        "id": 846878928,
+        "version": 2,
+        "timestamp": "2026-07-16T19:24:18Z"
+      },
+      "naming": {
+        "type": "way",
+        "id": 368605818,
+        "version": 4,
+        "name": "西南大学第2运动场"
+      },
+      "naming_relation": {
+        "method": "track_vertices_in_named_polygon",
+        "inside_count": 38,
+        "unique_track_vertices": 38
+      },
+      "node_count": 39,
+      "closed": true,
+      "all_vertices_in_campus": true,
+      "length_m_approx": 432.198,
+      "crs": "WGS84",
+      "geojson_axis_order": "longitude,latitude",
+      "route_model_axis_fields": "latitude,longitude",
+      "route_model_valid": true,
+      "status": "map_candidate_only",
+      "school_rules_confirmed": false,
+      "device_execution_enabled": false,
+      "record_verified": false
+    },
+    {
+      "field": 4,
+      "name": "西南大学第四运动场",
+      "track": {
+        "type": "way",
+        "id": 368577141,
+        "version": 3,
+        "timestamp": "2018-01-24T17:39:16Z"
+      },
+      "naming": {
+        "type": "node",
+        "id": 3724521740,
+        "version": 1,
+        "name": "西南大学第４运动场"
+      },
+      "naming_relation": {
+        "method": "named_marker_inside_track",
+        "inside": true
+      },
+      "node_count": 22,
+      "closed": true,
+      "all_vertices_in_campus": true,
+      "length_m_approx": 451.109,
+      "crs": "WGS84",
+      "geojson_axis_order": "longitude,latitude",
+      "route_model_axis_fields": "latitude,longitude",
+      "route_model_valid": true,
+      "status": "map_candidate_only",
+      "school_rules_confirmed": false,
+      "device_execution_enabled": false,
+      "record_verified": false
+    }
+  ],
+  "prepared_at": "2026-10-19T09:15:58.287779+00:00"
+}
