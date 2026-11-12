@@ -1,5 +1,25 @@
 # 协作状态
 
+## 阅读入口 / Reading guide
+
+**2026-11-12 仓库整理快照：** 当前默认分支仍以共享协议与只读环境诊断为主；服务器、执行代理、网页和 Android 产品增量仍在候选分支。主分支功能目录和开放 PR 的准确 HEAD 见[分支与 PR 地图](repository-map.md)，按用途查找资料请看[文档导航](README.md)。本次只整理文档，不增加能力、不合并产品代码，也不更新任何设备或学校成绩验收结论。
+
+**Repository snapshot, 2026-11-12:** the default branch contains shared contracts and read-only environment diagnostics. Server, agent, web and Android product increments remain on candidate branches. See the [branch and PR map](repository-map.md) for inspected heads and the [documentation index](README.md) for navigation. This documentation change adds no capabilities or acceptance claims.
+
+下方历史记录小节完整保留 **2026-10-20 的阶段记录**。其中“当前”“最新”“下一轮”、候选 SHA、测试数和时间目标均指当时，不应替代今天的 GitHub 状态；例如 `628c23da` 是当时受测候选，不是持续移动的分支别名。准备安装、集成或测试前，重新核对目标 PR 的 HEAD、base、检查和验收范围。
+
+The historical checkpoint below preserves the **2026-10-20 record**. Its “current/latest/next” wording, SHAs, test counts and deadlines are historical. Recheck the exact target head, base, checks and acceptance scope before installation, integration or testing.
+
+## 已发现的后续验收记录 / Later acceptance records
+
+`dot/trusted-runtime-context` 的核查 HEAD 为 `74d4aa3f224756d6083775bef9525feca8943e86`，其中已有[RC2 本地产品验收](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/qa/2026-10-23-local-product.md)和[RC3 交付验收](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/qa/2026-10-23-rc3-delivery.md)。RC2 报告记录 421.476 米、116 次实际写入；RC3 报告记录特定 MuMu 6.8.4.0 / Android 15 API35 环境下 14 次持续写入、新鲜读回、暂停/继续和停止确认。这些是仓库中已有的**版本限定实测回执**，本轮只读取核对，没有重跑设备测试。
+
+RC3 产品源码为 `31b5d40865c92daff5ef9bc78d77ac1d950dd224`，其后 `74d4aa3` 又修改了轨迹预算、停止和 journal 读取；不能把 RC2/RC3 结果直接称为最新 HEAD 的完整验收。旧 native CLI/enrollment 门禁仍有各自限制，不能据其关闭推断独立桌面 MuMu 工具也没有实测。实际小程序轨迹、上传及学校有效记录仍未验收。
+
+The inspected candidate contains version-bound RC2/RC3 desktop and MuMu test receipts. RC2 records a complete local route; RC3 records sustained writes, fresh readback, pause/resume and confirmed stopping in its specified environment. We reviewed these receipts, not a fresh device run. Later HEAD changes need their own verification; old native CLI/enrollment restrictions do not negate the separate desktop evidence. Third-party mini-program activity, upload and school-valid records remain unverified.
+
+## 历史记录 / Historical checkpoint: 2026-10-20
+
 更新：2026-10-20（Asia/Shanghai）。Dot 主导实现和修复；本地 Codex 负责独立测试、设备观测和集成审核。本轮只使用 GitHub，没有发送 Matrix 消息。
 
 ## 最新候选与本机验收

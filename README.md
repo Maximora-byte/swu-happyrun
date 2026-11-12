@@ -19,6 +19,11 @@ uv run --no-sync python -m swu_happyrun.drivers.mumu.discovery --json --index 0
 
 ## 开发入口
 
+- [文档导航 / Documentation index](docs/README.md)：按使用、设计、验收和历史记录查找。
+- [分支与 PR 地图 / Branch and PR map](docs/repository-map.md)：区分 main、候选和堆叠变更。
+
+**分支区别 / Branch distinction：** 本页的主分支限制不代表所有候选都未实测。`dot/trusted-runtime-context` 已收录 [RC3 桌面与 MuMu 实测回执](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/qa/2026-10-23-rc3-delivery.md)和[使用说明](https://github.com/Maximora-byte/swu-happyrun/blob/74d4aa3f224756d6083775bef9525feca8943e86/docs/desktop.md)；报告对应固定产品源码，较新分支 HEAD 的修改不能直接沿用旧实测结论。学校小程序轨迹、上传与有效记录仍未验收。Local desktop/MuMu evidence exists on a separate candidate; it is version-specific and does not establish school-record acceptance.
+
 - [设计评估与修订结论](docs/design-review.md)
 - [双端开发总计划](docs/superpowers/plans/2026-10-18-development.md)
 - [服务器实施计划：云端 Dot](docs/superpowers/plans/2026-10-18-server.md)
