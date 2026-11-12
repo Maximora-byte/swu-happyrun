@@ -32,6 +32,15 @@ def _read(path, model):
 def _parser():
     parser = Parser(prog="swu-happyrun")
     commands = parser.add_subparsers(dest="command", required=True)
+    gps = commands.add_parser("gps-locator", help="Offline/read-only optional backend preview")
+    gps_actions = gps.add_subparsers(dest="operation", required=True)
+    gps_export = gps_actions.add_parser("export-route")
+    gps_export.add_argument("--route", type=Path, required=True)
+    gps_export.add_argument("--output", type=Path, required=True)
+    gps_export.add_argument("--speed-mps", type=float, required=True)
+    gps_inspect = gps_actions.add_parser("inspect")
+    gps_inspect.add_argument("--adb", type=Path, required=True)
+    gps_inspect.add_argument("--serial", required=True)
     desktop = commands.add_parser("desktop", help="Start the local HappyRun workstation")
     desktop.add_argument("--data-dir", type=Path)
     desktop.add_argument("--port", type=int, default=8765)
@@ -278,6 +287,15 @@ def _token(name):
 
 
 def _execute(args):
+    if args.command == "gps-locator":
+        from swu_happyrun.drivers import gps_locator
+
+        if args.operation == "export-route":
+            gps_locator.export_file(args.route, args.output, args.speed_mps)
+            _emit({"status": "exported", "execution_enabled": False, "device_contacted": False})
+        else:
+            _emit(gps_locator.inspect(args.adb, args.serial))
+        return 0
     if args.command == "desktop":
         from swu_happyrun.desktop.launcher import run
 

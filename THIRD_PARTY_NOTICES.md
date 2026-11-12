@@ -79,3 +79,41 @@ SOFTWARE.
 | [XXXXBully/LePaoReverse](https://github.com/XXXXBully/LePaoReverse) | 2026-10-18 读取 main | 未声明开源许可证 | 其他院校小程序协议研究线索；未复制源码或密钥 |
 
 作者报告的兼容性与精度不代表本项目已取得同样结果。引入 GPL 衍生实现时必须先明确其源码、分发和许可边界，不能用本仓库其他文件的许可覆盖上游要求。
+
+## GPS Locator optional preview protocol
+
+`src/swu_happyrun/drivers/gps_locator.py` implements an independent, limited
+route JSON exporter and GET_DEVICE_STATUS reader, based on inspected interfaces in
+[0xfnzero/gps-locator](https://github.com/0xfnzero/gps-locator/tree/7845ff8c94fef7d0afd2bcc4fa34ad3575635f29):
+`desktop-cli/scenario.mjs`, `device-status.mjs`, `gps-lab.mjs`, and Android
+`EnterpriseControlReceiver.kt`, `RouteRepository.kt`, `SimulationRoute.kt`.
+It is not a fork or a copy of the app; no APK, executable CLI, region database,
+map assets or upstream dependencies are redistributed. No endorsement is implied.
+The upstream MIT notice is retained for attribution:
+
+MIT License
+
+Copyright (c) 2026 0xfnzero
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Upstream `app/src/main/assets/regions` is **separately ODbL 1.0**, sourced from
+`dr5hn/countries-states-cities-database@7795d77d6a801543b9bb90d97a182c885f44c458`.
+Those datasets are not included. Copying them in a future change requires a
+separate data-license review; the MIT code license does not relicense them.

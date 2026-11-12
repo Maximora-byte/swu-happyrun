@@ -6,6 +6,8 @@
 > [PR #120](https://github.com/Maximora-byte/swu-happyrun/pull/120) 以 merge commit [`1431a4f`](https://github.com/Maximora-byte/swu-happyrun/commit/1431a4f4328659c45a405a0d82b149487c3e84c6) 纳入桌面产品、服务器、代理、统一 CLI 和 Android 源码，tree 为 `b7eb99fee77ada0464a5163b5705a6fa8fc402ff`。合前准确 HEAD [`c850586`](https://github.com/Maximora-byte/swu-happyrun/commit/c850586071f93e67e90bcf7e590ba0867caf93d2) 的软件检查与合后 main 检查分别记录，不能互相冒用。见[集成记录与验证边界](docs/integration-candidate.md)、[文档导航](docs/README.md)。本次未发布新安装包，也未重跑真实设备或学校业务验收。
 > Main now contains the product implementation. Pre-merge checks and post-merge CI are separate receipts; historical RC2/RC3 evidence is not fresh device acceptance.
 
+可选研究入口：[GPS Locator 离线适配预览](docs/gps-locator-preview.md)，支持路线格式转换和只读状态检查，尚未开放定位执行；现有 MuMu 不变。
+
 ## 历史交付回执 / Historical delivery receipts
 
 下列 RC3 和 Android 阶段说明保留原时点、准确源码和限制，不代表当前 main 的新验收或最新安装包。
